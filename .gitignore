@@ -3,7 +3,6 @@
 .gradle-home/
 build/
 out/
-!gradle/wrapper/gradle-wrapper.jar
 
 # IDE
 .idea/
@@ -24,6 +23,9 @@ Thumbs.db
 *.war
 *.ear
 *.log
+
+# Exception: keep gradle wrapper
+!gradle/wrapper/gradle-wrapper.jar
 
 # Compiled files
 target/

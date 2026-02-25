@@ -9,8 +9,10 @@ import picocli.CommandLine.Parameters;
 import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -51,12 +53,12 @@ public class Main implements Runnable {
         } else if (compileFile != null) {
             new CompileRunner(strict).compileFile(compileFile, output);
         } else if (runCompiledFile != null) {
-            List<String> args = params != null ? Arrays.asList(params) : List.of();
-            new CompileRunner(strict).compileAndRun(runCompiledFile, args);
+            List<String> argsList = params != null ? Arrays.asList(params) : Collections.<String>emptyList();
+            new CompileRunner(strict).compileAndRun(runCompiledFile, argsList);
         } else if (params != null && params.length > 0) {
             List<String> scriptArgs = params.length > 1
                     ? Arrays.asList(params).subList(1, params.length)
-                    : List.of();
+                    : Collections.<String>emptyList();
             new ScriptRunner(policy, strict).runScript(params[0], scriptArgs);
         } else {
             new ReplRunner(policy).run();
@@ -79,32 +81,41 @@ public class Main implements Runnable {
     public static void main(String[] args) {
         // Java 18+ (JEP 400) 默认 UTF-8，但 Windows 控制台可能仍用 GBK
         // 使用 native.encoding 获取操作系统原生编码，确保控制台正确显示中文
-        Charset consoleCharset = getConsoleCharset();
+        String charsetName = getConsoleCharsetName();
 
-        PrintStream out = new PrintStream(System.out, true, consoleCharset);
-        PrintStream err = new PrintStream(System.err, true, consoleCharset);
-        System.setOut(out);
-        System.setErr(err);
+        try {
+            PrintStream out = new PrintStream(System.out, true, charsetName);
+            PrintStream err = new PrintStream(System.err, true, charsetName);
+            System.setOut(out);
+            System.setErr(err);
 
-        CommandLine cmd = new CommandLine(new Main());
-        cmd.setOut(new PrintWriter(new OutputStreamWriter(out, consoleCharset), true));
-        cmd.setErr(new PrintWriter(new OutputStreamWriter(err, consoleCharset), true));
-        int exitCode = cmd.execute(args);
-        System.exit(exitCode);
+            Charset consoleCharset = Charset.forName(charsetName);
+            CommandLine cmd = new CommandLine(new Main());
+            cmd.setOut(new PrintWriter(new OutputStreamWriter(out, consoleCharset), true));
+            cmd.setErr(new PrintWriter(new OutputStreamWriter(err, consoleCharset), true));
+            int exitCode = cmd.execute(args);
+            System.exit(exitCode);
+        } catch (UnsupportedEncodingException e) {
+            // Fallback to default
+            CommandLine cmd = new CommandLine(new Main());
+            int exitCode = cmd.execute(args);
+            System.exit(exitCode);
+        }
     }
 
     /**
-     * 获取控制台实际使用的字符编码。
+     * 获取控制台实际使用的字符编码名。
      * Java 18+ 默认 charset 为 UTF-8，但 Windows 控制台通常仍为 GBK/CP936。
      * native.encoding 属性（Java 17+）反映操作系统原生编码。
      */
-    private static Charset getConsoleCharset() {
+    private static String getConsoleCharsetName() {
         String nativeEnc = System.getProperty("native.encoding");
         if (nativeEnc != null) {
             try {
-                return Charset.forName(nativeEnc);
+                Charset.forName(nativeEnc);
+                return nativeEnc;
             } catch (Exception ignored) {}
         }
-        return Charset.defaultCharset();
+        return Charset.defaultCharset().name();
     }
 }

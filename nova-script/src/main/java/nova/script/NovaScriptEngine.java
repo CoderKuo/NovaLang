@@ -120,11 +120,11 @@ public class NovaScriptEngine extends AbstractScriptEngine implements Compilable
     private void redirectIO(ScriptContext context) {
         Writer writer = context.getWriter();
         if (writer != null) {
-            nova.setStdout(new PrintStream(new WriterOutputStream(writer), true, java.nio.charset.StandardCharsets.UTF_8));
+            nova.setStdout(new PrintStream(new WriterOutputStream(writer), true));
         }
         Writer errorWriter = context.getErrorWriter();
         if (errorWriter != null) {
-            nova.setStderr(new PrintStream(new WriterOutputStream(errorWriter), true, java.nio.charset.StandardCharsets.UTF_8));
+            nova.setStderr(new PrintStream(new WriterOutputStream(errorWriter), true));
         }
     }
 

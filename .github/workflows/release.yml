@@ -1,0 +1,96 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew build -x test
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+
+          # CLI (fat jar，可直接运行)
+          cp nova-cli/build/libs/nova-cli-*.jar release/nova-cli-${VERSION}.jar
+
+          # Runtime (fat jar，包含所有依赖和 JSR-223 支持)
+          cp nova-runtime/build/libs/*-with-dependencies.jar release/nova-runtime-${VERSION}.jar
+
+          # Bukkit (瘦包，轻量级适配器)
+          find nova-bukkit/build/libs -name "nova-bukkit-*.jar" ! -name "*-with-dependencies.jar" -exec cp {} release/nova-bukkit-${VERSION}.jar \;
+
+          echo "Release assets:"
+          ls -la release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NovaLang ${{ steps.get_version.outputs.VERSION }}
+          body: |
+            ## NovaLang ${{ steps.get_version.outputs.VERSION }}
+
+            ### 下载说明
+
+            | 文件 | 说明 |
+            |------|------|
+            | `nova-cli-*.jar` | 命令行工具（可直接运行） |
+            | `nova-runtime-*.jar` | 完整运行时（fat jar，包含所有依赖） |
+            | `nova-bukkit-*.jar` | Bukkit 调度器适配（瘦包，需配合 runtime 使用） |
+
+            ### 使用方式
+
+            **命令行**：
+            ```bash
+            # 运行脚本
+            java -jar nova-cli-${{ steps.get_version.outputs.VERSION }}.jar script.nova
+
+            # REPL
+            java -jar nova-cli-${{ steps.get_version.outputs.VERSION }}.jar
+            ```
+
+            **Java 项目嵌入**：
+            ```bash
+            java -cp nova-runtime-${{ steps.get_version.outputs.VERSION }}.jar YourApp
+            ```
+
+            **Bukkit 插件开发**：
+            1. 将 `nova-runtime-*.jar` 和 `nova-bukkit-*.jar` 放入插件依赖目录
+            2. 在 `onEnable()` 中注册调度器：
+            ```java
+            BukkitSchedulers.register(this);
+            ```
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(steps.get_version.outputs.VERSION, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

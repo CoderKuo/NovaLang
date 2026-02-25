@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
 }
 
 description = 'NovaLang Runtime Library'
@@ -18,3 +19,12 @@ dependencies {
     // 2.9.3 是最后支持 Java 8 的版本
     implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
 }
+
+// Fat JAR 配置
+shadowJar {
+    archiveClassifier.set('with-dependencies')
+    mergeServiceFiles()
+}
+
+// 构建 fat jar
+tasks.build.dependsOn shadowJar
