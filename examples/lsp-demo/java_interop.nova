@@ -1,0 +1,42 @@
+// Java 互操作补全示例
+// 测试: 在变量后输入 . 触发补全，应弹出 Java 类的 public 方法
+
+// === JDK 类（无需配置 classpath） ===
+
+// ArrayList
+val list = Java.type("java.util.ArrayList")()
+list.add("hello")
+list.add("world")
+println(list.size())
+println(list.get(0))
+// 测试: 输入 list. 应弹出 add(), get(), size(), remove(), clear(), contains() 等
+list.add("")
+
+
+// HashMap
+val map = Java.type("java.util.HashMap")()
+map.put("name", "Nova")
+map.put("version", "1.0")
+println(map.get("name"))
+// 测试: 输入 map. 应弹出 put(), get(), remove(), size(), containsKey() 等
+map.getOrDefault("name",listOf())
+// StringBuilder
+val sb = Java.type("java.lang.StringBuilder")()
+sb.append("Hello")
+sb.append(" ")
+sb.append("World")
+
+println(sb.toString())
+// 测试: 输入 sb. 应弹出 append(), toString(), length(), insert(), delete() 等
+
+// File
+val file = Java.type("java.io.File")(".")
+// 测试: 输入 file. 应弹出 exists(), getName(), getPath(), isDirectory() 等
+
+// Math (静态方法不在实例补全中)
+val math = Java.type("java.lang.Math")
+// 注意: Math 的方法大多是 static，实例补全会较少
+
+// === 类型注解形式 ===
+val date = Java.type("java.util.Date")()
+println(date)

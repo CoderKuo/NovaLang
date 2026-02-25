@@ -1,0 +1,5 @@
+class Dog(val name: String)
+
+val rex = Dog("Rex")
+println(rex)
+println(rex is Dog)

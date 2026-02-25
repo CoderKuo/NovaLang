@@ -1,0 +1,541 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "NovaLang",
+    "scopeName": "source.nova",
+    "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#numbers" },
+        { "include": "#annotations" },
+        { "include": "#import-declaration" },
+        { "include": "#class-declaration" },
+        { "include": "#constructor-declaration" },
+        { "include": "#function-declaration" },
+        { "include": "#extension-property" },
+        { "include": "#variable-declaration" },
+        { "include": "#lambda" },
+        { "include": "#when-branch" },
+        { "include": "#keywords" },
+        { "include": "#constants" },
+        { "include": "#type-annotation" },
+        { "include": "#method-call" },
+        { "include": "#function-call" },
+        { "include": "#property-access" },
+        { "include": "#types" },
+        { "include": "#operators" },
+        { "include": "#punctuation" }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.nova",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.nova",
+                    "begin": "/\\*",
+                    "end": "\\*/",
+                    "patterns": [
+                        { "include": "#comments" }
+                    ]
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.triple.nova",
+                    "begin": "\"\"\"",
+                    "end": "\"\"\"",
+                    "patterns": [
+                        {
+                            "name": "meta.embedded.line.nova",
+                            "begin": "\\$\\{",
+                            "beginCaptures": { "0": { "name": "punctuation.definition.template-expression.begin.nova" } },
+                            "end": "\\}",
+                            "endCaptures": { "0": { "name": "punctuation.definition.template-expression.end.nova" } },
+                            "patterns": [
+                                { "include": "$self" }
+                            ]
+                        },
+                        {
+                            "name": "variable.other.interpolated.nova",
+                            "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.double.nova",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.nova",
+                            "match": "\\\\[\\\\\"nrt0$]"
+                        },
+                        {
+                            "name": "meta.embedded.line.nova",
+                            "begin": "\\$\\{",
+                            "beginCaptures": { "0": { "name": "punctuation.definition.template-expression.begin.nova" } },
+                            "end": "\\}",
+                            "endCaptures": { "0": { "name": "punctuation.definition.template-expression.end.nova" } },
+                            "patterns": [
+                                { "include": "$self" }
+                            ]
+                        },
+                        {
+                            "name": "variable.other.interpolated.nova",
+                            "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.single.nova",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.nova",
+                            "match": "\\\\[\\\\'nrt0]"
+                        }
+                    ]
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.nova",
+                    "match": "\\b0[xX][0-9a-fA-F_]+[Ll]?\\b"
+                },
+                {
+                    "name": "constant.numeric.binary.nova",
+                    "match": "\\b0[bB][01_]+[Ll]?\\b"
+                },
+                {
+                    "name": "constant.numeric.float.nova",
+                    "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9]+)?[fFdD]?\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.nova",
+                    "match": "\\b[0-9][0-9_]*[Ll]?\\b"
+                }
+            ]
+        },
+        "annotations": {
+            "patterns": [
+                {
+                    "comment": "Annotation with arguments: @Name(args)",
+                    "match": "(@[a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+                    "captures": {
+                        "1": { "name": "storage.type.annotation.nova" }
+                    }
+                },
+                {
+                    "name": "storage.type.annotation.nova",
+                    "match": "@[a-zA-Z_][a-zA-Z0-9_]*"
+                }
+            ]
+        },
+        "import-declaration": {
+            "patterns": [
+                {
+                    "comment": "import static java.lang.Math.PI",
+                    "match": "\\b(import)\\s+(static)\\s+([a-zA-Z_][a-zA-Z0-9_.]*(?:\\.\\*)?)",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "storage.modifier.nova" },
+                        "3": { "name": "entity.name.package.nova" }
+                    }
+                },
+                {
+                    "comment": "import java java.util.ArrayList as JavaList",
+                    "match": "\\b(import)\\s+(java)\\s+([a-zA-Z_][a-zA-Z0-9_.]*(?:\\.\\*)?)(?:\\s+(as)\\s+([A-Z][a-zA-Z0-9_]*))?",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "keyword.other.nova" },
+                        "3": { "name": "entity.name.package.nova" },
+                        "4": { "name": "keyword.operator.nova" },
+                        "5": { "name": "entity.name.type.nova" }
+                    }
+                },
+                {
+                    "comment": "import models.User as MyUser",
+                    "match": "\\b(import)\\s+([a-zA-Z_][a-zA-Z0-9_.]*(?:\\.\\*)?)(?:\\s+(as)\\s+([A-Z][a-zA-Z0-9_]*))?",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "entity.name.package.nova" },
+                        "3": { "name": "keyword.operator.nova" },
+                        "4": { "name": "entity.name.type.nova" }
+                    }
+                }
+            ]
+        },
+        "class-declaration": {
+            "patterns": [
+                {
+                    "comment": "annotation class declaration",
+                    "match": "\\b(annotation)\\s+(class)\\s+([A-Z][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.modifier.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.type.class.nova" }
+                    }
+                },
+                {
+                    "comment": "enum class declaration",
+                    "match": "\\b(enum)\\s+(class)\\s+([A-Z][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.type.class.nova" }
+                    }
+                },
+                {
+                    "comment": "data class declaration",
+                    "match": "\\b(data)\\s+(class)\\s+([A-Z][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.modifier.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.type.class.nova" }
+                    }
+                },
+                {
+                    "comment": "sealed class/interface declaration",
+                    "match": "\\b(sealed)\\s+(class|interface)\\s+([A-Z][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.modifier.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.type.class.nova" }
+                    }
+                },
+                {
+                    "comment": "abstract class declaration",
+                    "match": "\\b(abstract)\\s+(class)\\s+([A-Z][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.modifier.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.type.class.nova" }
+                    }
+                },
+                {
+                    "comment": "open class declaration",
+                    "match": "\\b(open)\\s+(class)\\s+([A-Z][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.modifier.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.type.class.nova" }
+                    }
+                },
+                {
+                    "comment": "class/interface/enum/object declaration",
+                    "match": "\\b(class|interface|enum|object)\\s+([A-Z][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "entity.name.type.class.nova" }
+                    }
+                }
+            ]
+        },
+        "constructor-declaration": {
+            "patterns": [
+                {
+                    "comment": "Secondary constructor: constructor(...)",
+                    "match": "\\b(constructor)\\s*(?=\\()",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" }
+                    }
+                }
+            ]
+        },
+        "function-declaration": {
+            "patterns": [
+                {
+                    "comment": "Extension function: fun Type.name(...)",
+                    "match": "\\b(fun)\\s+([A-Z][a-zA-Z0-9_?]*)\\.([a-zA-Z_][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "entity.name.type.nova" },
+                        "3": { "name": "entity.name.function.nova" }
+                    }
+                },
+                {
+                    "comment": "Operator function: operator fun methodName(...)",
+                    "match": "\\b(operator)\\s+(fun)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.modifier.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.function.nova" }
+                    }
+                },
+                {
+                    "comment": "Override function: override fun name(...)",
+                    "match": "\\b(override)\\s+(fun)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "storage.modifier.nova" },
+                        "2": { "name": "keyword.declaration.nova" },
+                        "3": { "name": "entity.name.function.nova" }
+                    }
+                },
+                {
+                    "comment": "Regular function: fun name(...)",
+                    "match": "\\b(fun)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "entity.name.function.nova" }
+                    }
+                }
+            ]
+        },
+        "extension-property": {
+            "patterns": [
+                {
+                    "comment": "Extension property: val/var Type.name",
+                    "match": "\\b(val|var)\\s+([A-Z][a-zA-Z0-9_?]*)\\.([a-zA-Z_][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "entity.name.type.nova" },
+                        "3": { "name": "variable.other.declaration.nova" }
+                    }
+                }
+            ]
+        },
+        "variable-declaration": {
+            "patterns": [
+                {
+                    "comment": "Destructuring: val (a, b) = ...",
+                    "match": "\\b(val|var)\\s*(?=\\()",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" }
+                    }
+                },
+                {
+                    "comment": "val/var name : Type = ...",
+                    "match": "\\b(val|var)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "keyword.declaration.nova" },
+                        "2": { "name": "variable.other.declaration.nova" }
+                    }
+                }
+            ]
+        },
+        "lambda": {
+            "patterns": [
+                {
+                    "comment": "Lambda parameters: { x, y ->",
+                    "match": "(?<=\\{)\\s*([a-zA-Z_][a-zA-Z0-9_]*(?:\\s*,\\s*[a-zA-Z_][a-zA-Z0-9_]*)*)\\s*(->)",
+                    "captures": {
+                        "1": { "name": "variable.parameter.lambda.nova" },
+                        "2": { "name": "keyword.operator.arrow.nova" }
+                    }
+                }
+            ]
+        },
+        "when-branch": {
+            "patterns": [
+                {
+                    "comment": "when branch with is Type ->",
+                    "match": "\\b(is)\\s+([A-Z][a-zA-Z0-9_]*)\\s*(->)",
+                    "captures": {
+                        "1": { "name": "keyword.operator.nova" },
+                        "2": { "name": "entity.name.type.nova" },
+                        "3": { "name": "keyword.operator.arrow.nova" }
+                    }
+                },
+                {
+                    "comment": "when else branch: else ->",
+                    "match": "\\b(else)\\s*(->)",
+                    "captures": {
+                        "1": { "name": "keyword.control.nova" },
+                        "2": { "name": "keyword.operator.arrow.nova" }
+                    }
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.nova",
+                    "match": "\\b(if|else|when|for|while|do|return|break|continue|throw|try|catch|finally|guard|use|step)\\b"
+                },
+                {
+                    "name": "keyword.declaration.nova",
+                    "match": "\\b(val|var|fun|class|interface|object|enum|typealias|annotation|companion|import|package|module|constructor)\\b"
+                },
+                {
+                    "name": "storage.modifier.nova",
+                    "match": "\\b(abstract|open|sealed|override|private|protected|public|internal|final|const|inline|operator|suspend|static|data|lazy)\\b"
+                },
+                {
+                    "name": "keyword.operator.nova",
+                    "match": "\\b(as|is|in|!is|!in|to|out|where)\\b"
+                },
+                {
+                    "name": "variable.language.nova",
+                    "match": "\\b(this|super|it)\\b"
+                },
+                {
+                    "name": "keyword.other.nova",
+                    "match": "\\b(await|launch|scope|vararg|reified|crossinline)\\b"
+                }
+            ]
+        },
+        "constants": {
+            "patterns": [
+                {
+                    "name": "constant.language.boolean.nova",
+                    "match": "\\b(true|false)\\b"
+                },
+                {
+                    "name": "constant.language.null.nova",
+                    "match": "\\bnull\\b"
+                }
+            ]
+        },
+        "type-annotation": {
+            "patterns": [
+                {
+                    "comment": "Type annotation with generics: : Map<String, Int>",
+                    "match": ":\\s*([A-Z][a-zA-Z0-9_]*)\\s*(<)",
+                    "captures": {
+                        "1": { "name": "entity.name.type.nova" },
+                        "2": { "name": "punctuation.definition.typeparameters.begin.nova" }
+                    }
+                },
+                {
+                    "comment": "Type annotation after colon: : Type, : Type?",
+                    "match": ":\\s*([A-Z][a-zA-Z0-9_]*)(\\?)?",
+                    "captures": {
+                        "1": { "name": "entity.name.type.nova" },
+                        "2": { "name": "keyword.operator.nullable.nova" }
+                    }
+                }
+            ]
+        },
+        "method-call": {
+            "patterns": [
+                {
+                    "comment": "Method call: .name( or ?.name(",
+                    "match": "(\\??\\.)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+                    "captures": {
+                        "1": { "name": "punctuation.accessor.nova" },
+                        "2": { "name": "entity.name.function.nova" }
+                    }
+                }
+            ]
+        },
+        "function-call": {
+            "patterns": [
+                {
+                    "comment": "Function call: name( -- but not keywords",
+                    "match": "\\b(?!if|else|when|for|while|do|return|break|continue|throw|try|catch|finally|val|var|fun|class|interface|object|enum|in|is|as|step|guard|use)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+                    "captures": {
+                        "1": { "name": "entity.name.function.call.nova" }
+                    }
+                }
+            ]
+        },
+        "property-access": {
+            "patterns": [
+                {
+                    "comment": "Property access: .name or ?.name (not followed by '(')",
+                    "match": "(\\??\\.)([a-zA-Z_][a-zA-Z0-9_]*)(?!\\s*\\()",
+                    "captures": {
+                        "1": { "name": "punctuation.accessor.nova" },
+                        "2": { "name": "variable.other.property.nova" }
+                    }
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "support.type.builtin.nova",
+                    "match": "\\b(Int|Long|Float|Double|Boolean|Char|Byte|Short|String|Any|Unit|Nothing|List|Map|Set|Range|Pair|Array|Result)\\b"
+                },
+                {
+                    "comment": "PascalCase identifiers as types (class names, etc.)",
+                    "name": "entity.name.type.nova",
+                    "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.comparison.nova",
+                    "match": "(===|!==|==|!=|<=|>=|<|>)"
+                },
+                {
+                    "name": "keyword.operator.assignment.nova",
+                    "match": "(\\+=|-=|\\*=|/=|%=|\\?\\?=|=)"
+                },
+                {
+                    "name": "keyword.operator.arithmetic.nova",
+                    "match": "(\\+\\+|--|\\+|-|\\*|/|%)"
+                },
+                {
+                    "name": "keyword.operator.logical.nova",
+                    "match": "(&&|\\|\\||!(?!=))"
+                },
+                {
+                    "name": "keyword.operator.range.nova",
+                    "match": "(\\.\\.<|\\.\\.)"
+                },
+                {
+                    "name": "keyword.operator.pipeline.nova",
+                    "match": "\\|>"
+                },
+                {
+                    "name": "keyword.operator.elvis.nova",
+                    "match": "\\?:"
+                },
+                {
+                    "name": "keyword.operator.safe-call.nova",
+                    "match": "\\?\\."
+                },
+                {
+                    "name": "keyword.operator.safe-index.nova",
+                    "match": "\\?\\["
+                },
+                {
+                    "name": "keyword.operator.error-propagation.nova",
+                    "match": "\\?"
+                },
+                {
+                    "name": "keyword.operator.reference.nova",
+                    "match": "::"
+                },
+                {
+                    "name": "keyword.operator.arrow.nova",
+                    "match": "->"
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {
+                    "name": "punctuation.definition.block.nova",
+                    "match": "[{}]"
+                },
+                {
+                    "name": "punctuation.definition.brackets.nova",
+                    "match": "[\\[\\]]"
+                },
+                {
+                    "name": "punctuation.definition.parens.nova",
+                    "match": "[()]"
+                },
+                {
+                    "name": "punctuation.separator.comma.nova",
+                    "match": ","
+                },
+                {
+                    "name": "punctuation.terminator.nova",
+                    "match": ";"
+                }
+            ]
+        }
+    }
+}

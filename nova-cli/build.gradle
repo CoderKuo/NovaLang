@@ -1,0 +1,47 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+description = 'NovaLang Command Line Interface'
+
+application {
+    mainClass = 'com.novalang.cli.Main'
+}
+
+dependencies {
+    implementation project(':nova-compiler')
+    implementation project(':nova-ir')
+    implementation project(':nova-runtime')
+    implementation project(':nova-script')
+
+    // 命令行解析
+    implementation 'info.picocli:picocli:4.7.5'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.5'
+
+    // JLine - REPL 支持
+    implementation 'org.jline:jline:3.25.0'
+}
+
+jar {
+    // Fat JAR: 打包所有依赖到单个 JAR，可直接 java -jar 运行
+    dependsOn configurations.runtimeClasspath
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes(
+            'Main-Class': 'com.novalang.cli.Main',
+            'Implementation-Title': 'NovaLang',
+            'Implementation-Version': project.version
+        )
+    }
+}
+
+// 创建可执行分发包
+distributions {
+    main {
+        distributionBaseName = 'nova'
+    }
+}

@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang JSR-223 ScriptEngine'
+
+dependencies {
+    api project(':nova-runtime')
+    api project(':nova-ir')
+}

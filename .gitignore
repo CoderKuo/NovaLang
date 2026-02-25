@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+.gradle-home/
+build/
+out/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# Compiled files
+target/
+*.generated.kt
+
+# Test reports
+htmlReport/
+
+# Windows reserved names
+nul

@@ -1,0 +1,42 @@
+@data class User(val id: Int, val name: String, val email: String?)
+
+object Logger {
+    fun info(msg: String) = println("[INFO] $msg")
+}
+
+// 1. 管道操作符
+val processed = "  hello world  "
+    |> trim
+    |> uppercase
+Logger.info("Processed: $processed")
+
+// 2. 切片
+val numbers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Logger.info("First 3: ${numbers[..2]}")
+
+// 3. Spread
+val list1 = [1, 2, 3]
+val list2 = [4, 5, 6]
+val merged = [0, *list1, *list2, 7]
+Logger.info("Merged: $merged")
+
+// 4. 空合并赋值
+var cache: String? = null
+cache ??= "initialized"
+Logger.info("Cache: $cache")
+
+// 5. 安全索引
+val maybeList: List<Int>? = null
+val firstItem = maybeList?[0] ?: -1
+Logger.info("First item: $firstItem")
+
+// 6. 方法引用
+val users = [User(1, "Alice", "a@test.com"), User(2, "Bob", null)]
+
+// 空安全
+val user = User(1, "Alice", "alice@example.com")
+val (id, name, email) = user
+Logger.info("User: $name, email: ${email}")
+
+fun trim(s: String) = s.trim()
+fun uppercase(s: String) = s.uppercase()

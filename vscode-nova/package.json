@@ -1,0 +1,171 @@
+{
+    "name": "nova-language",
+    "displayName": "NovaLang",
+    "description": "NovaLang language support for VS Code",
+    "version": "0.1.0",
+    "publisher": "novalang",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onLanguage:nova"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "nova.runFile",
+                "title": "Run Nova File",
+                "icon": "$(play)",
+                "category": "Nova"
+            },
+            {
+                "command": "nova.compileAndRun",
+                "title": "Compile & Run Nova File",
+                "icon": "$(run-all)",
+                "category": "Nova"
+            },
+            {
+                "command": "nova.buildProject",
+                "title": "Build Nova Project",
+                "icon": "$(package)",
+                "category": "Nova"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "nova.runFile",
+                "key": "ctrl+f5",
+                "when": "editorLangId == nova"
+            },
+            {
+                "command": "nova.compileAndRun",
+                "key": "f6",
+                "when": "editorLangId == nova"
+            }
+        ],
+        "menus": {
+            "editor/title/run": [
+                {
+                    "command": "nova.runFile",
+                    "when": "editorLangId == nova",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "nova.compileAndRun",
+                    "when": "editorLangId == nova",
+                    "group": "navigation@2"
+                }
+            ]
+        },
+        "languages": [
+            {
+                "id": "nova",
+                "aliases": [
+                    "NovaLang",
+                    "nova"
+                ],
+                "extensions": [
+                    ".nova"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "nova",
+                "scopeName": "source.nova",
+                "path": "./syntaxes/nova.tmLanguage.json"
+            }
+        ],
+        "configuration": {
+            "title": "NovaLang",
+            "properties": {
+                "nova.cli.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to nova-cli executable JAR (auto-detected if empty)"
+                },
+                "nova.lsp.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to nova-lsp executable JAR"
+                },
+                "nova.lsp.javaPath": {
+                    "type": "string",
+                    "default": "java",
+                    "description": "Path to Java executable"
+                },
+                "nova.lsp.classpath": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "default": [],
+                    "description": "Additional classpath entries (JAR files or directories) for Java class completion"
+                },
+                "nova.inlayHints.typeHints": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show inferred type hints for val/var declarations"
+                },
+                "nova.inlayHints.parameterHints": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show parameter name hints in function calls"
+                },
+                "nova.semanticHighlighting": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable semantic syntax highlighting"
+                }
+            }
+        },
+        "problemMatchers": [
+            {
+                "name": "nova",
+                "owner": "nova",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning):\\s+(.+)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        ],
+        "semanticTokenScopes": [
+            {
+                "language": "nova",
+                "scopes": {
+                    "class": ["entity.name.type.class.nova"],
+                    "interface": ["entity.name.type.interface.nova"],
+                    "enum": ["entity.name.type.enum.nova"],
+                    "function": ["entity.name.function.nova"],
+                    "variable": ["variable.other.nova"],
+                    "parameter": ["variable.parameter.nova"],
+                    "property": ["variable.other.property.nova"],
+                    "enumMember": ["variable.other.enummember.nova"],
+                    "type": ["entity.name.type.nova"],
+                    "namespace": ["entity.name.namespace.nova"]
+                }
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.75.0",
+        "@types/node": "^18.0.0",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.0"
+    }
+}

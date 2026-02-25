@@ -1,0 +1,7 @@
+val name = "aa"
+
+fun test():String{
+    return "abc"
+}
+
+println(test())

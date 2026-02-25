@@ -1,0 +1,201 @@
+// 数据类 + 解构
+@data class User(val id: Int, val name: String, val email: String?)
+
+// 单例日志器
+object Logger {
+    fun info(msg: String) = println("[INFO] $msg")
+    fun error(msg: String) = println("[ERROR] $msg")
+}
+
+// 枚举
+enum class Color {
+    RED, GREEN, BLUE
+}
+
+// 枚举带构造器参数
+enum class Direction(val dx: Int, val dy: Int) {
+    UP(0, 1), DOWN(0, -1), LEFT(-1, 0), RIGHT(1, 0)
+}
+
+// 类 + 方法
+class Greeter(val target: String) {
+    fun greet(): String = "Hi, $target!"
+}
+
+// 使用 Result 类型的函数
+fun fetchUser(id: Int): Result<User, String> {
+    if (id <= 0) return Err("Invalid ID")
+    return Ok(User(id, "User$id", "user$id@example.com"))
+}
+
+// 错误传播函数
+fun loadUserEmail(userId: Int): Result<String, String> {
+    val u = fetchUser(userId)?
+    val em = u.email ?: return Err("No email")
+    return Ok(em)
+}
+
+// 分类函数
+fun classify(n: Int): String = when {
+    n < 0 -> "negative"
+    n == 0 -> "zero"
+    n < 10 -> "small"
+    n < 100 -> "medium"
+    else -> "large"
+}
+
+// 高阶函数
+fun applyTwice(value: Int, fn: (Int) -> Int): Int {
+    return fn(fn(value))
+}
+
+// 辅助函数
+fun multiply(a: Double, b: Double) = a * b
+fun trim(s: String) = s.trim()
+fun uppercase(s: String) = s.uppercase()
+
+// 扩展函数
+fun String.exclaim(): String = this + "!"
+
+// === 测试开始 ===
+
+// 1. 管道操作符 |>
+val processed = "  hello world  " |> trim |> uppercase
+Logger.info("Processed: $processed")
+
+// 2. 切片语法
+val numbers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Logger.info("First 3: ${numbers[..2]}")
+
+// 3. Spread 操作符
+val list1 = [1, 2, 3]
+val list2 = [4, 5, 6]
+val merged = [0, *list1, *list2, 7]
+Logger.info("Merged: $merged")
+
+// 4. 空合并赋值
+var cache: String? = null
+cache ??= "initialized"
+Logger.info("Cache: $cache")
+
+// 5. 安全索引
+val maybeList: List<Int>? = null
+val firstItem = maybeList?[0] ?: -1
+Logger.info("First item: $firstItem")
+
+// 6. 数据类 + 解构
+val user = User(1, "Alice", "alice@example.com")
+val (id, name, email) = user
+Logger.info("User: $name, email: $email")
+
+// 7. 链式比较
+val port = 8080
+if (1024 < port && port <= 65535) {
+    Logger.info("Valid port: $port")
+}
+
+// 8. Result + 错误传播
+when (val result = fetchUser(1)) {
+    is Ok -> Logger.info("Fetched: ${result.value}")
+    is Err -> Logger.error("Error: ${result.error}")
+}
+
+// 9. 高阶函数 + lambda
+val evens = numbers.filter { it % 2 == 0 }
+Logger.info("Evens: $evens")
+val squares = numbers.map { it * it }
+Logger.info("Squares (first 5): ${squares[..4]}")
+
+// 10. DSL 构建
+val html = buildString { append("<ul><li>test</li></ul>") }
+println(html)
+
+// 11. 扩展函数
+val exclaimed = "Hello".exclaim()
+Logger.info("Exclaim: $exclaimed")
+
+// 12. 枚举
+Logger.info("Color: ${Color.RED}")
+
+// 13. 类型检查
+val anyVal: Any = "Hello World"
+if (anyVal is String) {
+    Logger.info("anyVal is String")
+}
+
+// 14. If 表达式
+val x = 42
+val ifDesc = if (x > 0) "positive" else "non-positive"
+Logger.info("$x is $ifDesc")
+
+// 15. When 表达式（值匹配）
+val grade = when (x) {
+    90 -> "A"
+    80 -> "B"
+    42 -> "Answer"
+    else -> "?"
+}
+Logger.info("Grade: $grade")
+
+// 16. 字符串模板
+val greeting = "Hello, ${user.name}! Your ID is ${user.id}."
+Logger.info(greeting)
+
+// 17. while 循环
+var count = 10
+var factorial = 1
+while (count > 0) {
+    factorial = factorial * count
+    count = count - 1
+}
+Logger.info("10! = $factorial")
+
+// 18. try-catch
+val safeDiv = try {
+    val a = 10
+    val b = 0
+    a / b
+} catch (e: Exception) {
+    -1
+}
+Logger.info("Safe div: $safeDiv")
+
+// 19. 类 + 方法
+val greeter = Greeter("World")
+Logger.info(greeter.greet())
+
+// 20. for 循环
+var sum = 0
+for (i in 1..5) { sum = sum + i }
+Logger.info("Sum 1..5: $sum")
+
+// 21. Map 字面量
+val config = #{"host": "localhost", "port": "8080"}
+Logger.info("Config: $config")
+
+// 22. 多个 when 分支
+Logger.info("Classify 42: ${classify(42)}")
+Logger.info("Classify -5: ${classify(-5)}")
+Logger.info("Classify 0: ${classify(0)}")
+
+// 23. 错误传播
+when (val r = loadUserEmail(1)) {
+    is Ok -> Logger.info("LoadEmail: ${r.value}")
+    is Err -> Logger.error("LoadEmail err: ${r.error}")
+}
+when (val r = loadUserEmail(-1)) {
+    is Ok -> Logger.info("LoadEmail: ${r.value}")
+    is Err -> Logger.error("LoadEmail err: ${r.error}")
+}
+
+// 24. 枚举带构造器参数
+Logger.info("UP dx=${Direction.UP.dx}, dy=${Direction.UP.dy}")
+
+// 25. 数据类 toString
+Logger.info("User toString: $user")
+
+// 26. 高阶函数
+val doubled = applyTwice(3) { it * 2 }
+Logger.info("Apply twice (3, *2): $doubled")
+
+Logger.info("=== All tests passed! ===")

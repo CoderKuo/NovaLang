@@ -1,0 +1,11 @@
+rootProject.name = 'novalang'
+
+include 'nova-runtime-api'
+include 'nova-compiler'
+include 'nova-ir'
+include 'nova-runtime'
+include 'nova-cli'
+include 'nova-lsp'
+include 'nova-example'
+include 'nova-script'
+include 'nova-bukkit'

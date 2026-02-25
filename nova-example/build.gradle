@@ -1,0 +1,58 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+description = 'NovaLang Embedding Examples'
+
+dependencies {
+    // 依赖运行时模块
+    implementation project(':nova-runtime')
+}
+
+// 主类配置
+application {
+    mainClass = 'nova.example.BasicUsageExample'
+}
+
+// 创建不同示例的运行任务
+task runBasic(type: JavaExec) {
+    group = 'examples'
+    description = 'Run basic usage example'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'nova.example.BasicUsageExample'
+}
+
+task runCustomFunctions(type: JavaExec) {
+    group = 'examples'
+    description = 'Run custom functions example'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'nova.example.CustomFunctionsExample'
+}
+
+task runJavaInterop(type: JavaExec) {
+    group = 'examples'
+    description = 'Run Java interop example'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'nova.example.JavaInteropExample'
+}
+
+task runExtensionMethods(type: JavaExec) {
+    group = 'examples'
+    description = 'Run extension methods example'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'nova.example.ExtensionMethodsExample'
+}
+
+task runScriptFile(type: JavaExec) {
+    group = 'examples'
+    description = 'Run script file example'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'nova.example.ScriptFileExample'
+}
+
+task runAllExamples {
+    group = 'examples'
+    description = 'Run all examples'
+    dependsOn runBasic, runCustomFunctions, runJavaInterop, runExtensionMethods, runScriptFile
+}

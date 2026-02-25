@@ -1,0 +1,48 @@
+plugins {
+    id 'java'
+    id 'idea'
+}
+
+allprojects {
+    group = 'com.novalang'
+    version = '0.1.0-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    // 全面兼容 JDK 8：编译器也要嵌入到用户程序中
+    java {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+        options.compilerArgs << '-Xlint:all'
+        options.compilerArgs << '-Xlint:-serial'
+        // 如果使用 JDK 9+ 编译，启用 release 选项确保不使用高版本 API
+        // options.release = 8
+    }
+
+    dependencies {
+        // 测试依赖
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+        testImplementation 'org.assertj:assertj-core:3.24.2'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    test {
+        useJUnitPlatform()
+        testLogging {
+            events 'passed', 'skipped', 'failed'
+        }
+    }
+}
+
+// 根项目不需要编译
+jar.enabled = false

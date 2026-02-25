@@ -1,0 +1,21 @@
+import nova.time.*
+
+class Dog(){
+    fun ssr(){
+        println("ssssrrr")
+    }
+}
+
+val dog = Dog()
+
+dog.also { ss->
+    
+ }
+val dt = DateTime.now()
+println(dt.format("yyyy-MM-dd HH:mm:ss"))
+
+ val fn1 = { abc:String->
+    abc.indexOf("c")
+ }
+
+ println(fn1("ssr cao"))

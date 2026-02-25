@@ -1,0 +1,214 @@
+@data class User(val id: Int, val name: String, val email: String?)
+
+object Logger {
+    fun info(msg: String) = println("[INFO] $msg")
+    fun error(msg: String) = println("[ERROR] $msg")
+}
+
+fun trim(s: String) = s.trim()
+fun uppercase(s: String) = s.uppercase()
+fun multiply(a: Double, b: Double) = a * b
+
+// 1-11 已通过
+val processed = "  hello world  " |> trim |> uppercase
+Logger.info("Processed: $processed")
+val list1 = [1, 2, 3]
+val list2 = [4, 5, 6]
+val merged = [0, *list1, *list2, 7]
+Logger.info("Merged: $merged")
+val user = User(1, "Alice", "alice@example.com")
+val (id, name, email) = user
+Logger.info("User: $name, email: ${email}")
+val fallback = email ?: "N/A"
+Logger.info("Email: $fallback")
+val maybeList: List<Int>? = null
+val firstItem = maybeList?[0] ?: -1
+Logger.info("First item: $firstItem")
+var cache: String? = null
+cache ??= "initialized"
+Logger.info("Cache: $cache")
+val numbers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Logger.info("First 3: ${numbers[..2]}")
+fun fetchUser(userId: Int): Result<User, String> {
+    if (userId <= 0) return Err("Invalid ID")
+    return Ok(User(userId, "User$userId", "user$userId@example.com"))
+}
+when (val result = fetchUser(1)) {
+    is Ok -> Logger.info("Fetched: ${result.value}")
+    is Err -> Logger.error("Error: ${result.error}")
+}
+val html = buildString { append("<ul><li>Alice</li></ul>") }
+println(html)
+val price = multiply(100.0, 1.1)
+Logger.info("Price: $price")
+var sum = 0
+for (i in 1..5) { sum = sum + i }
+Logger.info("Sum 1..5: $sum")
+
+// 12. If 表达式
+val x = 42
+val ifDesc = if (x > 0) "positive" else "non-positive"
+Logger.info("$x is $ifDesc")
+
+// 13. When 表达式（值匹配）
+val grade = when (x) {
+    90 -> "A"
+    80 -> "B"
+    42 -> "Answer"
+    else -> "?"
+}
+Logger.info("Grade: $grade")
+
+// 14. 字符串模板
+val greeting = "Hello, ${user.name}! Your ID is ${user.id}."
+Logger.info(greeting)
+
+// 15. while 循环
+var count = 10
+var factorial = 1
+while (count > 0) {
+    factorial = factorial * count
+    count = count - 1
+}
+Logger.info("10! = $factorial")
+
+// 16. try-catch
+val safeDiv = try {
+    val a = 10
+    val b = 0
+    a / b
+} catch (e: Exception) {
+    -1
+}
+Logger.info("Safe div: $safeDiv")
+
+// 18. 类 + 方法
+class Greeter(val target: String) {
+    fun greet(): String = "Hi, $target!"
+}
+val greeter = Greeter("World")
+Logger.info(greeter.greet())
+
+// 19. 接口
+interface Describable {
+    fun describe(): String
+}
+class Item(val label: String) : Describable {
+    fun describe(): String = "Item: $label"
+}
+val item = Item("Laptop")
+Logger.info(item.describe())
+
+// 20. 枚举
+enum class Color {
+    RED, GREEN, BLUE
+}
+Logger.info("Color: ${Color.RED}")
+
+// 20. 高阶函数 + lambda
+fun applyTwice(value: Int, fn: (Int) -> Int): Int {
+    return fn(fn(value))
+}
+val doubled = applyTwice(3) { it * 2 }
+Logger.info("Apply twice (3, *2): $doubled")
+
+// 21. Map 字面量
+val config = #{"host": "localhost", "port": "8080"}
+Logger.info("Config: $config")
+
+// 22. 多个 when 分支
+fun classify(n: Int): String = when {
+    n < 0 -> "negative"
+    n == 0 -> "zero"
+    n < 10 -> "small"
+    n < 100 -> "medium"
+    else -> "large"
+}
+Logger.info("Classify 42: ${classify(42)}")
+Logger.info("Classify -5: ${classify(-5)}")
+Logger.info("Classify 0: ${classify(0)}")
+
+// 23. 链式比较
+val port = 8080
+if (1024 < port && port <= 65535) {
+    Logger.info("Valid port: $port")
+}
+
+// 24. 数据类 toString
+Logger.info("User toString: $user")
+
+// 25. 手动集合求和
+val items = [10, 20, 30]
+var total = 0
+for (item in items) { total = total + item }
+Logger.info("Total: $total")
+
+// 26. 字符串方法
+val msg = "  Hello, NovaLang!  "
+Logger.info("Trimmed: '${msg.trim()}'")
+Logger.info("Upper: '${msg.trim().uppercase()}'")
+Logger.info("Length: ${msg.trim().length()}")
+
+// 27. 错误传播 ?
+fun loadUserEmail(userId: Int): Result<String, String> {
+    val u = fetchUser(userId)?
+    val em = u.email ?: return Err("No email")
+    return Ok(em)
+}
+when (val r = loadUserEmail(1)) {
+    is Ok -> Logger.info("LoadEmail: ${r.value}")
+    is Err -> Logger.error("LoadEmail err: ${r.error}")
+}
+when (val r = loadUserEmail(-1)) {
+    is Ok -> Logger.info("LoadEmail: ${r.value}")
+    is Err -> Logger.error("LoadEmail err: ${r.error}")
+}
+
+// 28. List map/filter (通过 NovaCollections)
+val nums = [1, 2, 3, 4, 5]
+val evens = nums.filter { it % 2 == 0 }
+Logger.info("Evens: $evens")
+val squares = nums.map { it * it }
+Logger.info("Squares: $squares")
+
+// 29. 扩展函数（使用显式 this.）
+fun String.exclaim(): String = this + "!"
+val exclaimed = "Hello".exclaim()
+Logger.info("Exclaim: $exclaimed")
+
+// 30. 枚举带构造器参数
+enum class Direction(val dx: Int, val dy: Int) {
+    UP(0, 1), DOWN(0, -1), LEFT(-1, 0), RIGHT(1, 0)
+}
+val up = Direction.UP
+Logger.info("UP: $up")
+Logger.info("UP dx=${Direction.UP.dx}, dy=${Direction.UP.dy}")
+
+// 31. 错误传播简化测试
+val errResult = fetchUser(-1)
+Logger.info("errResult: $errResult")
+val okResult = fetchUser(1)
+Logger.info("okResult: $okResult")
+
+// 31b. loadUserEmail 结果直接打印
+val emailOk = loadUserEmail(1)
+Logger.info("emailOk: $emailOk")
+val emailErr = loadUserEmail(-1)
+Logger.info("emailErr: $emailErr")
+
+
+// 32. 继承 (TODO: 需要修复继承编译)
+// class Animal(val name: String) {
+//     fun speak(): String = "$name says ..."
+// }
+// class Dog(name: String) : Animal(name) {
+//     fun speak(): String = "$name says Woof!"
+// }
+
+// 33. 类型检查 is / as
+val anyVal: Any = "Hello World"
+if (anyVal is String) {
+    Logger.info("anyVal is String: $anyVal")
+}
+val castedVal = anyVal as String
+Logger.info("Casted length: ${castedVal.length()}")

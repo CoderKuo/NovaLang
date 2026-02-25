@@ -1,0 +1,23 @@
+// 多文件引用示例 —— 引用 models.nova 中的类型
+// 测试补全: 在 user. 和 product. 后面触发补全
+
+import models.User
+import models.Product
+
+val user = User("Alice", 25)
+println(user.greet())       // 在 user. 后按 Ctrl+Space 测试补全
+println(user.isAdult())
+
+val product = Product(1, "NovaLang Book", 29.99)
+println(product.display())  // 在 product. 后按 Ctrl+Space 测试补全
+
+// 内置类型补全测试
+val msg = "hello world"
+println(msg.toUpperCase())  // 在 msg. 后测试 String 方法补全
+
+val nums = [1, 2, 3, 4, 5]
+println(nums.size())        // 在 nums. 后测试 List 方法补全
+
+val config = #{"host": "localhost", "port": 8080}
+println(config.keys())      // 在 config. 后测试 Map 方法补全
+

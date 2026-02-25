@@ -1,0 +1,59 @@
+// async/await 测试
+import java java.lang.System
+
+fun fib(n: Int): Int {
+    if (n <= 1) return n
+    return fib(n - 1) + fib(n - 2)
+}
+
+fun main() {
+    // 1. 基本用法
+    val f1 = async { 42 }
+    println("await f1 = " + await f1)
+
+    // 2. async 中执行复杂计算
+    val f2 = async {
+        var sum = 0
+        for (i in 1..100) {
+            sum = sum + i
+        }
+        sum
+    }
+    println("1+2+...+100 = " + await f2)
+
+    // 3. 并发执行验证 — 递归斐波那契 CPU 密集任务
+    val N = 32
+
+    val start = System.currentTimeMillis()
+    val fa = async { fib(N) }
+    val fb = async { fib(N) }
+    val ra = await fa
+    val rb = await fb
+    val parallelTime = System.currentTimeMillis() - start
+    println("parallel: fib(" + N + ")=" + ra + "," + rb + " time=" + parallelTime + "ms")
+
+    val start2 = System.currentTimeMillis()
+    val sa = fib(N)
+    val sb = fib(N)
+    val serialTime = System.currentTimeMillis() - start2
+    println("serial:   fib(" + N + ")=" + sa + "," + sb + " time=" + serialTime + "ms")
+
+    if (parallelTime < serialTime) {
+        println(">> parallel is faster! async works")
+    } else {
+        println(">> no speedup detected")
+    }
+
+    // 4. Future 成员访问
+    val f3 = async { "hello" }
+    f3
+    val result = f3.get()
+    println("f3.get() = " + result)
+    println("f3.isDone = " + f3.isDone)
+
+    // 5. async 中的字符串操作
+    val f4 = async { "hello" + " " + "world" }
+    println("string concat = " + await f4)
+
+    println("\n=== async tests completed! ===")
+}

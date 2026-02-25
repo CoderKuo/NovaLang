@@ -1,0 +1,20 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang Runtime Library'
+
+// 运行时库必须严格兼容 JDK 8
+// 不依赖任何 JDK 9+ 的 API
+
+dependencies {
+    // 运行时 API 类型（NovaValue 等）— 消费者必须可见
+    api project(':nova-runtime-api')
+
+    // IR 模块（HIR、MIR、Lowering）— 内部实现，不传递
+    implementation project(':nova-ir')
+
+    // Caffeine 高性能缓存库 (用于 MethodHandleCache, NovaString intern pool 等)
+    // 2.9.3 是最后支持 Java 8 的版本
+    implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
+}

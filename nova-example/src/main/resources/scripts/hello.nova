@@ -1,0 +1,18 @@
+// 简单的 Hello World 示例
+
+fun greet(name: String) {
+    return "Hello, " + name + "!"
+}
+
+val message = greet("Nova")
+println(message)
+
+// 使用类
+class Calculator {
+    fun add(a: Int, b: Int) { return a + b }
+    fun multiply(a: Int, b: Int) { return a * b }
+}
+
+val calc = Calculator()
+println("2 + 3 = " + calc.add(2, 3))
+println("4 * 5 = " + calc.multiply(4, 5))

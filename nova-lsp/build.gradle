@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+description = 'NovaLang Language Server Protocol'
+
+application {
+    mainClass = 'com.novalang.lsp.NovaLanguageServer'
+}
+
+dependencies {
+    implementation project(':nova-compiler')
+    implementation project(':nova-runtime-api')  // NovaTypeRegistry + StdlibRegistry
+    implementation 'com.google.code.gson:gson:2.10.1'
+    // ASM 已通过 nova-compiler 的 api 依赖传递
+}
+
+jar {
+    // Fat JAR: 打包所有依赖到单个 JAR
+    dependsOn configurations.runtimeClasspath
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes(
+            'Main-Class': 'com.novalang.lsp.NovaLanguageServer',
+            'Implementation-Title': 'NovaLang LSP',
+            'Implementation-Version': project.version
+        )
+    }
+}

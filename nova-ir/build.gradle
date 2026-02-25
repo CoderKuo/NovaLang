@@ -1,0 +1,13 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang IR (HIR + MIR)'
+
+dependencies {
+    api project(':nova-compiler')
+
+    // ASM - 字节码生成（MirCodeGenerator 使用）
+    api 'org.ow2.asm:asm:9.6'
+    api 'org.ow2.asm:asm-commons:9.6'
+}

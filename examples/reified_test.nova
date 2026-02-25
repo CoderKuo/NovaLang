@@ -1,0 +1,61 @@
+// reified 关键字测试
+
+// 1. 基础: reified + is 类型检查
+inline fun <reified T> isInstance(value: Any): Boolean {
+    return value is T
+}
+
+println("--- isInstance 类型检查 ---")
+println("isInstance<String>(\"hello\") = " + isInstance<String>("hello"))  // true
+println("isInstance<Int>(\"hello\") = " + isInstance<Int>("hello"))        // false
+println("isInstance<Int>(42) = " + isInstance<Int>(42))                    // true
+println("isInstance<String>(42) = " + isInstance<String>(42))              // false
+
+// 2. T::class 获取类型名
+inline fun <reified T> typeName(): String {
+    return T::class
+}
+
+println("\n--- T::class 类型名 ---")
+println("typeName<String>() = " + typeName<String>())    // String
+println("typeName<Int>() = " + typeName<Int>())          // Int
+println("typeName<Boolean>() = " + typeName<Boolean>())  // Boolean
+
+// 3. 多个 reified 类型参数
+inline fun <reified A, reified B> checkTypes(a: Any, b: Any): Boolean {
+    return a is A && b is B
+}
+
+println("\n--- 多 reified 类型参数 ---")
+println("checkTypes<String, Int>(\"hi\", 1) = " + checkTypes<String, Int>("hi", 1))    // true
+println("checkTypes<Int, String>(\"hi\", 1) = " + checkTypes<Int, String>("hi", 1))    // false
+
+// 4. 自定义类 + reified
+class Dog(val name: String)
+class Cat(val name: String)
+
+inline fun <reified T> isType(value: Any): Boolean {
+    return value is T
+}
+
+val rex = Dog("Rex")
+val kitty = Cat("Kitty")
+
+println("\n--- 自定义类型检查 ---")
+println("isType<Dog>(rex) = " + isType<Dog>(rex))      // true
+println("isType<Cat>(rex) = " + isType<Cat>(rex))      // false
+println("isType<Cat>(kitty) = " + isType<Cat>(kitty))  // true
+
+// 5. 实用场景: 类型安全的过滤
+inline fun <reified T> filterByType(list: List): List {
+    return list.filter { it is T }
+}
+
+val mixed = ["hello", 42, "world", 7, true, "nova"]
+
+println("\n--- filterByType 过滤 ---")
+println("Strings: " + filterByType<String>(mixed))   // [hello, world, nova]
+println("Ints: " + filterByType<Int>(mixed))          // [42, 7]
+
+
+println("\n=== reified 测试完成 ===")
