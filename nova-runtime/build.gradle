@@ -24,6 +24,10 @@ dependencies {
 shadowJar {
     archiveClassifier.set('with-dependencies')
     mergeServiceFiles()
+
+    // 重定位 Caffeine 到我们自己的包下，避免 Bukkit ClassLoader 版本冲突
+    relocate 'com.github.benmanes.caffeine', 'nova.deps.caffeine'
+    relocate 'org.checkerframework', 'nova.deps.checkerframework'
 }
 
 // 构建 fat jar

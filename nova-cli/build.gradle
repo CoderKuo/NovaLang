@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'application'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
 }
 
 description = 'NovaLang Command Line Interface'
@@ -23,21 +24,19 @@ dependencies {
     implementation 'org.jline:jline:3.25.0'
 }
 
-jar {
-    // Fat JAR: 打包所有依赖到单个 JAR，可直接 java -jar 运行
-    dependsOn configurations.runtimeClasspath
-    from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-    }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest {
-        attributes(
-            'Main-Class': 'com.novalang.cli.Main',
-            'Implementation-Title': 'NovaLang',
-            'Implementation-Version': project.version
-        )
-    }
+// Fat JAR 配置
+shadowJar {
+    archiveClassifier.set('')  // 不带后缀，直接作为主产物
+    mergeServiceFiles()
+
+    // 重定位 Caffeine 到我们自己的包下，避免 Bukkit ClassLoader 版本冲突
+    relocate 'com.github.benmanes.caffeine', 'nova.deps.caffeine'
+    relocate 'org.checkerframework', 'nova.deps.checkerframework'
 }
+
+// 使用 shadow jar 作为默认 jar
+jar.enabled = false
+tasks.build.dependsOn shadowJar
 
 // 创建可执行分发包
 distributions {
