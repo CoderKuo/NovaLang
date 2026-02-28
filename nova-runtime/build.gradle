@@ -12,6 +12,9 @@ dependencies {
     // 运行时 API 类型（NovaValue 等）— 消费者必须可见
     api project(':nova-runtime-api')
 
+    // 运行时核心类型（NovaClass, Environment 等）— 消费者必须可见
+    api project(':nova-runtime-types')
+
     // IR 模块（HIR、MIR、Lowering）— 内部实现，不传递
     implementation project(':nova-ir')
 

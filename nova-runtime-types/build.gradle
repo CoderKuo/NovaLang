@@ -1,0 +1,9 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang Runtime Types - core types for Nova runtime'
+
+dependencies {
+    api project(':nova-runtime-api')
+}

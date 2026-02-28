@@ -1,7 +1,6 @@
-package nova.runtime.interpreter;
-import nova.runtime.*;
+package nova.runtime.types;
 
-import com.novalang.compiler.ast.Modifier;
+import nova.runtime.*;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -12,7 +11,7 @@ import java.util.Map;
 /**
  * Nova 类
  */
-public final class NovaClass extends NovaValue implements NovaCallable {
+public final class NovaClass extends AbstractNovaValue implements NovaCallable {
 
     private final String name;
     private final NovaClass superclass;
@@ -91,11 +90,6 @@ public final class NovaClass extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public boolean isCallable() {
-        return true;  // 类可以作为构造函数调用
-    }
-
-    @Override
     public String toString() {
         return "class " + name;
     }
@@ -112,8 +106,8 @@ public final class NovaClass extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-        return interpreter.instantiate(this, args, null);
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+        return ctx.instantiate(this, args, null);
     }
 
     @Override
@@ -122,9 +116,9 @@ public final class NovaClass extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public NovaValue callWithNamed(Interpreter interpreter, List<NovaValue> args,
+    public NovaValue callWithNamed(ExecutionContext ctx, List<NovaValue> args,
                                     Map<String, NovaValue> namedArgs) {
-        return interpreter.instantiate(this, args, namedArgs);
+        return ctx.instantiate(this, args, namedArgs);
     }
 
     // ============ 方法查找 ============

@@ -8,6 +8,7 @@ pluginManagement {
 rootProject.name = 'novalang'
 
 include 'nova-runtime-api'
+include 'nova-runtime-types'
 include 'nova-compiler'
 include 'nova-ir'
 include 'nova-runtime'

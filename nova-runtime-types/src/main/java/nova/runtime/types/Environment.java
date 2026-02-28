@@ -1,4 +1,5 @@
-package nova.runtime.interpreter;
+package nova.runtime.types;
+
 import nova.runtime.*;
 
 import java.util.Arrays;
@@ -136,7 +137,7 @@ public final class Environment {
                 if (isMutable) setMutableBit(idx); else clearMutableBit(idx);
                 return;
             }
-            throw new NovaRuntimeException("Variable already defined: " + name);
+            throw new NovaException("Variable already defined: " + name);
         }
         if (idx >= 0) {
             // REPL 重定义
@@ -171,7 +172,7 @@ public final class Environment {
      * 重置环境（清除所有局部变量，保留 parent 引用）。
      * 用于尾递归优化：复用同一帧，避免分配新 Environment。
      */
-    void reset() {
+    public void reset() {
         // 清空引用帮助 GC
         for (int i = 0; i < size; i++) {
             keys[i] = null;
@@ -187,7 +188,7 @@ public final class Environment {
      * 轻量级重置（for 循环复用）。
      * 清空旧引用帮助 GC 回收，重置可变性标记。
      */
-    void resetForLoop() {
+    public void resetForLoop() {
         if (size > 0) {
             Arrays.fill(keys, 0, size, null);
             Arrays.fill(vals, 0, size, null);
@@ -201,7 +202,7 @@ public final class Environment {
     /**
      * 快速定义不可变变量（跳过重复检查，仅供函数参数绑定等已知不重复的场景）
      */
-    void defineValFast(String name, NovaValue value) {
+    public void defineValFast(String name, NovaValue value) {
         ensureCapacity();
         if (keyIndex != null) keyIndex.put(name, size);
         keys[size] = name;
@@ -213,7 +214,7 @@ public final class Environment {
     /**
      * 快速定义可变变量（跳过重复检查）
      */
-    void defineVarFast(String name, NovaValue value) {
+    public void defineVarFast(String name, NovaValue value) {
         ensureCapacity();
         if (keyIndex != null) keyIndex.put(name, size);
         keys[size] = name;
@@ -249,7 +250,7 @@ public final class Environment {
         int idx = indexOf(name);
         if (idx >= 0) return vals[idx];
         if (parent != null) return parent.get(name);
-        throw new NovaRuntimeException("Undefined variable: " + name);
+        throw new NovaException("Undefined variable: " + name);
     }
 
     /**
@@ -286,7 +287,7 @@ public final class Environment {
         int idx = indexOf(name);
         if (idx >= 0) return !isMutableBit(idx);
         if (parent != null) return parent.isVal(name);
-        throw new NovaRuntimeException("Undefined variable: " + name);
+        throw new NovaException("Undefined variable: " + name);
     }
 
     /**
@@ -314,7 +315,7 @@ public final class Environment {
         int idx = indexOf(name);
         if (idx >= 0) {
             if (!isMutableBit(idx)) {
-                throw new NovaRuntimeException("Cannot reassign val: " + name);
+                throw new NovaException("Cannot reassign val: " + name);
             }
             vals[idx] = value;
             return;
@@ -323,7 +324,7 @@ public final class Environment {
             parent.assign(name, value);
             return;
         }
-        throw new NovaRuntimeException("Undefined variable: " + name);
+        throw new NovaException("Undefined variable: " + name);
     }
 
     /**
@@ -334,7 +335,7 @@ public final class Environment {
         int idx = indexOf(name);
         if (idx >= 0) {
             if (!isMutableBit(idx)) {
-                throw new NovaRuntimeException("Cannot reassign val: " + name);
+                throw new NovaException("Cannot reassign val: " + name);
             }
             vals[idx] = value;
             return true;
@@ -350,7 +351,7 @@ public final class Environment {
         Environment env = ancestor(distance);
         int idx = env.indexOf(name);
         if (idx >= 0) return env.vals[idx];
-        throw new NovaRuntimeException("Undefined variable: " + name);
+        throw new NovaException("Undefined variable: " + name);
     }
 
     /**
@@ -361,12 +362,12 @@ public final class Environment {
         int idx = env.indexOf(name);
         if (idx >= 0) {
             if (!env.isMutableBit(idx)) {
-                throw new NovaRuntimeException("Cannot reassign val: " + name);
+                throw new NovaException("Cannot reassign val: " + name);
             }
             env.vals[idx] = value;
             return;
         }
-        throw new NovaRuntimeException("Undefined variable: " + name);
+        throw new NovaException("Undefined variable: " + name);
     }
 
     private Environment ancestor(int distance) {
@@ -384,13 +385,13 @@ public final class Environment {
         Environment env = this;
         for (int i = 0; i < depth; i++) {
             if (env.parent == null) {
-                throw new NovaRuntimeException(
+                throw new NovaException(
                     "Internal error: variable scope depth " + depth + " exceeds environment chain (stopped at depth " + i + ")");
             }
             env = env.parent;
         }
         if (slot < 0 || slot >= env.size) {
-            throw new NovaRuntimeException(
+            throw new NovaException(
                 "Internal error: slot " + slot + " out of bounds (scope has " + env.size + " variables, depth=" + depth + ")");
         }
         return env.vals[slot];
@@ -403,17 +404,17 @@ public final class Environment {
         Environment env = this;
         for (int i = 0; i < depth; i++) {
             if (env.parent == null) {
-                throw new NovaRuntimeException(
+                throw new NovaException(
                     "Internal error: variable scope depth " + depth + " exceeds environment chain (stopped at depth " + i + ")");
             }
             env = env.parent;
         }
         if (slot < 0 || slot >= env.size) {
-            throw new NovaRuntimeException(
+            throw new NovaException(
                 "Internal error: slot " + slot + " out of bounds (scope has " + env.size + " variables, depth=" + depth + ")");
         }
         if (!env.isMutableBit(slot)) {
-            throw new NovaRuntimeException("Cannot reassign val: " + env.keys[slot]);
+            throw new NovaException("Cannot reassign val: " + env.keys[slot]);
         }
         env.vals[slot] = value;
     }

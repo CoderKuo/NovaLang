@@ -1,4 +1,5 @@
-package nova.runtime.interpreter;
+package nova.runtime.types;
+
 import nova.runtime.*;
 
 import java.util.ArrayList;
@@ -23,7 +24,7 @@ import java.util.Set;
  * }
  * </pre>
  */
-public final class NovaInterface extends NovaValue {
+public final class NovaInterface extends AbstractNovaValue {
 
     private final String name;
     private final List<NovaInterface> superInterfaces;
