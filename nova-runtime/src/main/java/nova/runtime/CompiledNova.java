@@ -2,6 +2,9 @@ package nova.runtime;
 
 import nova.runtime.interpreter.MethodHandleCache;
 import nova.runtime.interpreter.NovaRuntimeException;
+import com.novalang.compiler.ast.decl.Program;
+import com.novalang.compiler.lexer.Lexer;
+import com.novalang.compiler.parser.Parser;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -36,6 +39,7 @@ public final class CompiledNova {
     private final String source;              // nullable
     private final String fileName;            // nullable
     private final Nova nova;                 // nullable
+    private final Program program;           // nullable, 预解析的 AST
 
     // ── 字节码模式（独立运行） ──
     private final MethodHandle mainHandle;   // nullable
@@ -45,11 +49,12 @@ public final class CompiledNova {
     /** 函数名 → 所属编译类（惰性缓存，避免每次全表扫描） */
     private final Map<String, Class<?>> funcClassCache = new HashMap<>();
 
-    /** 解释器模式构造 */
+    /** 解释器模式构造 — 预解析源代码为 AST，run() 时跳过词法分析和解析 */
     CompiledNova(String source, String fileName, Nova nova) {
         this.source = source;
         this.fileName = fileName;
         this.nova = nova;
+        this.program = new Parser(new Lexer(source, fileName), fileName).parse();
         this.mainHandle = null;
         this.compiledClasses = null;
         this.extensionRegistry = null;
@@ -60,6 +65,7 @@ public final class CompiledNova {
         this.source = null;
         this.fileName = null;
         this.nova = null;
+        this.program = null;
         this.compiledClasses = classes;
         this.mainHandle = findMain(classes);
         this.extensionRegistry = extensionRegistry;
@@ -80,6 +86,26 @@ public final class CompiledNova {
     public Object run(Object... kvBindings) {
         applyBindings(kvBindings);
         return run();
+    }
+
+    /**
+     * 检查是否存在指定名称的函数。
+     */
+    public boolean hasFunction(String funcName) {
+        if (nova != null) {
+            NovaValue val = nova.getInterpreter().getGlobals().tryGet(funcName);
+            return val instanceof NovaCallable;
+        }
+        // 字节码模式
+        if (funcClassCache.containsKey(funcName)) return true;
+        MethodHandleCache cache = MethodHandleCache.getInstance();
+        for (Class<?> cls : compiledClasses.values()) {
+            if (cache.hasMethodName(cls, funcName)) {
+                funcClassCache.put(funcName, cls);
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -155,7 +181,7 @@ public final class CompiledNova {
     // ── 内部方法 ──
 
     private Object runInterpreted() {
-        NovaValue result = nova.getInterpreter().eval(source, fileName);
+        NovaValue result = nova.getInterpreter().eval(source, fileName, program);
         if (result == NovaNull.UNIT) return null;
         return result.toJavaValue();
     }

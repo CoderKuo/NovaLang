@@ -9,8 +9,8 @@ import java.util.*;
  *
  * <p>编译后的字节码对函数调用生成：
  * <ul>
- *   <li>arity 0-3 → {@code INVOKEINTERFACE FunctionN.invoke(args)}</li>
- *   <li>arity 4-8 → {@code LambdaInvoker.invokeN(fn, args)}（缓存反射）</li>
+ *   <li>arity 0-8 → {@code INVOKEINTERFACE FunctionN.invoke(args)}</li>
+ *   <li>arity 9+ → {@code LambdaInvoker.invokeN(fn, args)}（缓存反射）</li>
  * </ul>
  * 本类负责将 {@link NovaNativeFunction}（解释器侧）适配为上述路径可调用的对象。
  *
@@ -30,7 +30,7 @@ public final class NativeFunctionAdapter {
     /**
      * 将 NovaNativeFunction 适配为编译器可调用的对象。
      *
-     * @return arity 0-3 返回 FunctionN 实例；arity 4+/varargs 返回带 invoke 重载的适配器
+     * @return arity 0-8 返回 FunctionN 实例；arity 9+/varargs 返回带 invoke 重载的适配器
      */
     public static Object adapt(NovaNativeFunction nf) {
         switch (nf.getArity()) {
@@ -39,14 +39,45 @@ public final class NativeFunctionAdapter {
                         callNative(nf, Collections.emptyList());
             case 1:
                 return (Function1<Object, Object>) (a1) ->
-                        callNative(nf, Collections.singletonList(NovaValue.fromJava(a1)));
+                        callNative(nf, Collections.singletonList(AbstractNovaValue.fromJava(a1)));
             case 2:
                 return (Function2<Object, Object, Object>) (a1, a2) ->
-                        callNative(nf, Arrays.asList(NovaValue.fromJava(a1), NovaValue.fromJava(a2)));
+                        callNative(nf, Arrays.asList(AbstractNovaValue.fromJava(a1), AbstractNovaValue.fromJava(a2)));
             case 3:
                 return (Function3<Object, Object, Object, Object>) (a1, a2, a3) ->
                         callNative(nf, Arrays.asList(
-                                NovaValue.fromJava(a1), NovaValue.fromJava(a2), NovaValue.fromJava(a3)));
+                                AbstractNovaValue.fromJava(a1), AbstractNovaValue.fromJava(a2), AbstractNovaValue.fromJava(a3)));
+            case 4:
+                return (Function4<Object, Object, Object, Object, Object>) (a1, a2, a3, a4) ->
+                        callNative(nf, Arrays.asList(
+                                AbstractNovaValue.fromJava(a1), AbstractNovaValue.fromJava(a2),
+                                AbstractNovaValue.fromJava(a3), AbstractNovaValue.fromJava(a4)));
+            case 5:
+                return (Function5<Object, Object, Object, Object, Object, Object>) (a1, a2, a3, a4, a5) ->
+                        callNative(nf, Arrays.asList(
+                                AbstractNovaValue.fromJava(a1), AbstractNovaValue.fromJava(a2),
+                                AbstractNovaValue.fromJava(a3), AbstractNovaValue.fromJava(a4),
+                                AbstractNovaValue.fromJava(a5)));
+            case 6:
+                return (Function6<Object, Object, Object, Object, Object, Object, Object>) (a1, a2, a3, a4, a5, a6) ->
+                        callNative(nf, Arrays.asList(
+                                AbstractNovaValue.fromJava(a1), AbstractNovaValue.fromJava(a2),
+                                AbstractNovaValue.fromJava(a3), AbstractNovaValue.fromJava(a4),
+                                AbstractNovaValue.fromJava(a5), AbstractNovaValue.fromJava(a6)));
+            case 7:
+                return (Function7<Object, Object, Object, Object, Object, Object, Object, Object>) (a1, a2, a3, a4, a5, a6, a7) ->
+                        callNative(nf, Arrays.asList(
+                                AbstractNovaValue.fromJava(a1), AbstractNovaValue.fromJava(a2),
+                                AbstractNovaValue.fromJava(a3), AbstractNovaValue.fromJava(a4),
+                                AbstractNovaValue.fromJava(a5), AbstractNovaValue.fromJava(a6),
+                                AbstractNovaValue.fromJava(a7)));
+            case 8:
+                return (Function8<Object, Object, Object, Object, Object, Object, Object, Object, Object>) (a1, a2, a3, a4, a5, a6, a7, a8) ->
+                        callNative(nf, Arrays.asList(
+                                AbstractNovaValue.fromJava(a1), AbstractNovaValue.fromJava(a2),
+                                AbstractNovaValue.fromJava(a3), AbstractNovaValue.fromJava(a4),
+                                AbstractNovaValue.fromJava(a5), AbstractNovaValue.fromJava(a6),
+                                AbstractNovaValue.fromJava(a7), AbstractNovaValue.fromJava(a8)));
             default:
                 return new HighArityAdapter(nf);
         }
@@ -82,7 +113,7 @@ public final class NativeFunctionAdapter {
     }
 
     /**
-     * arity 4-8 适配器。提供 invoke 重载方法，
+     * arity 9+ 适配器。提供 invoke 重载方法，
      * 由 {@code LambdaInvoker} 通过缓存反射调用。
      * 不实现 FunctionN 接口，避免 {@code andThen} 默认方法冲突。
      */
@@ -100,7 +131,7 @@ public final class NativeFunctionAdapter {
 
         private Object callN(Object... javaArgs) {
             List<NovaValue> args = new ArrayList<>(javaArgs.length);
-            for (Object a : javaArgs) args.add(NovaValue.fromJava(a));
+            for (Object a : javaArgs) args.add(AbstractNovaValue.fromJava(a));
             return callNative(nf, args);
         }
     }

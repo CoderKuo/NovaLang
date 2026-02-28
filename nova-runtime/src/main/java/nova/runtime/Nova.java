@@ -2,10 +2,12 @@ package nova.runtime;
 
 import com.novalang.ir.NovaIrCompiler;
 import nova.runtime.interpreter.*;
+import nova.runtime.types.Environment;
 
 
 import java.io.*;
 import java.util.*;
+import java.util.function.Consumer;
 
 /**
  * Nova 便捷 API — 一行代码执行 Nova 脚本。
@@ -74,7 +76,7 @@ public final class Nova {
      * 同时写入 valRegistry 供字节码模式使用。
      */
     public Nova set(String name, Object value) {
-        NovaValue nv = NovaValue.fromJava(value);
+        NovaValue nv = AbstractNovaValue.fromJava(value);
         Environment env = interpreter.getGlobals();
         if (env.contains(name)) {
             if (!env.isVal(name)) {
@@ -99,9 +101,143 @@ public final class Nova {
      * </pre>
      */
     public Nova defineVal(String name, Object value) {
-        interpreter.getGlobals().defineVal(name, NovaValue.fromJava(value));
+        interpreter.getGlobals().defineVal(name, AbstractNovaValue.fromJava(value));
         valRegistry.put(name, NativeFunctionAdapter.toBindingValue(value));
         return this;
+    }
+
+    // ── 注入 Java 函数（自动类型转换） ───────────────────────
+
+    /**
+     * 注入无参 Java 函数。
+     * <pre>nova.defineFunction("now", () -> System.currentTimeMillis());</pre>
+     */
+    public Nova defineFunction(String name, Function0<Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 0, (ctx, args) ->
+                wrapReturn(func.invoke())));
+    }
+
+    /**
+     * 注入单参 Java 函数。参数自动从 Nova 转换为 Java 类型。
+     * <pre>nova.defineFunction("greet", name -> "Hello, " + name);</pre>
+     */
+    public Nova defineFunction(String name, Function1<Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 1, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0))))));
+    }
+
+    /**
+     * 注入双参 Java 函数。
+     * <pre>nova.defineFunction("add", (a, b) -> (int)a + (int)b);</pre>
+     */
+    public Nova defineFunction(String name, Function2<Object, Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 2, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1))))));
+    }
+
+    /** 注入三参 Java 函数。 */
+    public Nova defineFunction(String name, Function3<Object, Object, Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 3, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2))))));
+    }
+
+    /** 注入四参 Java 函数。 */
+    public Nova defineFunction(String name, Function4<Object, Object, Object, Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 4, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3))))));
+    }
+
+    /** 注入五参 Java 函数。 */
+    public Nova defineFunction(String name, Function5<Object, Object, Object, Object, Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 5, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4))))));
+    }
+
+    /** 注入六参 Java 函数。 */
+    public Nova defineFunction(String name, Function6<Object, Object, Object, Object, Object, Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 6, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5))))));
+    }
+
+    /** 注入七参 Java 函数。 */
+    public Nova defineFunction(String name, Function7<Object, Object, Object, Object, Object, Object, Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 7, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6))))));
+    }
+
+    /** 注入八参 Java 函数。 */
+    public Nova defineFunction(String name, Function8<Object, Object, Object, Object, Object, Object, Object, Object, Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, 8, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6)), unwrap(args.get(7))))));
+    }
+
+    /**
+     * 注入可变参数 Java 函数。
+     * <pre>
+     * nova.defineFunctionVararg("sum", args -> {
+     *     int total = 0;
+     *     for (Object a : args) total += (int) a;
+     *     return total;
+     * });
+     * </pre>
+     */
+    public Nova defineFunctionVararg(String name, Function1<Object[], Object> func) {
+        return defineVal(name, new NovaNativeFunction(name, -1, (ctx, args) -> {
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) javaArgs[i] = unwrap(args.get(i));
+            return wrapReturn(func.invoke(javaArgs));
+        }));
+    }
+
+    // ── 别名 ──────────────────────────────────────────
+
+    /**
+     * 为已注册的函数或变量创建别名。
+     * <pre>
+     * nova.defineFunction("sum", (a, b) -> (int) a + (int) b);
+     * nova.alias("sum", "求和", "add");
+     * // Nova 脚本: 求和(1, 2)  → 3
+     * </pre>
+     */
+    public Nova alias(String existing, String... aliases) {
+        NovaValue val = interpreter.getGlobals().tryGet(existing);
+        if (val == null) {
+            throw new NovaRuntimeException("Cannot create alias: '" + existing + "' is not defined");
+        }
+        for (String alias : aliases) {
+            interpreter.getGlobals().defineVal(alias, val);
+            valRegistry.put(alias, valRegistry.get(existing));
+        }
+        return this;
+    }
+
+    /**
+     * 为已注册的扩展方法创建别名。
+     * <pre>
+     * nova.registerExtension(String.class, "reverse", (s) -> ...);
+     * nova.aliasExtension(String.class, "reverse", "反转");
+     * // Nova 脚本: "hello".反转()  → "olleh"
+     * </pre>
+     */
+    public Nova aliasExtension(Class<?> targetType, String existing, String... aliases) {
+        nova.runtime.NovaCallable method = interpreter.getExtension(targetType, existing);
+        if (method == null) {
+            throw new NovaRuntimeException("Cannot create alias: extension '"
+                    + existing + "' is not registered for " + targetType.getName());
+        }
+        for (String alias : aliases) {
+            registerExtension(targetType, alias, method);
+        }
+        return this;
+    }
+
+    private static Object unwrap(NovaValue v) {
+        return v == null || v.isNull() ? null : v.toJavaValue();
+    }
+
+    private static NovaValue wrapReturn(Object result) {
+        if (result == null) return NovaNull.UNIT;
+        return AbstractNovaValue.fromJava(result);
     }
 
     /**
@@ -111,7 +247,7 @@ public final class Nova {
      * nova.registerExtension(String.class, "reverse", new NovaNativeFunction(...));
      * </pre>
      */
-    public Nova registerExtension(Class<?> targetType, String methodName, NovaCallable method) {
+    public Nova registerExtension(Class<?> targetType, String methodName, nova.runtime.NovaCallable method) {
         // 解释器侧
         interpreter.registerExtension(targetType, methodName, method);
         // 编译器侧 — 适配 NovaCallable → ExtensionMethod
@@ -124,9 +260,9 @@ public final class Nova {
                     @Override
                     public Object invoke(Object receiver, Object[] args) {
                         List<NovaValue> novaArgs = new ArrayList<>();
-                        novaArgs.add(NovaValue.fromJava(receiver));
-                        for (Object a : args) novaArgs.add(NovaValue.fromJava(a));
-                        NovaValue result = method.call(null, novaArgs);
+                        novaArgs.add(AbstractNovaValue.fromJava(receiver));
+                        for (Object a : args) novaArgs.add(AbstractNovaValue.fromJava(a));
+                        NovaValue result = method.call((ExecutionContext)null, novaArgs);
                         return result == NovaNull.UNIT ? null : result.toJavaValue();
                     }
                 });
@@ -135,6 +271,152 @@ public final class Nova {
 
     ExtensionRegistry getExtensionRegistry() {
         return extensionRegistry;
+    }
+
+    // ── 扩展方法 Lambda 便捷注册 ───────────────────────
+
+    /** 注册扩展方法：receiver → result（0 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function1<Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 1, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0))))));
+    }
+
+    /** 注册扩展方法：(receiver, arg1) → result（1 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function2<Object, Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 2, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1))))));
+    }
+
+    /** 注册扩展方法：(receiver, arg1, arg2) → result（2 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function3<Object, Object, Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 3, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2))))));
+    }
+
+    /** 注册扩展方法：(receiver, arg1, arg2, arg3) → result（3 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function4<Object, Object, Object, Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 4, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3))))));
+    }
+
+    /** 注册扩展方法：(receiver, arg1~4) → result（4 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function5<Object, Object, Object, Object, Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 5, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4))))));
+    }
+
+    /** 注册扩展方法：(receiver, arg1~5) → result（5 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function6<Object, Object, Object, Object, Object, Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 6, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5))))));
+    }
+
+    /** 注册扩展方法：(receiver, arg1~6) → result（6 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function7<Object, Object, Object, Object, Object, Object, Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 7, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6))))));
+    }
+
+    /** 注册扩展方法：(receiver, arg1~7) → result（7 额外参数）。 */
+    public Nova registerExtension(Class<?> type, String name, Function8<Object, Object, Object, Object, Object, Object, Object, Object, Object> func) {
+        return registerExtension(type, name, new NovaNativeFunction(name, 8, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6)), unwrap(args.get(7))))));
+    }
+
+    // ── 扩展方法批量注册 ──────────────────────────────
+
+    /**
+     * 扫描 clazz 中所有 {@code @NovaExt} 注解方法，批量注册为 targetType 的扩展方法。
+     * 方法必须是 public static，第一个参数（非 Interpreter）约定为 receiver。
+     * <pre>
+     * public class StringExtensions {
+     *     &#64;NovaExt("shout")
+     *     public static String shout(String self) {
+     *         return self.toUpperCase() + "!";
+     *     }
+     * }
+     * nova.registerExtensions(String.class, StringExtensions.class);
+     * // Nova 脚本: "hello".shout()  → "HELLO!"
+     * </pre>
+     */
+    public Nova registerExtensions(Class<?> targetType, Class<?> clazz) {
+        NovaRegistry.registerExtensions(targetType, clazz,
+                (name, nf) -> registerExtension(targetType, name, nf));
+        return this;
+    }
+
+    // ── 函数集 / 命名空间注册 ────────────────────────────
+
+    /**
+     * 扫描 {@code @NovaFunc} 注解的方法，注册为顶级函数。
+     * <pre>
+     * public class MathFunctions {
+     *     &#64;NovaFunc("sqrt")
+     *     public static double sqrt(double x) { return Math.sqrt(x); }
+     * }
+     * nova.registerFunctions(MathFunctions.class);
+     * // Nova 脚本: sqrt(16)
+     * </pre>
+     */
+    public Nova registerFunctions(Class<?> clazz) {
+        NovaRegistry.registerAll(interpreter.getGlobals(), clazz);
+        return this;
+    }
+
+    /**
+     * 扫描 {@code @NovaFunc} 注解的方法，注册到命名空间。支持增量合并。
+     * <pre>
+     * nova.registerFunctions("math", MathFunctions.class);
+     * nova.registerFunctions("math", TrigFunctions.class); // 合并到同一命名空间
+     * // Nova 脚本: math.sqrt(16), math.sin(1.0)
+     * </pre>
+     */
+    public Nova registerFunctions(String namespace, Class<?> clazz) {
+        NovaLibrary lib = getOrCreateLibrary(namespace);
+        NovaRegistry.registerAll(lib, clazz);
+        return this;
+    }
+
+    /**
+     * Builder 模式注册命名空间。支持增量合并。
+     * <pre>
+     * nova.defineLibrary("http", lib -> {
+     *     lib.defineFunction("get", url -> httpGet((String) url));
+     *     lib.defineFunction("post", (url, body) -> httpPost((String) url, (String) body));
+     *     lib.defineVal("TIMEOUT", 30000);
+     * });
+     * // Nova 脚本: http.get("https://..."), http.TIMEOUT
+     * </pre>
+     */
+    public Nova defineLibrary(String name, Consumer<LibraryBuilder> config) {
+        NovaLibrary lib = getOrCreateLibrary(name);
+        config.accept(new LibraryBuilder(lib));
+        return this;
+    }
+
+    /**
+     * 将 Java 对象直接暴露为命名空间（通过 Java 互操作访问其方法和字段）。
+     * <pre>
+     * nova.registerObject("db", myDatabaseService);
+     * // Nova 脚本: db.query("SELECT ..."), db.close()
+     * </pre>
+     */
+    public Nova registerObject(String name, Object javaObject) {
+        return defineVal(name, new NovaExternalObject(javaObject));
+    }
+
+    /**
+     * 获取或创建命名空间。已存在时返回现有实例（支持增量注册）。
+     */
+    private NovaLibrary getOrCreateLibrary(String name) {
+        NovaValue existing = interpreter.getGlobals().tryGet(name);
+        if (existing instanceof NovaLibrary) {
+            return (NovaLibrary) existing;
+        }
+        NovaLibrary lib = new NovaLibrary(name);
+        interpreter.getGlobals().defineVal(name, lib);
+        valRegistry.put(name, lib);
+        return lib;
     }
 
     /**
@@ -269,6 +551,14 @@ public final class Nova {
     // ── 调用函数 ──────────────────────────────────────────
 
     /**
+     * 检查是否存在指定名称的函数。
+     */
+    public boolean hasFunction(String funcName) {
+        NovaValue val = interpreter.getGlobals().tryGet(funcName);
+        return val instanceof NovaCallable;
+    }
+
+    /**
      * 调用已定义的 Nova 函数，参数自动从 Java 转换。
      */
     public Object call(String funcName, Object... args) {
@@ -276,13 +566,13 @@ public final class Nova {
         if (val == null) {
             throw new NovaRuntimeException("Function '" + funcName + "' is not defined");
         }
-        if (!(val instanceof NovaCallable)) {
+        if (!(val instanceof nova.runtime.NovaCallable)) {
             throw new NovaRuntimeException("'" + funcName + "' is not callable");
         }
-        NovaCallable callable = (NovaCallable) val;
+        nova.runtime.NovaCallable callable = (nova.runtime.NovaCallable) val;
         List<NovaValue> novaArgs = new ArrayList<>(args.length);
         for (Object arg : args) {
-            novaArgs.add(NovaValue.fromJava(arg));
+            novaArgs.add(AbstractNovaValue.fromJava(arg));
         }
         NovaValue result = callable.call(interpreter, novaArgs);
         return toJava(result);
