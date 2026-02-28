@@ -1,10 +1,9 @@
 package nova.runtime.interpreter.reflect;
 import nova.runtime.*;
 
-import com.novalang.compiler.ast.Modifier;
-import nova.runtime.interpreter.NovaCallable;
-import nova.runtime.interpreter.NovaClass;
-import nova.runtime.interpreter.NovaInterface;
+import nova.runtime.types.Modifier;
+import nova.runtime.types.NovaClass;
+import nova.runtime.types.NovaInterface;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -16,7 +15,7 @@ import java.util.Map;
 /**
  * 类反射信息
  */
-public final class NovaClassInfo extends NovaValue {
+public final class NovaClassInfo extends AbstractNovaValue {
 
     // 公共字段（编译模式 NovaDynamic.getMember 可读）
     public final String name;

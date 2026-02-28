@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.*;
 
 import java.util.function.Function;
 
@@ -22,8 +23,28 @@ final class TypeOps {
         // NovaNull doesn't match any other type
         if (value instanceof NovaNull) return false;
 
-        // Exception: Nova exceptions are always catchable
-        if ("Exception".equals(typeName) || "java.lang.Exception".equals(typeName)) return true;
+        // Exception: 只匹配实际的异常类型值
+        if ("Exception".equals(typeName) || "java.lang.Exception".equals(typeName)) {
+            // NovaExternalObject 包装的 Throwable
+            if (value instanceof NovaExternalObject) {
+                Object javaObj = value.toJavaValue();
+                return javaObj instanceof Throwable;
+            }
+            // NovaObject 继承链中有 Exception
+            if (value instanceof NovaObject) {
+                NovaObject novaObj = (NovaObject) value;
+                NovaClass cls = novaObj.getNovaClass();
+                while (cls != null) {
+                    if ("Exception".equals(cls.getName())) return true;
+                    cls = cls.getSuperclass();
+                }
+                // 检查 Java 超类
+                if (novaObj.getNovaClass().getJavaSuperclass() != null) {
+                    return Throwable.class.isAssignableFrom(novaObj.getNovaClass().getJavaSuperclass());
+                }
+            }
+            return false;
+        }
 
         // Result supertype
         if ("Result".equals(typeName) && value instanceof NovaResult) return true;

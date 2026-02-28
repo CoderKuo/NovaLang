@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 import nova.runtime.*;
+import nova.runtime.types.*;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -12,7 +13,7 @@ import java.util.Map;
  * <p>字段存储使用紧凑的 NovaValue[] 数组，索引由 NovaClass.fieldLayout 预计算。
  * 布局外的动态字段（极少发生）使用惰性 overflowFields HashMap。</p>
  */
-public final class NovaObject extends NovaValue {
+public final class NovaObject extends AbstractNovaValue {
 
     private final NovaClass novaClass;
     private final NovaValue[] fieldValues;

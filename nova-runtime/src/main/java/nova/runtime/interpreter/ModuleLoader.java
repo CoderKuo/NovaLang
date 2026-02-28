@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 
+import nova.runtime.types.Environment;
 import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.Parser;
 

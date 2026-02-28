@@ -1,5 +1,8 @@
 package nova.runtime.interpreter;
 
+import nova.runtime.NovaCallable;
+import nova.runtime.types.*;
+
 /**
  * 预解析的方法调用站点，缓存在 {@link com.novalang.ir.mir.MirInst#cache} 中
  * 避免每次 INVOKE_VIRTUAL/INVOKE_STATIC 执行时重复字符串解析。
@@ -16,7 +19,7 @@ final class MirCallSite {
     /** 单态内联缓存：上次成功解析的接收者类 */
     NovaClass cachedClass;
     /** 单态内联缓存：上次成功解析的方法 */
-    NovaCallable cachedMethod;
+    nova.runtime.NovaCallable cachedMethod;
 
     /** INVOKE_STATIC 缓存：已解析的 MirCallable（消除 HashMap 查找） */
     MirCallable resolvedCallable;

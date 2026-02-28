@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 
+import nova.runtime.AbstractNovaValue;
 import nova.runtime.NovaNull;
 import nova.runtime.NovaValue;
 
@@ -19,7 +20,7 @@ import java.util.concurrent.*;
  *   <li><b>supervisorScope</b>：子任务失败仅影响自身，不传播到兄弟</li>
  * </ul>
  */
-public final class NovaScope extends NovaValue {
+public final class NovaScope extends AbstractNovaValue {
 
     private final Interpreter interpreter;
     private final Executor executor;
@@ -38,7 +39,7 @@ public final class NovaScope extends NovaValue {
     /**
      * 在当前作用域启动异步任务，返回 {@link NovaDeferred}。
      */
-    public NovaDeferred async(NovaCallable block) {
+    public NovaDeferred async(nova.runtime.NovaCallable block) {
         checkActive();
         CompletableFuture<NovaValue> future = CompletableFuture.supplyAsync(() -> {
             try {
@@ -56,7 +57,7 @@ public final class NovaScope extends NovaValue {
     /**
      * 在当前作用域启动无返回值任务，返回 {@link NovaJob}。
      */
-    public NovaJob launch(NovaCallable block) {
+    public NovaJob launch(nova.runtime.NovaCallable block) {
         checkActive();
         CompletableFuture<NovaValue> future = CompletableFuture.supplyAsync(() -> {
             try {

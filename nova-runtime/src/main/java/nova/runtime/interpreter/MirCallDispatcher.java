@@ -296,8 +296,8 @@ final class MirCallDispatcher {
         switch (argCount) {
             case 0: return Collections.emptyList();
             case 1: return Collections.singletonList(frame.get(ops[1]));
-            case 2: return List.of(frame.get(ops[1]), frame.get(ops[2]));
-            case 3: return List.of(frame.get(ops[1]), frame.get(ops[2]), frame.get(ops[3]));
+            case 2: return Arrays.asList(frame.get(ops[1]), frame.get(ops[2]));
+            case 3: return Arrays.asList(frame.get(ops[1]), frame.get(ops[2]), frame.get(ops[3]));
             default:
                 NovaValue[] arr = new NovaValue[argCount];
                 for (int i = 0; i < argCount; i++) arr[i] = frame.get(ops[i + 1]);

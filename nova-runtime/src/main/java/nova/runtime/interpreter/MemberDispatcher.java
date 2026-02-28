@@ -142,7 +142,7 @@ public final class MemberDispatcher {
             new NovaNativeFunction(name, arity, (callInterp, args) -> {
                 try {
                     // 构建 MethodHandle 调用参数
-                    Object[] invokeArgs = buildInvokeArgs(target, callInterp, needsInterpreter,
+                    Object[] invokeArgs = buildInvokeArgs(target, (Interpreter) callInterp, needsInterpreter,
                                                           args, paramTypes);
                     Object result = mh.invokeWithArguments(invokeArgs);
                     return wrapResult(result, returnType);
@@ -195,7 +195,7 @@ public final class MemberDispatcher {
             return NovaDouble.of((Double) result);
         if (returnType == String.class)
             return NovaString.of((String) result);
-        return NovaValue.fromJava(result);
+        return AbstractNovaValue.fromJava(result);
     }
 
 }

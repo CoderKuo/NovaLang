@@ -15,4 +15,7 @@ import java.lang.annotation.Target;
 public @interface NovaFunc {
     /** 函数在 Nova 中的名称 */
     String value();
+
+    /** 可选的别名列表 */
+    String[] aliases() default {};
 }

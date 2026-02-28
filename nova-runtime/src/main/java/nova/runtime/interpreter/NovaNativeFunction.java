@@ -6,14 +6,14 @@ import java.util.List;
 /**
  * 原生（Java）函数
  */
-public final class NovaNativeFunction extends NovaValue implements NovaCallable {
+public final class NovaNativeFunction extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
     /**
      * 原生函数接口
      */
     @FunctionalInterface
     public interface NativeFunc {
-        NovaValue apply(Interpreter interpreter, List<NovaValue> args);
+        NovaValue apply(ExecutionContext ctx, List<NovaValue> args);
     }
 
     private final String name;
@@ -47,18 +47,13 @@ public final class NovaNativeFunction extends NovaValue implements NovaCallable 
     }
 
     @Override
-    public boolean isCallable() {
-        return true;
-    }
-
-    @Override
     public String toString() {
         return "<native fun " + name + ">";
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-        return function.apply(interpreter, args);
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+        return function.apply(ctx, args);
     }
 
     @Override

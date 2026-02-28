@@ -3,6 +3,7 @@ package nova.runtime.interpreter;
 import com.novalang.ir.mir.*;
 import com.novalang.ir.hir.ClassKind;
 import nova.runtime.*;
+import nova.runtime.types.*;
 
 import java.util.*;
 
@@ -146,7 +147,7 @@ final class MirInterpreter {
                         java.lang.reflect.Field field = clazz.getField(fieldName);
                         if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
                             interp.getEnvironment().redefine(memberName,
-                                    NovaValue.fromJava(field.get(null)), false);
+                                    AbstractNovaValue.fromJava(field.get(null)), false);
                         }
                     } catch (NoSuchFieldException | IllegalAccessException ignored) {}
                 }
@@ -382,7 +383,7 @@ final class MirInterpreter {
                 }
                 interp.callStack.push(NovaCallFrame.fromMirCallable(
                         targetFunc.getName(), paramVals));
-                String trace = interp.captureStackTrace();
+                String trace = interp.captureStackTraceString();
                 // TCE 折叠：尾递归转循环后 tceCount 为迭代次数，合成折叠提示
                 if (calleeFrame.tceCount > 0) {
                     trace += "  ... " + calleeFrame.tceCount + " tail-call frames omitted ...\n";
@@ -725,7 +726,7 @@ final class MirInterpreter {
             BatchCtx ctx = new BatchCtx(frame, slot, this, extraArg, func.getParams().size());
             return op.exec(map, ctx);
         } catch (NovaRuntimeException e) {
-            e.setNovaStackTrace(interp.captureStackTrace());
+            e.setNovaStackTrace(interp.captureStackTraceString());
             throw e;
         } finally {
             interp.callDepth--;
@@ -762,7 +763,7 @@ final class MirInterpreter {
             return op.exec(list.getElements(), list.getElements().size(),
                     new BatchCtx(frame, slot, this, extraArg, func.getParams().size()));
         } catch (NovaRuntimeException e) {
-            e.setNovaStackTrace(interp.captureStackTrace());
+            e.setNovaStackTrace(interp.captureStackTraceString());
             throw e;
         } finally {
             interp.callDepth--;
@@ -1465,21 +1466,14 @@ final class MirInterpreter {
         // 回退：尝试 Java 反射构造（保留 Java 对象身份，不自动转换为 Nova 类型）
         try {
             Class<?> javaClass = Class.forName(toJavaDotName(className));
-            if (args.isEmpty()) {
-                Object javaObj = javaClass.getDeclaredConstructor().newInstance();
-                frame.locals[inst.getDest()] = new NovaExternalObject(javaObj);
-            } else {
-                // 尝试 String 构造器（如 RuntimeException(String msg)）
-                try {
-                    java.lang.reflect.Constructor<?> ctor = javaClass.getDeclaredConstructor(String.class);
-                    Object javaObj = ctor.newInstance(args.get(0).asString());
-                    frame.locals[inst.getDest()] = new NovaExternalObject(javaObj);
-                } catch (NoSuchMethodException e2) {
-                    Object javaObj = javaClass.getDeclaredConstructor().newInstance();
-                    frame.locals[inst.getDest()] = new NovaExternalObject(javaObj);
-                }
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) {
+                NovaValue v = args.get(i);
+                javaArgs[i] = (v != null) ? v.toJavaValue() : null;
             }
-        } catch (Exception e) {
+            Object javaObj = MethodHandleCache.getInstance().newInstance(javaClass, javaArgs);
+            frame.locals[inst.getDest()] = new NovaExternalObject(javaObj);
+        } catch (Throwable e) {
             throw new NovaRuntimeException("Cannot create object: " + className);
         }
     }
@@ -1543,12 +1537,12 @@ final class MirInterpreter {
             NovaPair pair = (NovaPair) target;
             if ("first".equals(fieldName) || "key".equals(fieldName)) {
                 frame.locals[inst.getDest()] = pair.getFirst() instanceof NovaValue
-                        ? (NovaValue) pair.getFirst() : NovaValue.fromJava(pair.getFirst());
+                        ? (NovaValue) pair.getFirst() : AbstractNovaValue.fromJava(pair.getFirst());
                 return;
             }
             if ("second".equals(fieldName) || "value".equals(fieldName)) {
                 frame.locals[inst.getDest()] = pair.getSecond() instanceof NovaValue
-                        ? (NovaValue) pair.getSecond() : NovaValue.fromJava(pair.getSecond());
+                        ? (NovaValue) pair.getSecond() : AbstractNovaValue.fromJava(pair.getSecond());
                 return;
             }
         }
@@ -1682,11 +1676,11 @@ final class MirInterpreter {
 
         // 特殊处理 System.out
         if (JAVA_SYSTEM.equals(owner) && "out".equals(fieldName)) {
-            frame.locals[inst.getDest()] = NovaValue.fromJava(interp.getStdout());
+            frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(interp.getStdout());
             return;
         }
         if (JAVA_SYSTEM.equals(owner) && "err".equals(fieldName)) {
-            frame.locals[inst.getDest()] = NovaValue.fromJava(interp.getStderr());
+            frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(interp.getStderr());
             return;
         }
         // Dispatchers: 优先使用 Builtins 注册的 NovaMap（支持动态 Main 注入）
@@ -1732,7 +1726,7 @@ final class MirInterpreter {
         Object cached = inst.cache;
         if (cached instanceof java.lang.invoke.MethodHandle) {
             try {
-                frame.locals[inst.getDest()] = NovaValue.fromJava(
+                frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(
                         ((java.lang.invoke.MethodHandle) cached).invoke());
                 return;
             } catch (Throwable e) {
@@ -1755,7 +1749,7 @@ final class MirInterpreter {
                     MethodHandleCache.getInstance().findStaticGetter(javaClass, fieldName);
             if (mh != null) {
                 inst.cache = mh;
-                frame.locals[inst.getDest()] = NovaValue.fromJava(mh.invoke());
+                frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(mh.invoke());
             } else {
                 inst.cache = STATIC_FIELD_MISS;
                 frame.locals[inst.getDest()] = NovaNull.NULL;
@@ -2007,7 +2001,7 @@ final class MirInterpreter {
         String className = inst.extraAs();
         try {
             Class<?> cls = Class.forName(toJavaDotName(className));
-            frame.locals[inst.getDest()] = NovaValue.fromJava(cls);
+            frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(cls);
         } catch (ClassNotFoundException e) {
             // 可能是 Nova 类
             NovaValue classVal = interp.getEnvironment().tryGet(className);

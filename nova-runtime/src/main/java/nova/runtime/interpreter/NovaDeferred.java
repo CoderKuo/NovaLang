@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 
+import nova.runtime.AbstractNovaValue;
 import nova.runtime.NovaValue;
 
 import java.util.concurrent.CompletableFuture;
@@ -11,7 +12,7 @@ import java.util.concurrent.ExecutionException;
  * <p>由 scope 内的 {@code async { }} 创建，携带结果值。
  * 使用 {@code await()} 获取结果。兼容旧 NovaFuture 的 {@code get()} 方法。</p>
  */
-public final class NovaDeferred extends NovaValue {
+public final class NovaDeferred extends AbstractNovaValue {
 
     private final CompletableFuture<NovaValue> future;
 

@@ -4,6 +4,7 @@ import com.novalang.compiler.ast.SourceLocation;
 import com.novalang.ir.hir.decl.HirFunction;
 import com.novalang.ir.hir.decl.HirParam;
 import com.novalang.ir.hir.expr.HirLambda;
+import nova.runtime.NovaCallable;
 import nova.runtime.NovaValue;
 
 import java.util.List;

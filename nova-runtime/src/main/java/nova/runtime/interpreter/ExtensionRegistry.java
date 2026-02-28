@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.*;
 import com.novalang.compiler.ast.expr.Expression;
 import com.novalang.ir.hir.HirExpr;
 import java.util.*;
@@ -30,6 +31,14 @@ final class ExtensionRegistry {
     void registerExtension(Class<?> targetType, String methodName, NovaCallable method) {
         extensionMethods.computeIfAbsent(targetType, k -> new HashMap<>())
                 .put(methodName, method);
+    }
+
+    /**
+     * 按精确类型和方法名查找已注册的扩展方法（不做继承链回退）。
+     */
+    NovaCallable getExtension(Class<?> targetType, String methodName) {
+        Map<String, NovaCallable> methods = extensionMethods.get(targetType);
+        return methods != null ? methods.get(methodName) : null;
     }
 
     /**

@@ -50,7 +50,7 @@ public final class SamProxyFactory {
             List<NovaValue> novaArgs = new ArrayList<>();
             if (methodArgs != null) {
                 for (Object arg : methodArgs) {
-                    novaArgs.add(NovaValue.fromJava(arg));
+                    novaArgs.add(AbstractNovaValue.fromJava(arg));
                 }
             }
 

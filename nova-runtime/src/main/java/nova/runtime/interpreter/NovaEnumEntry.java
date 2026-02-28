@@ -18,16 +18,16 @@ import java.util.Map;
  * }
  * </pre>
  */
-public final class NovaEnumEntry extends NovaValue implements NovaCallable {
+public final class NovaEnumEntry extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
     private final String name;
     private final int ordinal;
     private final NovaEnum enumClass;
     private final Map<String, NovaValue> fields;
-    private final Map<String, NovaCallable> methods;
+    private final Map<String, nova.runtime.NovaCallable> methods;
 
     public NovaEnumEntry(String name, int ordinal, NovaEnum enumClass,
-                         Map<String, NovaValue> fields, Map<String, NovaCallable> methods) {
+                         Map<String, NovaValue> fields, Map<String, nova.runtime.NovaCallable> methods) {
         this.name = name;
         this.ordinal = ordinal;
         this.enumClass = enumClass;
@@ -83,7 +83,7 @@ public final class NovaEnumEntry extends NovaValue implements NovaCallable {
     /**
      * 获取方法
      */
-    public NovaCallable getMethod(String methodName) {
+    public nova.runtime.NovaCallable getMethod(String methodName) {
         return methods.get(methodName);
     }
 
@@ -91,7 +91,7 @@ public final class NovaEnumEntry extends NovaValue implements NovaCallable {
      * 获取绑定方法
      */
     public NovaBoundMethod getBoundMethod(String methodName) {
-        NovaCallable method = methods.get(methodName);
+        nova.runtime.NovaCallable method = methods.get(methodName);
         if (method != null) {
             return new NovaBoundMethod(this, method);
         }
@@ -139,7 +139,7 @@ public final class NovaEnumEntry extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
         // 枚举条目直接返回自身
         return this;
     }

@@ -1,7 +1,6 @@
 package nova.runtime.interpreter.builtin;
 import nova.runtime.*;
-
-import nova.runtime.interpreter.*;
+import nova.runtime.types.NovaClass;
 
 import java.util.Map;
 
@@ -17,7 +16,7 @@ public class DataAnnotationProcessor implements NovaAnnotationProcessor {
     }
 
     @Override
-    public void processClass(NovaClass target, Map<String, NovaValue> args, Interpreter interpreter) {
-        target.setData(true);
+    public void processClass(NovaValue target, Map<String, NovaValue> args, ExecutionContext ctx) {
+        ((NovaClass) target).setData(true);
     }
 }

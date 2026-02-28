@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.*;
 
 import java.util.*;
 
@@ -163,7 +164,7 @@ final class JavaInteropHelper {
         List<NovaValue> novaArgs = new ArrayList<NovaValue>();
         if (args != null) {
             for (Object arg : args) {
-                novaArgs.add(NovaValue.fromJava(arg));
+                novaArgs.add(AbstractNovaValue.fromJava(arg));
             }
         }
         return novaArgs;
@@ -185,7 +186,7 @@ final class JavaInteropHelper {
                     }
                     List<NovaValue> novaArgs = new ArrayList<>();
                     if (args != null) {
-                        for (Object arg : args) novaArgs.add(NovaValue.fromJava(arg));
+                        for (Object arg : args) novaArgs.add(AbstractNovaValue.fromJava(arg));
                     }
                     NovaValue result = interp.executeSamCallback(callable, novaArgs);
                     Class<?> returnType = method.getReturnType();

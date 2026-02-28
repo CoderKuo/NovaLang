@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.*;
 import nova.runtime.stdlib.StructuredConcurrencyHelper;
 import com.novalang.compiler.ast.AstNode;
 import com.novalang.compiler.ast.SourceLocation;
@@ -34,7 +35,7 @@ import java.util.*;
  *
  * <p>基于 AST 的树遍历解释器，支持完整的 Nova 语言特性。</p>
  */
-public class Interpreter {
+public class Interpreter implements ExecutionContext {
 
     /** 全局环境 */
     private final Environment globals;
@@ -189,7 +190,7 @@ public class Interpreter {
         MethodHandleCache.setAllowSetAccessible(policy.isSetAccessibleAllowed());
 
         // 注册 NovaValue 回退转换器（将未知 Java 对象包装为 NovaExternalObject）
-        NovaValue.setFallbackConverter(NovaExternalObject::new);
+        AbstractNovaValue.setFallbackConverter(NovaExternalObject::new);
 
         // 注册内置注解处理器（直接操作 map 避免 this-escape 警告）
         NovaAnnotationProcessor dataProc = new nova.runtime.interpreter.builtin.DataAnnotationProcessor();
@@ -379,6 +380,7 @@ public class Interpreter {
     /**
      * 注册注解处理器
      */
+    @Override
     public void registerAnnotationProcessor(NovaAnnotationProcessor processor) {
         annotationProcessors.computeIfAbsent(processor.getAnnotationName(), k -> new ArrayList<>())
                 .add(processor);
@@ -387,6 +389,7 @@ public class Interpreter {
     /**
      * 注销注解处理器
      */
+    @Override
     public void unregisterAnnotationProcessor(NovaAnnotationProcessor processor) {
         List<NovaAnnotationProcessor> list = annotationProcessors.get(processor.getAnnotationName());
         if (list != null) list.remove(processor);
@@ -420,6 +423,10 @@ public class Interpreter {
 
     public NovaCallable findExtension(NovaValue receiver, String methodName) {
         return extensionRegistry.findExtension(receiver, methodName);
+    }
+
+    public NovaCallable getExtension(Class<?> targetType, String methodName) {
+        return extensionRegistry.getExtension(targetType, methodName);
     }
 
     public void registerNovaExtension(String typeName, String methodName, NovaCallable function) {
@@ -584,58 +591,58 @@ public class Interpreter {
     }
 
     /** 创建 Any 类型扩展方法（toString/hashCode/equals + 作用域函数） */
-    private static Map<String, NovaCallable> createAnyMethods() {
-        Map<String, NovaCallable> m = new HashMap<>();
+    private static Map<String, nova.runtime.NovaCallable> createAnyMethods() {
+        Map<String, nova.runtime.NovaCallable> m = new HashMap<>();
         m.put("toString", new NovaNativeFunction("toString", 1,
-            (interp, args) -> NovaString.of(args.get(0).asString())));
+            (ctx, args) -> NovaString.of(args.get(0).asString())));
         m.put("hashCode", new NovaNativeFunction("hashCode", 1,
-            (interp, args) -> NovaInt.of(args.get(0).hashCode())));
+            (ctx, args) -> NovaInt.of(args.get(0).hashCode())));
         m.put("equals", new NovaNativeFunction("equals", 2,
-            (interp, args) -> NovaBoolean.of(args.get(0).equals(args.get(1)))));
-        m.put("let", new NovaNativeFunction("let", 2, (interp, args) -> {
+            (ctx, args) -> NovaBoolean.of(args.get(0).equals(args.get(1)))));
+        m.put("let", new NovaNativeFunction("let", 2, (ctx, args) -> {
             NovaValue self = args.get(0);
-            NovaCallable block = interp.asCallable(args.get(1), "Any.method");
-            return block.call(interp, Collections.singletonList(self));
+            nova.runtime.NovaCallable block = ctx.asCallable(args.get(1), "Any.method");
+            return block.call(ctx, Collections.singletonList(self));
         }));
-        m.put("also", new NovaNativeFunction("also", 2, (interp, args) -> {
+        m.put("also", new NovaNativeFunction("also", 2, (ctx, args) -> {
             NovaValue self = args.get(0);
-            NovaCallable block = interp.asCallable(args.get(1), "Any.method");
-            block.call(interp, Collections.singletonList(self));
+            nova.runtime.NovaCallable block = ctx.asCallable(args.get(1), "Any.method");
+            block.call(ctx, Collections.singletonList(self));
             return self;
         }));
-        m.put("run", new NovaNativeFunction("run", 2, (interp, args) -> {
+        m.put("run", new NovaNativeFunction("run", 2, (ctx, args) -> {
             if (args.size() < 2) {
                 NovaValue self = args.get(0);
                 if (self instanceof NovaExternalObject) {
                     return ((NovaExternalObject) self).invokeMethod("run", Collections.emptyList());
                 }
                 if (self.isCallable()) {
-                    return ((NovaCallable) self).call(interp, Collections.emptyList());
+                    return ((nova.runtime.NovaCallable) self).call(ctx, Collections.emptyList());
                 }
                 return NovaNull.UNIT;
             }
             NovaValue self = args.get(0);
-            NovaCallable block = interp.asCallable(args.get(1), "Any.method");
+            nova.runtime.NovaCallable block = ctx.asCallable(args.get(1), "Any.method");
             NovaBoundMethod bound = new NovaBoundMethod(self, block);
-            return interp.executeBoundMethod(bound, Collections.<NovaValue>emptyList(), null);
+            return ctx.executeBoundMethod(bound, Collections.<NovaValue>emptyList(), null);
         }));
-        m.put("apply", new NovaNativeFunction("apply", 2, (interp, args) -> {
+        m.put("apply", new NovaNativeFunction("apply", 2, (ctx, args) -> {
             NovaValue self = args.get(0);
-            NovaCallable block = interp.asCallable(args.get(1), "Any.method");
+            nova.runtime.NovaCallable block = ctx.asCallable(args.get(1), "Any.method");
             NovaBoundMethod bound = new NovaBoundMethod(self, block);
-            interp.executeBoundMethod(bound, Collections.<NovaValue>emptyList(), null);
+            ctx.executeBoundMethod(bound, Collections.<NovaValue>emptyList(), null);
             return self;
         }));
-        m.put("takeIf", new NovaNativeFunction("takeIf", 2, (interp, args) -> {
+        m.put("takeIf", new NovaNativeFunction("takeIf", 2, (ctx, args) -> {
             NovaValue self = args.get(0);
-            NovaCallable predicate = interp.asCallable(args.get(1), "Any.method");
-            NovaValue result = predicate.call(interp, Collections.singletonList(self));
+            nova.runtime.NovaCallable predicate = ctx.asCallable(args.get(1), "Any.method");
+            NovaValue result = predicate.call(ctx, Collections.singletonList(self));
             return result.asBoolean() ? self : NovaNull.NULL;
         }));
-        m.put("takeUnless", new NovaNativeFunction("takeUnless", 2, (interp, args) -> {
+        m.put("takeUnless", new NovaNativeFunction("takeUnless", 2, (ctx, args) -> {
             NovaValue self = args.get(0);
-            NovaCallable predicate = interp.asCallable(args.get(1), "Any.method");
-            NovaValue result = predicate.call(interp, Collections.singletonList(self));
+            nova.runtime.NovaCallable predicate = ctx.asCallable(args.get(1), "Any.method");
+            NovaValue result = predicate.call(ctx, Collections.singletonList(self));
             return result.asBoolean() ? NovaNull.NULL : self;
         }));
         return m;
@@ -701,9 +708,21 @@ public class Interpreter {
     }
 
     /**
-     * 获取当前调用栈的格式化字符串
+     * 获取当前调用栈的格式化字符串列表
      */
-    String captureStackTrace() {
+    @Override
+    public List<String> captureStackTrace() {
+        String formatted = callStack.formatStackTrace(getSourceLines(), currentFileName);
+        if (formatted == null || formatted.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Arrays.asList(formatted.split("\n"));
+    }
+
+    /**
+     * 获取当前调用栈的格式化字符串（便捷方法）
+     */
+    String captureStackTraceString() {
         return callStack.formatStackTrace(getSourceLines(), currentFileName);
     }
 
@@ -715,11 +734,11 @@ public class Interpreter {
             SourceLocation loc = node.getLocation();
             String sourceLine = getSourceLine(loc.getLine());
             NovaRuntimeException ex = new NovaRuntimeException(message, loc, sourceLine);
-            ex.setNovaStackTrace(captureStackTrace());
+            ex.setNovaStackTrace(captureStackTraceString());
             return ex;
         }
         NovaRuntimeException ex = new NovaRuntimeException(message);
-        ex.setNovaStackTrace(captureStackTrace());
+        ex.setNovaStackTrace(captureStackTraceString());
         return ex;
     }
 
@@ -730,11 +749,11 @@ public class Interpreter {
         if (loc != null) {
             String sourceLine = getSourceLine(loc.getLine());
             NovaRuntimeException ex = new NovaRuntimeException(message, loc, sourceLine);
-            ex.setNovaStackTrace(captureStackTrace());
+            ex.setNovaStackTrace(captureStackTraceString());
             return ex;
         }
         NovaRuntimeException ex = new NovaRuntimeException(message);
-        ex.setNovaStackTrace(captureStackTrace());
+        ex.setNovaStackTrace(captureStackTraceString());
         return ex;
     }
 
@@ -749,6 +768,39 @@ public class Interpreter {
     public NovaValue instantiate(NovaClass novaClass, List<NovaValue> args,
                                   Map<String, NovaValue> namedArgs) {
         return functionExecutor.instantiate(novaClass, args, namedArgs);
+    }
+
+    /** ExecutionContext 接口方法：支持 NovaValue 参数 */
+    @Override
+    public NovaValue instantiate(NovaValue novaClass, List<NovaValue> args,
+                                  Map<String, NovaValue> namedArgs) {
+        return functionExecutor.instantiate((NovaClass) novaClass, args, namedArgs);
+    }
+
+    /** ExecutionContext 接口方法：创建子上下文 */
+    @Override
+    public ExecutionContext createChild() {
+        return new Interpreter(this);
+    }
+
+    /** ExecutionContext 接口方法：执行绑定方法 */
+    @Override
+    public NovaValue executeBoundMethod(NovaValue boundMethod, List<NovaValue> args,
+                                          Map<String, NovaValue> namedArgs) {
+        return functionExecutor.executeBoundMethod((NovaBoundMethod) boundMethod, args, namedArgs);
+    }
+
+    /** ExecutionContext 接口方法：执行 HIR 函数 */
+    @Override
+    public NovaValue executeHirFunction(NovaValue function, List<NovaValue> args,
+                                         Map<String, NovaValue> namedArgs) {
+        return functionExecutor.executeHirFunction((HirFunctionValue) function, args, namedArgs);
+    }
+
+    /** ExecutionContext 接口方法：执行 HIR Lambda */
+    @Override
+    public NovaValue executeHirLambda(NovaValue lambda, List<NovaValue> args) {
+        return functionExecutor.executeHirLambda((HirLambdaValue) lambda, args);
     }
 
 
@@ -842,7 +894,7 @@ public class Interpreter {
     /**
      * Super 代理，用于访问父类方法
      */
-    protected static class NovaSuperProxy extends NovaValue {
+    protected static class NovaSuperProxy extends AbstractNovaValue {
         private final NovaObject instance;
         private final NovaClass superclass;
         private final Class<?> javaSuperclass;
@@ -965,6 +1017,43 @@ public class Interpreter {
 
     NovaClassInfo buildHirClassInfo(NovaClass cls) {
         return memberResolver.buildHirClassInfo(cls);
+    }
+
+    // ============ ExecutionContext 接口实现 ============
+
+    @Override
+    public int getMaxRecursionDepth() {
+        return securityPolicy.getMaxRecursionDepth();
+    }
+
+    @Override
+    public int getCallDepth() {
+        return callDepth;
+    }
+
+    @Override
+    public void incrementCallDepth() {
+        callDepth++;
+    }
+
+    @Override
+    public void decrementCallDepth() {
+        callDepth--;
+    }
+
+    @Override
+    public void pushCallFrame(String functionName, List<NovaValue> args) {
+        callStack.push(NovaCallFrame.fromMirCallable(functionName, args));
+    }
+
+    @Override
+    public void popCallFrame() {
+        callStack.pop();
+    }
+
+    @Override
+    public Object getMirInterpreter() {
+        return mirInterpreter;
     }
 
 }

@@ -12,7 +12,7 @@ import java.util.Map;
  *
  * <p>用于将任意 Java 对象包装为 NovaValue，使用 MethodHandle 高效调用其方法。</p>
  */
-public final class NovaExternalObject extends NovaValue {
+public final class NovaExternalObject extends AbstractNovaValue {
 
     private final Object javaObject;
     private final Class<?> objectClass;
@@ -73,7 +73,7 @@ public final class NovaExternalObject extends NovaValue {
 
         try {
             Object value = cache.getField(javaObject, fieldName);
-            return NovaValue.fromJava(value);
+            return AbstractNovaValue.fromJava(value);
         } catch (Throwable e) {
             throw new NovaRuntimeException("Cannot access field '" + fieldName + "' on " + getTypeName()
                     + ": " + e.getMessage(), e);
@@ -124,7 +124,7 @@ public final class NovaExternalObject extends NovaValue {
 
             // 使用 MethodHandle 调用
             Object result = cache.invokeMethod(javaObject, methodName, javaArgs);
-            return NovaValue.fromJava(result);
+            return AbstractNovaValue.fromJava(result);
         } catch (Throwable e) {
             throw new NovaRuntimeException("Failed to invoke '" + methodName + "' on " + getTypeName()
                     + ": " + e.getMessage(), e);
@@ -185,7 +185,7 @@ public final class NovaExternalObject extends NovaValue {
      */
     public NovaNativeFunction getBoundMethod(String methodName) {
         return new NovaNativeFunction(methodName, -1, (interp, args) -> {
-            return invokeMethod(methodName, args, interp);
+            return invokeMethod(methodName, args, (Interpreter) interp);
         });
     }
 }

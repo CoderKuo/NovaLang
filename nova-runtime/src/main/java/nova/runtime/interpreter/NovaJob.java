@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 
+import nova.runtime.AbstractNovaValue;
 import nova.runtime.NovaValue;
 
 import java.util.concurrent.CompletableFuture;
@@ -11,7 +12,7 @@ import java.util.concurrent.ExecutionException;
  * <p>由 {@code launch { }} 创建，不携带结果值。
  * 提供 {@code join()} 等待完成、{@code cancel()} 取消任务。</p>
  */
-public final class NovaJob extends NovaValue {
+public final class NovaJob extends AbstractNovaValue {
 
     private final CompletableFuture<NovaValue> future;
 

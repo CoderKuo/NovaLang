@@ -7,7 +7,7 @@ import java.util.Map;
 /**
  * 注解反射信息
  */
-public final class NovaAnnotationInfo extends NovaValue {
+public final class NovaAnnotationInfo extends AbstractNovaValue {
 
     public final String name;
 

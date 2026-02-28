@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 import nova.runtime.*;
+import nova.runtime.types.*;
 
 import com.novalang.compiler.ast.AstNode;
 import com.novalang.compiler.ast.expr.Expression;

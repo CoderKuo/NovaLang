@@ -1,14 +1,12 @@
 package nova.runtime.interpreter.reflect;
 import nova.runtime.*;
 
-import nova.runtime.interpreter.NovaCallable;
-
 import java.util.List;
 
 /**
  * 方法反射信息
  */
-public final class NovaMethodInfo extends NovaValue {
+public final class NovaMethodInfo extends AbstractNovaValue {
 
     public final String name;
     public final String visibility;
@@ -16,12 +14,12 @@ public final class NovaMethodInfo extends NovaValue {
     private final List<NovaParamInfo> paramInfos;
 
     // 解释器模式（NovaCallable，如 HirFunctionValue）
-    final NovaCallable novaCallable;
+    final nova.runtime.NovaCallable novaCallable;
     // 编译模式
     final java.lang.reflect.Method javaMethod;
 
     public NovaMethodInfo(String name, String visibility, List<NovaParamInfo> paramInfos,
-                          NovaCallable novaCallable, java.lang.reflect.Method javaMethod) {
+                          nova.runtime.NovaCallable novaCallable, java.lang.reflect.Method javaMethod) {
         this.name = name;
         this.visibility = visibility;
         this.paramInfos = paramInfos;
@@ -30,11 +28,11 @@ public final class NovaMethodInfo extends NovaValue {
     }
 
     public NovaMethodInfo(String name, String visibility, List<NovaParamInfo> paramInfos,
-                          NovaCallable novaCallable) {
+                          nova.runtime.NovaCallable novaCallable) {
         this(name, visibility, paramInfos, novaCallable, null);
     }
 
-    public NovaCallable getNovaCallable() {
+    public nova.runtime.NovaCallable getNovaCallable() {
         return novaCallable;
     }
 

@@ -5,7 +5,7 @@ import nova.runtime.*;
 /**
  * 参数反射信息
  */
-public final class NovaParamInfo extends NovaValue {
+public final class NovaParamInfo extends AbstractNovaValue {
 
     public final String name;
     public final String type;

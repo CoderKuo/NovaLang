@@ -6,6 +6,9 @@ import com.novalang.ir.hir.HirAnnotation;
 import com.novalang.compiler.ast.Modifier;
 import com.novalang.compiler.ast.expr.Expression;
 import nova.runtime.*;
+import nova.runtime.types.Environment;
+import nova.runtime.types.NovaClass;
+import nova.runtime.types.NovaInterface;
 import nova.runtime.interpreter.reflect.NovaClassInfo;
 
 import java.util.*;
@@ -163,9 +166,9 @@ final class MirClassRegistrar {
                 novaClass.defineMethod(methodName, new MirCallable(mirInterp, method, null));
                 definedMethods.add(methodName);
                 if (method.getModifiers().contains(Modifier.PRIVATE)) {
-                    novaClass.setMethodVisibility(methodName, Modifier.PRIVATE);
+                    novaClass.setMethodVisibility(methodName, nova.runtime.types.Modifier.PRIVATE);
                 } else if (method.getModifiers().contains(Modifier.PROTECTED)) {
-                    novaClass.setMethodVisibility(methodName, Modifier.PROTECTED);
+                    novaClass.setMethodVisibility(methodName, nova.runtime.types.Modifier.PROTECTED);
                 }
             }
         }
@@ -280,9 +283,9 @@ final class MirClassRegistrar {
         for (MirField field : cls.getFields()) {
             if (field.getModifiers().contains(Modifier.STATIC)) continue;
             if (field.getModifiers().contains(Modifier.PRIVATE)) {
-                novaClass.setFieldVisibility(field.getName(), Modifier.PRIVATE);
+                novaClass.setFieldVisibility(field.getName(), nova.runtime.types.Modifier.PRIVATE);
             } else if (field.getModifiers().contains(Modifier.PROTECTED)) {
-                novaClass.setFieldVisibility(field.getName(), Modifier.PROTECTED);
+                novaClass.setFieldVisibility(field.getName(), nova.runtime.types.Modifier.PROTECTED);
             }
         }
 
@@ -401,7 +404,7 @@ final class MirClassRegistrar {
         List<nova.runtime.interpreter.reflect.NovaFieldInfo> fields = new ArrayList<>();
         for (MirField field : cls.getFields()) {
             if (field.getModifiers().contains(Modifier.STATIC)) continue;
-            Modifier vis = novaClass.getFieldVisibility(field.getName());
+            nova.runtime.types.Modifier vis = novaClass.getFieldVisibility(field.getName());
             String visStr = vis != null ? vis.name().toLowerCase() : "public";
             boolean isMutable = !field.getModifiers().contains(Modifier.FINAL);
             String typeName = mirTypeToNovaName(field.getType());
@@ -411,7 +414,7 @@ final class MirClassRegistrar {
 
         List<nova.runtime.interpreter.reflect.NovaMethodInfo> methods = new ArrayList<>();
         for (Map.Entry<String, NovaCallable> entry : novaClass.getMethods().entrySet()) {
-            Modifier vis = novaClass.getMethodVisibility(entry.getKey());
+            nova.runtime.types.Modifier vis = novaClass.getMethodVisibility(entry.getKey());
             String visStr = vis != null ? vis.name().toLowerCase() : "public";
             List<nova.runtime.interpreter.reflect.NovaParamInfo> params =
                     NovaClassInfo.extractParams(entry.getValue());

@@ -28,13 +28,13 @@ final class NovaListView extends AbstractList<Object> {
     @Override
     public Object set(int index, Object element) {
         NovaValue old = delegate.get(index);
-        delegate.set(index, NovaValue.fromJava(element));
+        delegate.set(index, AbstractNovaValue.fromJava(element));
         return elemToJava(old);
     }
 
     @Override
     public void add(int index, Object element) {
-        delegate.addAt(index, NovaValue.fromJava(element));
+        delegate.addAt(index, AbstractNovaValue.fromJava(element));
     }
 
     @Override

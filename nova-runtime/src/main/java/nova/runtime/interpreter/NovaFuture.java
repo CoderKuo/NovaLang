@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code await} 或 {@code .get()} 阻塞等待结果。</p>
  */
 @NovaType(name = "Future", description = "异步计算类型，由 async { } 创建。使用 await 或 .get() 获取结果")
-public final class NovaFuture extends NovaValue {
+public final class NovaFuture extends AbstractNovaValue {
 
     /** 活跃异步任务计数器（全局共享） */
     private static final AtomicInteger activeTaskCount = new AtomicInteger(0);
@@ -31,7 +31,7 @@ public final class NovaFuture extends NovaValue {
      * 通用构造器：接受 NovaCallable（支持 HirLambdaValue 等非 AST lambda）。
      * 根据 parentInterpreter 类型自动创建对应的子解释器。
      */
-    public NovaFuture(NovaCallable callable, Interpreter parentInterpreter) {
+    public NovaFuture(nova.runtime.NovaCallable callable, Interpreter parentInterpreter) {
         int maxTasks = parentInterpreter.getSecurityPolicy().getMaxAsyncTasks();
         if (maxTasks > 0) {
             int current = activeTaskCount.incrementAndGet();

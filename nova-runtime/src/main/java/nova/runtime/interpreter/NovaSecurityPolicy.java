@@ -192,6 +192,7 @@ public final class NovaSecurityPolicy {
      */
     public boolean isMethodAllowed(String className, String methodName) {
         if (level == Level.UNRESTRICTED) return true;
+        if (!allowJavaInterop) return false;
         return !deniedMethods.contains(className + "." + methodName);
     }
 

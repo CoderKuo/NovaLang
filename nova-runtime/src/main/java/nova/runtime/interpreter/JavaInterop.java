@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 import nova.runtime.*;
+import nova.runtime.types.Environment;
 
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
@@ -87,7 +88,7 @@ public final class JavaInterop {
 
                 try {
                     Object result = cache.invokeStatic(clazz, methodName, javaArgs);
-                    return NovaValue.fromJava(result);
+                    return AbstractNovaValue.fromJava(result);
                 } catch (Throwable e) {
                     throw new NovaRuntimeException("Failed to invoke static method " +
                             className + "." + methodName + ": " + e.getMessage(), e);
@@ -110,7 +111,7 @@ public final class JavaInterop {
                     throw new NovaRuntimeException("Static field not found: " + clsName + "." + fldName);
                 }
                 Object value = getter.invoke();
-                return NovaValue.fromJava(value);
+                return AbstractNovaValue.fromJava(value);
             } catch (NovaRuntimeException e) {
                 throw e;
             } catch (Throwable e) {
@@ -221,7 +222,7 @@ public final class JavaInterop {
     /**
      * 包装 Java 类，使其可以作为构造函数调用
      */
-    public static class NovaJavaClass extends NovaValue implements NovaCallable {
+    public static class NovaJavaClass extends AbstractNovaValue implements nova.runtime.NovaCallable {
         private final Class<?> javaClass;
 
         public NovaJavaClass(Class<?> javaClass) {
@@ -248,7 +249,8 @@ public final class JavaInterop {
         }
 
         @Override
-        public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
+        public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+            Interpreter interpreter = ctx != null ? (Interpreter) ctx : null;
             // 类级安全检查
             if (interpreter != null) {
                 NovaSecurityPolicy policy = interpreter.getSecurityPolicy();
@@ -318,7 +320,7 @@ public final class JavaInterop {
                 }
 
                 Object result = cache.invokeStatic(javaClass, methodName, javaArgs);
-                return NovaValue.fromJava(result);
+                return AbstractNovaValue.fromJava(result);
             } catch (Throwable e) {
                 throw new NovaRuntimeException("Failed to invoke static method " +
                         javaClass.getName() + "." + methodName + ": " + e.getMessage(), e);
@@ -334,7 +336,7 @@ public final class JavaInterop {
                 java.lang.invoke.MethodHandle getter = cache.findStaticGetter(javaClass, memberName);
                 if (getter != null) {
                     Object value = getter.invoke();
-                    return NovaValue.fromJava(value);
+                    return AbstractNovaValue.fromJava(value);
                 }
             } catch (Throwable e) {
                 // 获取失败，继续尝试静态方法
@@ -349,7 +351,7 @@ public final class JavaInterop {
          */
         public NovaNativeFunction getBoundStaticMethod(String methodName) {
             return new NovaNativeFunction(methodName, -1, (interp, args) -> {
-                return invokeStatic(methodName, args, interp);
+                return invokeStatic(methodName, args, (Interpreter) interp);
             });
         }
 

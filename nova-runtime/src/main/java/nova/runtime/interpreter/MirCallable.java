@@ -3,6 +3,8 @@ package nova.runtime.interpreter;
 import com.novalang.ir.mir.MirFunction;
 import com.novalang.ir.mir.MirLocal;
 import com.novalang.ir.mir.MirParam;
+import nova.runtime.AbstractNovaValue;
+import nova.runtime.ExecutionContext;
 import nova.runtime.NovaValue;
 
 import java.util.Collections;
@@ -10,15 +12,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * MIR 函数的 {@link NovaCallable} 适配器。
+ * MIR 函数的 {@link nova.runtime.NovaCallable} 适配器。
  *
  * <p>让 MIR 函数能被现有运行时（如 NovaClass.instantiate、NovaBoundMethod）调用。
- * 继承 NovaValue 使其可存入 Environment。</p>
+ * 继承 AbstractNovaValue 使其可存入 Environment。</p>
  *
  * <p>Lambda 匿名类的 invoke 方法：locals[0]=this, locals[1..N]=参数。
  * 捕获变量通过 GET_FIELD(this, name) 访问，存储在 captureFields 中。</p>
  */
-final class MirCallable extends NovaValue implements NovaCallable {
+final class MirCallable extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
     private final MirInterpreter mirInterp;
     private final MirFunction function;
@@ -47,7 +49,7 @@ final class MirCallable extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
         // 实例方法（lambda invoke / class method）：locals[0]=this, locals[1..N]=params
         // 调用约定：
         //   - executeBoundMethod 已 prepend receiver → args.size() == params.size() + 1
@@ -77,24 +79,25 @@ final class MirCallable extends NovaValue implements NovaCallable {
         // 递归深度检查 + 惰性调用帧（参数摘要仅在异常时计算）
         String funcName = function.getName();
         // async 线程传入子 Interpreter，使用其 mirInterpreter 保证线程安全
-        MirInterpreter targetMirInterp = interpreter.mirInterpreter != null
-                ? interpreter.mirInterpreter : mirInterp;
+        MirInterpreter targetMirInterp = ctx.getMirInterpreter() != null
+                ? (MirInterpreter) ctx.getMirInterpreter() : mirInterp;
         if (!"<init>".equals(funcName) && !"<clinit>".equals(funcName)) {
-            int maxDepth = interpreter.getSecurityPolicy().getMaxRecursionDepth();
-            if (maxDepth > 0 && interpreter.callDepth >= maxDepth) {
+            int maxDepth = ctx.getMaxRecursionDepth();
+            if (maxDepth > 0 && ctx.getCallDepth() >= maxDepth) {
                 throw new NovaRuntimeException("Maximum recursion depth exceeded (" + maxDepth + ")");
             }
             String displayName = "invoke".equals(funcName) ? "<lambda>" : funcName;
-            interpreter.callStack.push(NovaCallFrame.fromMirCallable(displayName, args));
-            interpreter.callDepth++;
+            ctx.pushCallFrame(displayName, args);
+            ctx.incrementCallDepth();
             try {
                 return targetMirInterp.executeFunction(function, allArgs);
             } catch (NovaRuntimeException e) {
-                e.setNovaStackTrace(interpreter.captureStackTrace());
+                List<String> stackList = ctx.captureStackTrace();
+                e.setNovaStackTrace(stackList != null ? String.join("\n", stackList) : null);
                 throw e;
             } finally {
-                interpreter.callDepth--;
-                interpreter.callStack.pop();
+                ctx.decrementCallDepth();
+                ctx.popCallFrame();
             }
         }
         return targetMirInterp.executeFunction(function, allArgs);
@@ -138,7 +141,7 @@ final class MirCallable extends NovaValue implements NovaCallable {
             try {
                 return targetMirInterp.executeFunction(function, allArgs);
             } catch (NovaRuntimeException e) {
-                e.setNovaStackTrace(interpreter.captureStackTrace());
+                e.setNovaStackTrace(interpreter.captureStackTraceString());
                 throw e;
             } finally {
                 interpreter.callDepth--;
@@ -168,11 +171,6 @@ final class MirCallable extends NovaValue implements NovaCallable {
     @Override
     public Object toJavaValue() {
         return this;
-    }
-
-    @Override
-    public boolean isCallable() {
-        return true;
     }
 
     @Override

@@ -1,12 +1,11 @@
 package nova.runtime.interpreter.reflect;
 import nova.runtime.*;
-
-import nova.runtime.interpreter.NovaClass;
+import nova.runtime.types.NovaClass;
 
 /**
  * 字段反射信息
  */
-public final class NovaFieldInfo extends NovaValue {
+public final class NovaFieldInfo extends AbstractNovaValue {
 
     public final String name;
     public final String type;

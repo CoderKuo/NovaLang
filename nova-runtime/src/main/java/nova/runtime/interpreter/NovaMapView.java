@@ -21,7 +21,7 @@ final class NovaMapView extends AbstractMap<Object, Object> {
 
     @Override
     public Object get(Object key) {
-        NovaValue result = delegate.get(NovaValue.fromJava(key));
+        NovaValue result = delegate.get(AbstractNovaValue.fromJava(key));
         if (result instanceof NovaNull) return null;
         return elemToJava(result);
     }
@@ -29,15 +29,15 @@ final class NovaMapView extends AbstractMap<Object, Object> {
     @Override
     @SuppressWarnings("unchecked")
     public Object put(Object key, Object value) {
-        NovaValue nKey = NovaValue.fromJava(key);
+        NovaValue nKey = AbstractNovaValue.fromJava(key);
         NovaValue old = delegate.get(nKey);
-        delegate.put(nKey, NovaValue.fromJava(value));
+        delegate.put(nKey, AbstractNovaValue.fromJava(value));
         return (old instanceof NovaNull) ? null : elemToJava(old);
     }
 
     @Override
     public Object remove(Object key) {
-        NovaValue nKey = NovaValue.fromJava(key);
+        NovaValue nKey = AbstractNovaValue.fromJava(key);
         NovaValue old = delegate.remove(nKey);
         return (old instanceof NovaNull) ? null : elemToJava(old);
     }
@@ -54,7 +54,7 @@ final class NovaMapView extends AbstractMap<Object, Object> {
 
     @Override
     public boolean containsKey(Object key) {
-        return delegate.containsKey(NovaValue.fromJava(key));
+        return delegate.containsKey(AbstractNovaValue.fromJava(key));
     }
 
     @Override

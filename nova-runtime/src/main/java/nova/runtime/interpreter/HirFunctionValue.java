@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 import nova.runtime.*;
+import nova.runtime.types.Environment;
 
 import com.novalang.ir.hir.decl.HirFunction;
 import com.novalang.ir.hir.decl.HirParam;
@@ -11,7 +12,7 @@ import java.util.Map;
  * HIR 函数运行时值。
  * 持有 HirFunction（HIR 节点）而非 FunDecl（AST 节点）。
  */
-public final class HirFunctionValue extends NovaValue implements NovaCallable {
+public final class HirFunctionValue extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
     private final String name;
     private final HirFunction declaration;
@@ -45,23 +46,20 @@ public final class HirFunctionValue extends NovaValue implements NovaCallable {
     public Object toJavaValue() { return this; }
 
     @Override
-    public boolean isCallable() { return true; }
-
-    @Override
     public String toString() { return "fun " + name + "(...)"; }
 
     @Override
     public boolean supportsNamedArgs() { return true; }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-        return interpreter.executeHirFunction(this, args, null);
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+        return ctx.executeHirFunction(this, args, null);
     }
 
     @Override
-    public NovaValue callWithNamed(Interpreter interpreter, List<NovaValue> args,
+    public NovaValue callWithNamed(ExecutionContext ctx, List<NovaValue> args,
                                     Map<String, NovaValue> namedArgs) {
-        return interpreter.executeHirFunction(this, args, namedArgs);
+        return ctx.executeHirFunction(this, args, namedArgs);
     }
 
     public NovaBoundMethod bind(NovaValue receiver) {

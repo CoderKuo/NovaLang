@@ -61,7 +61,7 @@ public final class ArrayExtensions {
 
     public static Object contains(Object arr, Object value) {
         NovaArray a = (NovaArray) arr;
-        NovaValue target = NovaValue.fromJava(value);
+        NovaValue target = AbstractNovaValue.fromJava(value);
         for (NovaValue item : a) {
             if (item.equals(target)) return true;
         }
@@ -70,7 +70,7 @@ public final class ArrayExtensions {
 
     public static Object indexOf(Object arr, Object value) {
         NovaArray a = (NovaArray) arr;
-        NovaValue target = NovaValue.fromJava(value);
+        NovaValue target = AbstractNovaValue.fromJava(value);
         for (int i = 0; i < a.length(); i++) {
             if (a.get(i).equals(target)) return i;
         }

@@ -1,6 +1,9 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.Environment;
+import nova.runtime.types.NovaClass;
+import nova.runtime.types.NovaInterface;
 import com.novalang.compiler.ast.AstNode;
 import com.novalang.compiler.ast.Modifier;
 import com.novalang.compiler.ast.SourceLocation;
@@ -34,8 +37,8 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     // ============ HIR 执行辅助 ============
 
     public NovaValue executeHirModule(HirModule module) {
-        // 合并 import 和声明，按源码行号排序，保证按源码顺序执�?
-        // （循环依赖要�?fun/class 声明先于后续 import 注册到环境）
+        // 合并 import 和声明，按源码行号排序，保证按源码顺序执行
+        // （循环依赖要求 fun/class 声明先于后续 import 注册到环境）
         List<HirDecl> all = new ArrayList<>();
         all.addAll(module.getImports());
         all.addAll(module.getDeclarations());
@@ -94,7 +97,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     }
 
     public NovaValue evaluateHir(Expression expr) {
-        // 直接分派热路径：跳过 accept() 虚分�?+ try-catch 开销
+        // 直接分派热路径：跳过 accept() 虚分派 + try-catch 开销
         if (expr instanceof Identifier) {
             Identifier ref = (Identifier) expr;
             if (ref.isResolved()) {
@@ -188,24 +191,24 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             SourceLocation loc = node.getLocation();
             String sourceLine = getSourceLineInternal(loc.getLine());
             NovaRuntimeException ex = new NovaRuntimeException(message, loc, sourceLine);
-            ex.setNovaStackTrace(interp.captureStackTrace());
+            ex.setNovaStackTrace(interp.captureStackTraceString());
             return ex;
         }
         NovaRuntimeException ex = new NovaRuntimeException(message);
-        ex.setNovaStackTrace(interp.captureStackTrace());
+        ex.setNovaStackTrace(interp.captureStackTraceString());
         return ex;
     }
 
     private String getSourceLineInternal(int lineNumber) {
         return interp.getSourceLine(lineNumber);
     }
-    private Modifier extractHirVisibility(Set<Modifier> modifiers) {
-        if (modifiers.contains(Modifier.PRIVATE)) return Modifier.PRIVATE;
-        if (modifiers.contains(Modifier.PROTECTED)) return Modifier.PROTECTED;
-        if (modifiers.contains(Modifier.INTERNAL)) return Modifier.INTERNAL;
-        return Modifier.PUBLIC;
+    private nova.runtime.types.Modifier extractHirVisibility(Set<Modifier> modifiers) {
+        if (modifiers.contains(Modifier.PRIVATE)) return nova.runtime.types.Modifier.PRIVATE;
+        if (modifiers.contains(Modifier.PROTECTED)) return nova.runtime.types.Modifier.PROTECTED;
+        if (modifiers.contains(Modifier.INTERNAL)) return nova.runtime.types.Modifier.INTERNAL;
+        return nova.runtime.types.Modifier.PUBLIC;
     }
-    // ============ 声明�?visit 方法 (9) ============
+    // ============ 声明的 visit 方法 (9) ============
 
     @Override
     public NovaValue visitModule(HirModule node, Void ctx) {
@@ -233,7 +236,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                     if (javaClass.isInterface()) javaInterfacesList.add(javaClass);
                     else javaSuperclassRef = javaClass;
                 } else {
-                    // 回退�?resolveClass 解析 Java 类型
+                    // 回退到 resolveClass 解析 Java 类型
                     Class<?> javaClass = interp.resolveClass(superName);
                     if (javaClass != null) {
                         if (javaClass.isInterface()) javaInterfacesList.add(javaClass);
@@ -253,7 +256,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                     if (javaClass.isInterface()) javaInterfacesList.add(javaClass);
                     else if (javaSuperclassRef == null) javaSuperclassRef = javaClass;
                 } else {
-                    // 回退�?resolveClass 解析 Java 类型
+                    // 回退到 resolveClass 解析 Java 类型
                     Class<?> javaClass = interp.resolveClass(ifaceName);
                     if (javaClass != null) {
                         if (javaClass.isInterface()) javaInterfacesList.add(javaClass);
@@ -290,7 +293,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         for (HirFunction method : node.getMethods()) {
             HirFunctionValue func = new HirFunctionValue(method.getName(), method, interp.environment);
             if (method.getModifiers().contains(Modifier.STATIC)) {
-                // 静态方法（�?companion object 方法）：注册为静态字�?
+                // 静态方法（如 companion object 方法）：注册为静态字段
                 novaClass.setStaticField(method.getName(), func);
             } else {
                 novaClass.addMethod(method.getName(), func);
@@ -314,7 +317,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             novaClass.addJavaInterface(javaIface);
         }
 
-        // 评估并存储超类构造器参数（如 Thread("worker")�?
+        // 评估并存储超类构造器参数（如 Thread("worker")）
         if (novaClass.hasJavaSuperTypes() && node.getSuperConstructorArgs() != null
                 && !node.getSuperConstructorArgs().isEmpty()) {
             List<NovaValue> superCtorArgs = new ArrayList<>();
@@ -330,24 +333,24 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             interp.hirSuperCtorArgs.put(node.getName(), node.getSuperConstructorArgs());
         }
 
-        // 注册到环�?
+        // 注册到环境
         if (interp.replMode) {
             interp.environment.redefine(node.getName(), novaClass, false);
         } else {
             interp.environment.defineVal(node.getName(), novaClass);
         }
 
-        // 处理构造器（包装为 HirFunctionValue 存储�?hirConstructors 列表�?
+        // 处理构造器（包装为 HirFunctionValue 存储到 hirConstructors 列表）
         for (HirFunction ctor : node.getConstructors()) {
             HirFunctionValue ctorFunc = new HirFunctionValue("<init>", ctor, interp.environment);
             novaClass.addHirConstructor(ctorFunc);
         }
-        // 兼容：设置主构造器（第一个）�?constructorCallable
+        // 兼容：设置主构造器（第一个）为 constructorCallable
         if (!node.getConstructors().isEmpty()) {
             novaClass.setConstructorCallable(novaClass.getHirConstructors().get(0));
         }
 
-        // 保存所�?HirField 供反�?API 使用
+        // 保存所有 HirField 供反射 API 使用
         interp.hirClassFields.put(node.getName(), node.getFields());
 
         // 处理字段可见性和收集实例字段
@@ -355,7 +358,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         for (HirField field : node.getFields()) {
             novaClass.setFieldVisibility(field.getName(), extractHirVisibility(field.getModifiers()));
 
-            // 静态字�?
+            // 静态字段
             if (field.getModifiers().contains(Modifier.STATIC) ||
                 field.getModifiers().contains(Modifier.CONST)) {
                 if (field.hasInitializer()) {
@@ -382,7 +385,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             interp.classInstanceInitializers.put(node.getName(), node.getInstanceInitializers());
         }
         if (!instanceFields.isEmpty()) {
-            // 构建自定�?getter/setter 缓存（O(1) 查找替代线性扫描）
+            // 构建自定义 getter/setter 缓存（O(1) 查找替代线性扫描）
             Map<String, HirField> getters = null;
             Map<String, HirField> setters = null;
             for (HirField f : instanceFields) {
@@ -404,15 +407,15 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             novaClass.setAnnotation(true);
         }
 
-        // 保存注解�?interp.hirClassAnnotations 供运行时查询
+        // 保存注解到 interp.hirClassAnnotations 供运行时查询
         if (node.getAnnotations() != null && !node.getAnnotations().isEmpty()) {
             interp.hirClassAnnotations.put(node.getName(), node.getAnnotations());
         }
 
-        // 预构建并缓存 ClassInfo（供注解处理器和 classOf 使用�?
+        // 预构建并缓存 ClassInfo（供注解处理器和 classOf 使用）
         novaClass.setCachedClassInfo(interp.buildHirClassInfo(novaClass));
 
-        // 注解处理�?
+        // 注解处理器
         processHirClassAnnotations(node.getAnnotations(), novaClass);
 
         // data class：设置字段顺序（主构造器参数名）
@@ -430,7 +433,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     private NovaValue visitHirInterface(HirClass node) {
         NovaInterface novaInterface = new NovaInterface(node.getName());
 
-        // 超接�?
+        // 超接口
         for (HirType superType : node.getInterfaces()) {
             String superName = interp.getHirTypeName(superType);
             if (superName != null) {
@@ -468,7 +471,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
         NovaObject instance = new NovaObject(objectClass);
 
-        // 初始化属�?
+        // 初始化属性
         for (HirField field : node.getFields()) {
             if (field.hasInitializer()) {
                 Environment tempEnv = new Environment(interp.environment);
@@ -492,7 +495,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     private NovaValue visitHirEnum(HirClass node) {
         NovaEnum novaEnum = new NovaEnum(node.getName());
 
-        // 枚举类方�?
+        // 枚举类方法
         Map<String, NovaCallable> enumMethods = new HashMap<>();
         for (HirFunction method : node.getMethods()) {
             HirFunctionValue func = new HirFunctionValue(method.getName(), method, interp.environment);
@@ -505,7 +508,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         for (HirFunction ctor : node.getConstructors()) {
             ctorParams.addAll(ctor.getParams());
         }
-        // 也检�?fields 作为构造器参数
+        // 也检查 fields 作为构造器参数
         if (ctorParams.isEmpty()) {
             for (HirField field : node.getFields()) {
                 // 每个非静态字段可以作为构造器参数
@@ -522,7 +525,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 fields.put(ctorParams.get(i).getName(), evaluateHir(entryArgs.get(i)));
             }
 
-            // 复制枚举类方�?
+            // 复制枚举类方法
             Map<String, NovaCallable> entryMethods = new HashMap<>(enumMethods);
 
             // 条目特有方法
@@ -608,7 +611,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
     @Override
     public NovaValue visitField(HirField node, Void ctx) {
-        // 扩展属�?
+        // 扩展属性
         if (node.isExtensionProperty() && node.hasInitializer()) {
             String typeName = interp.getHirTypeName(node.getReceiverType());
             if (typeName != null) {
@@ -624,7 +627,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             value = evaluateHir(node.getInitializer());
         }
 
-        // SAM 隐式转换：Lambda/Callable 赋值给 Java 接口类型时自动转�?
+        // SAM 隐式转换：Lambda/Callable 赋值给 Java 接口类型时自动转换
         if (value instanceof NovaCallable && node.getType() != null) {
             String typeName = interp.getHirTypeName(node.getType());
             if (typeName != null) {
@@ -661,13 +664,13 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
     @Override
     public NovaValue visitEnumEntry(HirEnumEntry node, Void ctx) {
-        // �?visitHirEnum 中处�?
+        // 在 visitHirEnum 中处理
         return NovaNull.UNIT;
     }
 
     @Override
     public NovaValue visitTypeAlias(HirTypeAlias node, Void ctx) {
-        // 类型别名在解释器中暂不处�?
+        // 类型别名在解释器中暂不处理
         return NovaNull.UNIT;
     }
 
@@ -728,24 +731,24 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             throw hirError("Class not found: " + className, node);
         }
 
-        // 尝试静态字�?
+        // 尝试静态字段
         try {
             java.lang.reflect.Field field = clazz.getField(memberName);
             if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
                 Object value = field.get(null);
                 String name = node.hasAlias() ? node.getAlias() : memberName;
-                interp.environment.defineVal(name, NovaValue.fromJava(value));
+                interp.environment.defineVal(name, AbstractNovaValue.fromJava(value));
                 return NovaNull.UNIT;
             }
         } catch (NoSuchFieldException e) {
-            // 不是字段，尝试方�?
+            // 不是字段，尝试方法
         } catch (NovaRuntimeException e) {
             throw e;
         } catch (Exception e) {
             throw hirError("Cannot access static field: " + memberName, node);
         }
 
-        // 静态方�?
+        // 静态方法
         String name = node.hasAlias() ? node.getAlias() : memberName;
         JavaInterop.NovaJavaClass javaClass = new JavaInterop.NovaJavaClass(clazz);
         interp.environment.defineVal(name, javaClass.getBoundStaticMethod(memberName));
@@ -763,7 +766,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             return NovaNull.UNIT;
         }
 
-        // 先尝试作�?Java 类导入（�?java 前缀但碰巧是 Java 类）
+        // 先尝试作为 Java 类导入（非 java 前缀但碰巧是 Java 类）
         Class<?> clazz = interp.resolveJavaClass(qualifiedName);
         if (clazz != null) {
             if (!interp.getSecurityPolicy().isClassAllowed(clazz.getName())) {
@@ -801,7 +804,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
         Environment moduleEnv = interp.moduleLoader.loadModule(modulePath, interp);
         if (symbolName == null) {
-            // 通配符导�?
+            // 通配符导入
             moduleEnv.exportAll(interp.environment);
         } else {
             // 指定符号导入
@@ -815,11 +818,11 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         return NovaNull.UNIT;
     }
 
-    // ============ 语句�?visit 方法 (10) ============
+    // ============ 语句的 visit 方法 (10) ============
 
     public NovaValue visitBlock(Block node, Void ctx) {
         if (node.isTransparent()) {
-            // transparent block: 变量定义在当前作用域（guard-let, destructuring�?
+            // transparent block: 变量定义在当前作用域（guard-let, destructuring）
             NovaValue result = NovaNull.UNIT;
             for (Statement stmt : node.getStatements()) {
                 result = executeHirStmt(stmt);
@@ -983,8 +986,8 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 // NovaMap 特殊处理：element 是 Pair，可以解构为 (key, value)
                 if (isMap && variables.size() >= 2 && element instanceof NovaPair) {
                     NovaPair pair = (NovaPair) element;
-                    loopEnv.defineValFast(variables.get(0), NovaValue.fromJava(pair.getFirst()));
-                    loopEnv.defineValFast(variables.get(1), NovaValue.fromJava(pair.getSecond()));
+                    loopEnv.defineValFast(variables.get(0), AbstractNovaValue.fromJava(pair.getFirst()));
+                    loopEnv.defineValFast(variables.get(1), AbstractNovaValue.fromJava(pair.getSecond()));
                 } else {
                     bindForStmtVariables(loopEnv, variables, element);
                 }
@@ -1024,7 +1027,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
     private NovaValue extractComponent(NovaValue value, int index) {
         if (value instanceof NovaPair) {
-            return NovaValue.fromJava(index == 0 ? ((NovaPair) value).getFirst() : ((NovaPair) value).getSecond());
+            return AbstractNovaValue.fromJava(index == 0 ? ((NovaPair) value).getFirst() : ((NovaPair) value).getSecond());
         }
         if (value instanceof NovaList) {
             NovaList list = (NovaList) value;
@@ -1038,7 +1041,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             if (callable != null) {
                 return new NovaBoundMethod(value, callable).call(interp, Collections.emptyList());
             }
-            // @data 类自动生�?componentN
+            // @data 类自动生成 componentN
             if (obj.getNovaClass().isData()) {
                 List<String> fieldNames = interp.getDataClassFieldNames(obj.getNovaClass());
                 if (index < fieldNames.size()) {
@@ -1057,34 +1060,35 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
         try {
             result = executeHirStmt(node.getTryBlock());
-        } catch (NovaRuntimeException e) {
-            boolean caught = false;
-            for (HirTry.CatchClause catchClause : node.getCatches()) {
-                Environment catchEnv = new Environment(interp.environment);
-                catchEnv.defineVal(catchClause.getParamName(), NovaString.of(e.getMessage()));
-                Environment saved = interp.environment;
-                interp.environment = catchEnv;
-                try {
-                    result = executeHirStmt(catchClause.getBody());
-                    caught = true;
-                    break;
-                } catch (ControlFlow cf) {
-                    // 控制流异常不是真正的错误，直接重新抛�?
-                    throw cf;
-                } catch (Throwable catchEx) {
-                    pendingException = catchEx;
-                    caught = true;
-                    break;
-                } finally {
-                    interp.environment = saved;
+        } catch (ControlFlow cf) {
+            if (cf.getType() == ControlFlow.Type.THROW) {
+                // Nova throw 语句：尝试 catch 匹配
+                NovaValue exValue = cf.getValue() != null ? cf.getValue() : NovaNull.NULL;
+                pendingException = attemptCatch(node, exValue);
+                if (pendingException == null) {
+                    result = tryCatchResult;
                 }
+            } else {
+                // break/continue/return：不进 catch，但必须执行 finally
+                pendingException = cf;
             }
-            if (!caught) {
-                pendingException = e;
+        } catch (NovaRuntimeException e) {
+            // 包装为 NovaExternalObject 保留异常对象
+            NovaValue exValue = new NovaExternalObject(e);
+            pendingException = attemptCatch(node, exValue);
+            if (pendingException == null) {
+                result = tryCatchResult;
+            }
+        } catch (Throwable e) {
+            // Java 异常：也尝试 catch 匹配
+            NovaValue exValue = new NovaExternalObject(e);
+            pendingException = attemptCatch(node, exValue);
+            if (pendingException == null) {
+                result = tryCatchResult;
             }
         }
 
-        // finally 块：保存/恢复 hasReturn 状态，防止 finally 体内的副作用干扰控制�?
+        // finally 块：保存/恢复 hasReturn 状态，防止 finally 体内的副作用干扰控制流
         if (node.hasFinally()) {
             boolean returnBeforeFinally = interp.getHasReturn();
             NovaValue returnValueBeforeFinally = interp.getReturnValue();
@@ -1096,7 +1100,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 throw (finallyEx instanceof RuntimeException)
                     ? (RuntimeException) finallyEx : new RuntimeException(finallyEx);
             }
-            // 如果 finally 没有自己�?return，恢复之前的 return 状�?
+            // 如果 finally 没有自己的 return，恢复之前的 return 状态
             if (!interp.getHasReturn()) {
                 interp.setHasReturn(returnBeforeFinally);
                 interp.setReturnValue(returnValueBeforeFinally);
@@ -1112,12 +1116,78 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         return result;
     }
 
+    /** catch 匹配结果暂存（避免多返回值） */
+    private NovaValue tryCatchResult;
+
+    /**
+     * 尝试将异常值与 catch 子句匹配。
+     * @return null 表示已被 catch 处理（结果存入 tryCatchResult），非 null 表示未匹配的 pending 异常
+     */
+    private Throwable attemptCatch(HirTry node, NovaValue exValue) {
+        for (HirTry.CatchClause catchClause : node.getCatches()) {
+            // 按 exceptionType 匹配
+            HirType declaredType = catchClause.getExceptionType();
+            if (declaredType != null && declaredType instanceof ClassType) {
+                String typeName = ((ClassType) declaredType).getName();
+                if (!matchesCatchType(exValue, typeName)) {
+                    continue; // 类型不匹配，尝试下一个 catch
+                }
+            }
+            // 类型匹配（或无类型声明 = catch-all）
+            Environment catchEnv = new Environment(interp.environment);
+            catchEnv.defineVal(catchClause.getParamName(), exValue);
+            Environment saved = interp.environment;
+            interp.environment = catchEnv;
+            try {
+                tryCatchResult = executeHirStmt(catchClause.getBody());
+                return null; // 已处理
+            } catch (ControlFlow cf) {
+                throw cf;
+            } catch (Throwable catchEx) {
+                return catchEx; // catch 体内抛出新异常
+            } finally {
+                interp.environment = saved;
+            }
+        }
+        // 没有 catch 匹配：将 exValue 转回 Throwable
+        if (exValue instanceof NovaExternalObject) {
+            Object javaObj = exValue.toJavaValue();
+            if (javaObj instanceof Throwable) return (Throwable) javaObj;
+        }
+        String msg = exValue.asString();
+        return new NovaRuntimeException(msg != null ? msg : "Uncaught exception");
+    }
+
+    /** 检查异常值是否匹配 catch 声明的类型名 */
+    private boolean matchesCatchType(NovaValue exValue, String typeName) {
+        // "Exception" 匹配所有异常类型的值
+        if ("Exception".equals(typeName)) {
+            return isExceptionValue(exValue);
+        }
+        // 委托给 TypeOps
+        return TypeOps.isInstanceOf(exValue, typeName,
+                interp::resolveClass, null);
+    }
+
+    /** 判断值是否为异常类型 */
+    private boolean isExceptionValue(NovaValue value) {
+        if (value instanceof NovaExternalObject) {
+            return value.toJavaValue() instanceof Throwable;
+        }
+        // NovaObject 且继承自 Exception 类
+        if (value instanceof NovaObject) {
+            return TypeOps.isInstanceOf(value, "Exception",
+                    interp::resolveClass, null);
+        }
+        return true; // Nova throw 可以抛出任意值
+    }
+
     public NovaValue visitReturn(ReturnStmt node, Void ctx) {
         NovaValue value = node.hasValue() ? evaluateHir(node.getValue()) : NovaNull.UNIT;
         if (node.getLabel() != null) {
             throw ControlFlow.returnWithLabel(value, node.getLabel());
         }
-        // 无标�?return：字段信号替�?ControlFlow 异常
+        // 无标签 return：字段信号替代 ControlFlow 异常
         interp.setHasReturn(true);
         interp.setReturnValue(value);
         return value;
@@ -1129,7 +1199,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         SourceLocation loc = node.getLocation();
         String sourceLine = getSourceLineInternal(loc.getLine());
         NovaRuntimeException ex = new NovaRuntimeException(message, loc, sourceLine);
-        ex.setNovaStackTrace(interp.captureStackTrace());
+        ex.setNovaStackTrace(interp.captureStackTraceString());
         throw ex;
     }
 
@@ -1162,8 +1232,8 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     public NovaValue visitVarRef(Identifier node, Void ctx) {
         NovaValue value = interp.environment.tryGet(node.getName());
         if (value != null) {
-            // �?this 是内置类型时，隐�?this 成员应优先于全局内置函数
-            // 例如�?2.run { toString() } �?toString 应调�?Int �?toString 而非全局 toString(value)
+            // 当 this 是内置类型时，隐式 this 成员应优先于全局内置函数
+            // 例如：2.run { toString() } 中 toString 应调用 Int 的 toString 而非全局 toString(value)
             if (value instanceof NovaNativeFunction) {
                 NovaValue thisVal = interp.environment.tryGet("this");
                 if (thisVal != null && !(thisVal instanceof NovaObject) && !(thisVal instanceof NovaEnumEntry)) {
@@ -1180,7 +1250,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         NovaValue thisVal = interp.environment.tryGet("this");
         if (thisVal instanceof NovaObject) {
             NovaObject obj = (NovaObject) thisVal;
-            // 自定�?getter 优先
+            // 自定义 getter 优先
             HirField gf = interp.findHirFieldWithGetter(obj.getNovaClass().getName(), node.getName());
             if (gf != null) {
                 return interp.executeHirCustomGetter(gf, obj);
@@ -1204,7 +1274,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             }
         }
 
-        // 内置类型（String/Int/List/Range/Map 等）的隐�?this 成员访问
+        // 内置类型（String/Int/List/Range/Map 等）的隐式 this 成员访问
         if (thisVal != null && !(thisVal instanceof NovaObject) && !(thisVal instanceof NovaEnumEntry)) {
             NovaValue builtinMethod = interp.resolveBuiltinImplicitThis(thisVal, node.getName());
             if (builtinMethod != null) {
@@ -1242,7 +1312,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             }
         }
 
-        // Java 包路径解析：已知包根（java, javax, com, org, net, io�?
+        // Java 包路径解析：已知包根（java, javax, com, org, net, io）
         String varName = node.getName();
         if (interp.getSecurityPolicy().isJavaInteropAllowed()
                 && ("java".equals(varName) || "javax".equals(varName)
@@ -1273,7 +1343,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     }
 
     public NovaValue visitBinary(BinaryExpr node, Void ctx) {
-        // 短路求�?
+        // 短路求值
         if (node.getOperator() == BinaryOp.AND) {
             NovaValue left = evaluateHir(node.getLeft());
             if (!left.isTruthy()) return NovaBoolean.FALSE;
@@ -1288,7 +1358,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         NovaValue left = evaluateHir(node.getLeft());
         NovaValue right = evaluateHir(node.getRight());
 
-        // Int×Int 快速路径：完全绕过 try-catch 包装和父�?instanceof 级联
+        // Int×Int 快速路径：完全绕过 try-catch 包装和父类 instanceof 级联
         if (left instanceof NovaInt && right instanceof NovaInt) {
             int lv = ((NovaInt) left).getValue();
             int rv = ((NovaInt) right).getValue();
@@ -1398,7 +1468,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 if (operand instanceof NovaInt) return NovaInt.of(-((NovaInt) operand).getValue());
                 if (operand instanceof NovaLong) return NovaLong.of(-((NovaLong) operand).getValue());
                 if (operand instanceof NovaDouble) return NovaDouble.of(-((NovaDouble) operand).getValue());
-                // 运算符重�?
+                // 运算符重载
                 return tryHirOperatorOverload(operand, "unaryMinus", node);
 
             case POS:
@@ -1468,12 +1538,12 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
     @Override
     public NovaValue visitCall(HirCall node, Void ctx) {
-        // Pipeline 回退: a |> f 降级�?f(a)，但 f 可能�?a 的方法而非全局函数
-        // �?callee �?VarRef 且该名称不在环境中时，尝试作为第一个参数的方法调用
+        // Pipeline 回退: a |> f 降级为 f(a)，但 f 可能是 a 的方法而非全局函数
+        // 当 callee 是 VarRef 且该名称不在环境中时，尝试作为第一个参数的方法调用
         if (node.getCallee() instanceof Identifier && !node.getArgs().isEmpty()) {
             String name = ((Identifier) node.getCallee()).getName();
             if (interp.environment.tryGet(name) == null) {
-                // 名称不在环境�?�?尝试解析为第一个参数的方法
+                // 名称不在环境中，尝试解析为第一个参数的方法
                 NovaValue firstArg = evaluateHir(node.getArgs().get(0));
                 try {
                     NovaValue method = interp.memberResolver.resolveMemberOnValue(firstArg, name, node);
@@ -1486,12 +1556,12 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                         return ((NovaCallable) method).call(interp, remainingArgs);
                     }
                 } catch (NovaRuntimeException e) {
-                    // 方法解析也失�?�?落入正常路径报错
+                    // 方法解析也失败，落入正常路径报错
                 }
             }
         }
 
-        // 求�?callee（保�?恢复避免嵌套调用干扰�?
+        // 求值 callee（保存/恢复避免嵌套调用干扰）
         boolean savedEvaluatingCallee = interp.evaluatingCallee;
         interp.evaluatingCallee = true;
         NovaValue callee;
@@ -1511,7 +1581,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         }
 
         if (!(callee instanceof NovaCallable)) {
-            // 可能�?NovaClass 构造器调用
+            // 可能是 NovaClass 构造器调用
             if (callee instanceof NovaClass) {
                 List<NovaValue> args = evaluateHirArgs(node.getArgs());
                 return interp.instantiate((NovaClass) callee, args, namedArgs);
@@ -1519,7 +1589,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             throw hirError("Value is not callable: " + callee.getTypeName(), node);
         }
 
-        // 部分应用：检查是否有占位�?_
+        // 部分应用：检查是否有占位符 _
         boolean hasPlaceholder = false;
         for (Expression argExpr : node.getArgs()) {
             if (argExpr instanceof Identifier && "_".equals(((Identifier) argExpr).getName())) {
@@ -1577,7 +1647,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     }
 
     /**
-     * 求值参数列表，展开 spread 参数�?
+     * 求值参数列表，展开 spread 参数。
      */
     private List<NovaValue> evaluateHirArgsWithSpread(HirCall node) {
         List<Expression> argExprs = node.getArgs();
@@ -1624,7 +1694,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 String varName = ref.getName();
                 // tryAssign 合并 contains + assign 为单次环境链遍历
                 if (!interp.environment.tryAssign(varName, value)) {
-                    // 隐式 this 字段赋�?
+                    // 隐式 this 字段赋值
                     NovaValue thisVal = interp.environment.tryGet("this");
                     if (thisVal instanceof NovaObject && ((NovaObject) thisVal).hasField(varName)) {
                         NovaObject thisObj = (NovaObject) thisVal;
@@ -1672,8 +1742,8 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     }
 
     /**
-     * 创建最小闭包环境，只包�?freeVars 中实际引用的变量�?
-     * 如果任何捕获变量�?var（可变），回退到原�?interp.environment 以保持共享可变状态语义�?
+     * 创建最小闭包环境，只包含 freeVars 中实际引用的变量。
+     * 如果任何捕获变量。var（可变），回退到原始 interp.environment 以保持共享可变状态语义。
      */
     private Environment createHirMinimalClosure(Set<String> freeVars) {
         for (String name : freeVars) {
@@ -1705,7 +1775,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     }
 
     /**
-     * 递归收集 HIR 节点中所�?Identifier 名称（不递归进入嵌套 HirLambda body）�?
+     * 递归收集 HIR 节点中所有 Identifier 名称（不递归进入嵌套 HirLambda body）。
      */
     private static void collectHirVarRefs(AstNode node, Set<String> refs) {
         if (node == null) return;
@@ -1810,7 +1880,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
         NovaValue operand = evaluateHir(node.getOperand());
         String typeName = interp.getHirTypeName(node.getHirTargetType());
 
-        // SAM 转换：Lambda/Callable �?Java 函数式接�?
+        // SAM 转换：Lambda/Callable 转 Java 函数式接口
         if (operand instanceof NovaCallable && typeName != null) {
             try {
                 Class<?> targetClass = interp.resolveClass(typeName);
@@ -1853,7 +1923,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     }
 
     /**
-     * 通用 SAM 代理创建（支�?HirLambdaValue 等任�?NovaCallable�?
+     * 通用 SAM 代理创建（支持 HirLambdaValue 等任意 NovaCallable）
      */
     private Object createSamProxy(Class<?> interfaceClass, NovaCallable callable) {
         java.lang.reflect.Method samMethod = MethodHandleCache.getInstance().getSamMethod(interfaceClass);
@@ -1897,11 +1967,11 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             case MAP: {
                 NovaMap map = new NovaMap();
                 List<Expression> elements = node.getElements();
-                // Map 元素�?key, value, key, value 交替存储，或�?Pair 存储
+                // Map 元素按 key, value, key, value 交替存储，或以 Pair 存储
                 for (Expression elem : elements) {
                     NovaValue pair = evaluateHir(elem);
                     if (pair instanceof NovaPair) {
-                        map.put(NovaValue.fromJava(((NovaPair) pair).getFirst()), NovaValue.fromJava(((NovaPair) pair).getSecond()));
+                        map.put(AbstractNovaValue.fromJava(((NovaPair) pair).getFirst()), AbstractNovaValue.fromJava(((NovaPair) pair).getSecond()));
                     }
                 }
                 return map;
@@ -1932,7 +2002,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                     if (javaClass.isInterface()) javaInterfacesList.add(javaClass);
                     else javaSuperclassRef = javaClass;
                 } else {
-                    // 回退�?resolveClass 解析 Java 类型
+                    // 回退到 resolveClass 解析 Java 类型
                     Class<?> javaClass = interp.resolveClass(typeName);
                     if (javaClass != null) {
                         if (javaClass.isInterface()) javaInterfacesList.add(javaClass);
@@ -1942,7 +2012,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             }
         }
 
-        // 检�?final 类不可继�?
+        // 检查 final 类不可继承
         if (javaSuperclassRef != null && java.lang.reflect.Modifier.isFinal(javaSuperclassRef.getModifiers())) {
             throw hirError("Cannot extend final class: " + javaSuperclassRef.getName(), node);
         }
@@ -1978,7 +2048,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             return NovaNull.UNIT;
         });
 
-        // 检查是否实现了所有抽象方�?
+        // 检查是否实现了所有抽象方法
         List<String> unimplemented = anonClass.getUnimplementedMethods();
         if (!unimplemented.isEmpty()) {
             throw hirError("Anonymous object must implement abstract methods: " +
@@ -2005,17 +2075,17 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     
     public NovaValue visitAwait(AwaitExpr node, Void ctx) {
         NovaValue operand = evaluateHir(node.getOperand());
-        // NovaFuture �?阻塞等待结果
+        // NovaFuture → 阻塞等待结果
         if (operand instanceof NovaFuture) {
             return ((NovaFuture) operand).get(interp);
         }
-        // Java Future（通过 Java 互操作获得的�?
+        // Java Future（通过 Java 互操作获得的）
         if (operand instanceof NovaExternalObject) {
             Object javaObj = ((NovaExternalObject) operand).getJavaObject();
             if (javaObj instanceof java.util.concurrent.Future) {
                 try {
                     Object result = ((java.util.concurrent.Future<?>) javaObj).get();
-                    return NovaValue.fromJava(result);
+                    return AbstractNovaValue.fromJava(result);
                 } catch (java.util.concurrent.ExecutionException e) {
                     throw hirError("await failed: " + e.getCause().getMessage(), node);
                 } catch (InterruptedException e) {
@@ -2024,7 +2094,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 }
             }
         }
-        // Lambda/函数 �?直接调用
+        // Lambda/函数 → 直接调用
         if (operand instanceof NovaCallable) {
             return ((NovaCallable) operand).call(interp, Collections.emptyList());
         }
@@ -2060,7 +2130,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
         public NovaValue visitMethodRef(MethodRefExpr node, Void ctx) {
         if (node.hasTarget()) {
-            // T::class �?reified 类型参数的类名引�?
+            // T::class → reified 类型参数的类名引用
             if ("class".equals(node.getMethodName()) && node.getTarget() instanceof Identifier) {
                 String varName = ((Identifier) node.getTarget()).getName();
                 NovaValue reified = interp.environment.tryGet("__reified_" + varName);
@@ -2086,7 +2156,7 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
             throw hirError("Method '" + methodName + "' not found on " + target.getTypeName(), node);
         }
 
-        // ::funcName（全局函数引用�?
+        // ::funcName（全局函数引用）
         NovaValue func = interp.environment.tryGet(node.getMethodName());
         if (func instanceof NovaCallable) return func;
         throw hirError("Function '" + node.getMethodName() + "' not found", node);

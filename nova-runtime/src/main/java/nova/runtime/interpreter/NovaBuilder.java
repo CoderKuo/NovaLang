@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 import nova.runtime.*;
+import nova.runtime.types.*;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -7,7 +8,7 @@ import java.util.Map;
 /**
  * @builder 注解生成的 Builder 对象
  */
-public final class NovaBuilder extends NovaValue {
+public final class NovaBuilder extends AbstractNovaValue {
 
     private final NovaClass targetClass;
     private final Map<String, NovaValue> fields;

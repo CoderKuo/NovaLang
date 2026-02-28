@@ -8,9 +8,9 @@ import java.util.List;
  * 部分应用函数
  * 当函数调用包含占位符 _ 时，创建此对象而不是立即调用
  */
-public final class NovaPartialApplication extends NovaValue implements NovaCallable {
+public final class NovaPartialApplication extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
-    private final NovaCallable target;
+    private final nova.runtime.NovaCallable target;
     private final List<Object> partialArgs;  // NovaValue 或 PlaceholderMarker
     private final int placeholderCount;
 
@@ -22,7 +22,7 @@ public final class NovaPartialApplication extends NovaValue implements NovaCalla
         }
     };
 
-    public NovaPartialApplication(NovaCallable target, List<Object> partialArgs) {
+    public NovaPartialApplication(nova.runtime.NovaCallable target, List<Object> partialArgs) {
         this.target = target;
         this.partialArgs = partialArgs;
         int count = 0;
@@ -45,7 +45,7 @@ public final class NovaPartialApplication extends NovaValue implements NovaCalla
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
         if (args.size() < placeholderCount) {
             throw new NovaRuntimeException("Expected " + placeholderCount + " arguments, got " + args.size());
         }
@@ -61,7 +61,7 @@ public final class NovaPartialApplication extends NovaValue implements NovaCalla
             }
         }
 
-        return target.call(interpreter, fullArgs);
+        return target.call(ctx, fullArgs);
     }
 
     @Override

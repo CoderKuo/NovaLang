@@ -7,12 +7,12 @@ import java.util.Map;
 /**
  * 绑定方法（对象方法调用）
  */
-public final class NovaBoundMethod extends NovaValue implements NovaCallable {
+public final class NovaBoundMethod extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
     private final NovaValue receiver;
-    private final NovaCallable method;
+    private final nova.runtime.NovaCallable method;
 
-    public NovaBoundMethod(NovaValue receiver, NovaCallable method) {
+    public NovaBoundMethod(NovaValue receiver, nova.runtime.NovaCallable method) {
         this.receiver = receiver;
         this.method = method;
     }
@@ -21,7 +21,7 @@ public final class NovaBoundMethod extends NovaValue implements NovaCallable {
         return receiver;
     }
 
-    public NovaCallable getMethod() {
+    public nova.runtime.NovaCallable getMethod() {
         return method;
     }
 
@@ -46,18 +46,13 @@ public final class NovaBoundMethod extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public boolean isCallable() {
-        return true;
-    }
-
-    @Override
     public String toString() {
         return "<bound method " + method.getName() + ">";
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-        return interpreter.executeBoundMethod(this, args, null);
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+        return ctx.executeBoundMethod(this, args, null);
     }
 
     @Override
@@ -66,8 +61,8 @@ public final class NovaBoundMethod extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public NovaValue callWithNamed(Interpreter interpreter, List<NovaValue> args,
+    public NovaValue callWithNamed(ExecutionContext ctx, List<NovaValue> args,
                                     Map<String, NovaValue> namedArgs) {
-        return interpreter.executeBoundMethod(this, args, namedArgs);
+        return ctx.executeBoundMethod(this, args, namedArgs);
     }
 }

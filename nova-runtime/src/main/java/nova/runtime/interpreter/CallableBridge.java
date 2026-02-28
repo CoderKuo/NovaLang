@@ -10,17 +10,17 @@ import java.util.Map;
 /**
  * NovaCallable 的互操作桥接包装。
  * <p>
- * 继承 {@link NovaValue}（使 fromJava 能原样返回）、实现 {@link NovaCallable}（供 HirEvaluator 调用）、
+ * 继承 {@link AbstractNovaValue}（使 fromJava 能原样返回）、实现 {@link nova.runtime.NovaCallable}（供 HirEvaluator 调用）、
  * 实现 {@link Function1} 或 {@link Function2}（供 ListExtensions.invoke1/invoke2 调用）。
  * <p>
  * 解决 StdlibRegistry Java 互操作层中 NovaCallable 的身份丢失问题：
  * 当 lambda 作为参数传递给 List.add 等方法时，经过 NovaListView → fromJava 能保持可调用性。
  */
-class CallableBridge extends NovaValue implements Function1<Object, Object>, NovaCallable {
+class CallableBridge extends AbstractNovaValue implements Function1<Object, Object>, nova.runtime.NovaCallable {
 
-    final NovaCallable original;
+    final nova.runtime.NovaCallable original;
     final Interpreter interp;
-    CallableBridge(NovaCallable original, Interpreter interp) {
+    CallableBridge(nova.runtime.NovaCallable original, Interpreter interp) {
         this.original = original;
         this.interp = interp;
     }
@@ -29,7 +29,7 @@ class CallableBridge extends NovaValue implements Function1<Object, Object>, Nov
 
     @Override
     public Object invoke(Object arg1) {
-        NovaValue result = original.call(interp, Collections.singletonList(NovaValue.fromJava(arg1)));
+        NovaValue result = original.call(interp, Collections.singletonList(AbstractNovaValue.fromJava(arg1)));
         return toJava(result);
     }
 
@@ -42,17 +42,17 @@ class CallableBridge extends NovaValue implements Function1<Object, Object>, Nov
     public int getArity() { return original.getArity(); }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-        return original.call(interpreter, args);
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+        return original.call(ctx, args);
     }
 
     @Override
     public boolean supportsNamedArgs() { return original.supportsNamedArgs(); }
 
     @Override
-    public NovaValue callWithNamed(Interpreter interpreter, List<NovaValue> args,
+    public NovaValue callWithNamed(ExecutionContext ctx, List<NovaValue> args,
                                     Map<String, NovaValue> namedArgs) {
-        return original.callWithNamed(interpreter, args, namedArgs);
+        return original.callWithNamed(ctx, args, namedArgs);
     }
 
     // ---- NovaValue ----
@@ -76,17 +76,17 @@ class CallableBridge extends NovaValue implements Function1<Object, Object>, Nov
 
     /** arity-0 隐式 it 参数（供 MapExtensions 区分 arity） */
     static final class Implicit extends CallableBridge implements ImplicitItFunction<Object, Object> {
-        Implicit(NovaCallable original, Interpreter interp) {
+        Implicit(nova.runtime.NovaCallable original, Interpreter interp) {
             super(original, interp);
         }
     }
 
     /** arity-2 桥接（实现 Function2 而非 Function1，因为 andThen 签名冲突不能同时实现） */
-    static final class Arity2 extends NovaValue implements Function2<Object, Object, Object>, NovaCallable {
-        final NovaCallable original;
+    static final class Arity2 extends AbstractNovaValue implements Function2<Object, Object, Object>, nova.runtime.NovaCallable {
+        final nova.runtime.NovaCallable original;
         private final Interpreter interp;
 
-        Arity2(NovaCallable original, Interpreter interp) {
+        Arity2(nova.runtime.NovaCallable original, Interpreter interp) {
             this.original = original;
             this.interp = interp;
         }
@@ -94,20 +94,20 @@ class CallableBridge extends NovaValue implements Function1<Object, Object>, Nov
         @Override
         public Object invoke(Object arg1, Object arg2) {
             List<NovaValue> args = new ArrayList<>();
-            args.add(NovaValue.fromJava(arg1));
-            args.add(NovaValue.fromJava(arg2));
+            args.add(AbstractNovaValue.fromJava(arg1));
+            args.add(AbstractNovaValue.fromJava(arg2));
             return toJava(original.call(interp, args));
         }
 
         @Override public String getName() { return original.getName(); }
         @Override public int getArity() { return original.getArity(); }
-        @Override public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-            return original.call(interpreter, args);
+        @Override public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+            return original.call(ctx, args);
         }
         @Override public boolean supportsNamedArgs() { return original.supportsNamedArgs(); }
-        @Override public NovaValue callWithNamed(Interpreter interpreter, List<NovaValue> args,
+        @Override public NovaValue callWithNamed(ExecutionContext ctx, List<NovaValue> args,
                                                   Map<String, NovaValue> namedArgs) {
-            return original.callWithNamed(interpreter, args, namedArgs);
+            return original.callWithNamed(ctx, args, namedArgs);
         }
         @Override public String getTypeName() { return "Function"; }
         @Override public Object toJavaValue() { return this; }

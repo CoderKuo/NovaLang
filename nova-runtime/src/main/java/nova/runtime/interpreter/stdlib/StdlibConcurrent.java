@@ -1,5 +1,6 @@
 package nova.runtime.interpreter.stdlib;
 
+import nova.runtime.types.Environment;
 import nova.runtime.interpreter.*;
 
 /**

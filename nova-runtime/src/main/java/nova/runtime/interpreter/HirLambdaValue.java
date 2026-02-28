@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 import nova.runtime.*;
+import nova.runtime.types.Environment;
 
 import com.novalang.ir.hir.decl.HirParam;
 import com.novalang.ir.hir.expr.HirLambda;
@@ -10,7 +11,7 @@ import java.util.List;
  * HIR Lambda 运行时值。
  * 持有 HirLambda（HIR 节点）而非 LambdaExpr（AST 节点）。
  */
-public final class HirLambdaValue extends NovaValue implements NovaCallable {
+public final class HirLambdaValue extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
     private final HirLambda expression;
     private final Environment closure;
@@ -37,9 +38,6 @@ public final class HirLambdaValue extends NovaValue implements NovaCallable {
     public Object toJavaValue() { return this; }
 
     @Override
-    public boolean isCallable() { return true; }
-
-    @Override
     public String toString() {
         int arity = getArity();
         if (arity == 0) return "{ -> ... }";
@@ -54,7 +52,7 @@ public final class HirLambdaValue extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-        return interpreter.executeHirLambda(this, args);
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+        return ctx.executeHirLambda(this, args);
     }
 }

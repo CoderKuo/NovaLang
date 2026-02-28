@@ -1,5 +1,6 @@
 package nova.runtime.interpreter;
 import nova.runtime.*;
+import nova.runtime.types.Environment;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,17 +30,17 @@ import java.util.Map;
  * }
  * </pre>
  */
-public final class NovaEnum extends NovaValue implements NovaCallable {
+public final class NovaEnum extends AbstractNovaValue implements nova.runtime.NovaCallable {
 
     private final String name;
     private final Map<String, NovaEnumEntry> entries;  // 保持插入顺序
-    private final Map<String, NovaCallable> methods;   // 枚举类方法
+    private final Map<String, nova.runtime.NovaCallable> methods;   // 枚举类方法
     private final Environment closure;
 
     public NovaEnum(String name, Environment closure) {
         this.name = name;
         this.entries = new LinkedHashMap<String, NovaEnumEntry>();
-        this.methods = new LinkedHashMap<String, NovaCallable>();
+        this.methods = new LinkedHashMap<String, nova.runtime.NovaCallable>();
         this.closure = closure;
     }
 
@@ -104,14 +105,14 @@ public final class NovaEnum extends NovaValue implements NovaCallable {
     /**
      * 添加方法
      */
-    public void addMethod(String methodName, NovaCallable method) {
+    public void addMethod(String methodName, nova.runtime.NovaCallable method) {
         methods.put(methodName, method);
     }
 
     /**
      * 获取方法
      */
-    public NovaCallable getMethod(String methodName) {
+    public nova.runtime.NovaCallable getMethod(String methodName) {
         return methods.get(methodName);
     }
 
@@ -144,7 +145,7 @@ public final class NovaEnum extends NovaValue implements NovaCallable {
     }
 
     @Override
-    public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
+    public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
         // 枚举类不能直接调用
         throw new NovaRuntimeException("Cannot instantiate enum class: " + name);
     }

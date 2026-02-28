@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -284,7 +285,7 @@ public final class Builtins {
                     bound.call(interp, java.util.Collections.emptyList());
                 };
                 Object result = capturedInfo.impl.apply(consumer);
-                return NovaValue.fromJava(result);
+                return AbstractNovaValue.fromJava(result);
             }));
         }
 
@@ -307,7 +308,7 @@ public final class Builtins {
                 for (int i = 0; i < args.size(); i++) {
                     javaArgs[i] = args.get(i).toJavaValue();
                 }
-                return NovaValue.fromJava(capturedNf.impl.apply(javaArgs));
+                return AbstractNovaValue.fromJava(capturedNf.impl.apply(javaArgs));
             }));
         }
 
@@ -317,7 +318,7 @@ public final class Builtins {
             env.defineVal(funcName, new NovaNativeFunction(funcName, 1, (interp, args) -> {
                 NovaValue arg = args.get(0);
                 NovaCallable callable = interp.asCallable(arg, funcName);
-                return new NovaFuture(callable, interp);
+                return new NovaFuture(callable, (Interpreter) interp);
             }));
         }
 
@@ -325,7 +326,7 @@ public final class Builtins {
 
         for (StdlibRegistry.ConstantInfo ci : StdlibRegistry.getConstants()) {
             if ("Dispatchers".equals(ci.name)) continue; // 解释器使用自己的 NovaMap 版本
-            env.defineVal(ci.name, NovaValue.fromJava(ci.value));
+            env.defineVal(ci.name, AbstractNovaValue.fromJava(ci.value));
         }
 
         // ============ 反射 API ============
@@ -362,32 +363,32 @@ public final class Builtins {
                 }
 
                 @Override
-                public void processClass(NovaClass target, Map<String, NovaValue> annArgs, Interpreter interp2) {
+                public void processClass(NovaValue target, Map<String, NovaValue> annArgs, ExecutionContext ctx) {
                     NovaMap argsMap = new NovaMap();
                     for (Map.Entry<String, NovaValue> e : annArgs.entrySet()) {
                         argsMap.put(NovaString.of(e.getKey()), e.getValue());
                     }
-                    NovaClassInfo info = NovaClassInfo.fromNovaClass(target);
-                    ((NovaCallable) handlerHolder[0]).call(interp2, Arrays.asList(info, argsMap));
+                    NovaClassInfo info = NovaClassInfo.fromNovaClass((nova.runtime.types.NovaClass) target);
+                    ((NovaCallable) handlerHolder[0]).call(ctx, Arrays.asList(info, argsMap));
                 }
 
                 @Override
-                public void processFun(NovaCallable target, Map<String, NovaValue> annArgs, Interpreter interp2) {
+                public void processFun(NovaValue target, Map<String, NovaValue> annArgs, ExecutionContext ctx) {
                     NovaMap argsMap = new NovaMap();
                     for (Map.Entry<String, NovaValue> e : annArgs.entrySet()) {
                         argsMap.put(NovaString.of(e.getKey()), e.getValue());
                     }
-                    ((NovaCallable) handlerHolder[0]).call(interp2, Arrays.asList((NovaValue) target, argsMap));
+                    ((NovaCallable) handlerHolder[0]).call(ctx, Arrays.asList(target, argsMap));
                 }
 
                 @Override
                 public void processProperty(String propertyName, NovaValue propertyValue,
-                                             Map<String, NovaValue> annArgs, Interpreter interp2) {
+                                             Map<String, NovaValue> annArgs, ExecutionContext ctx) {
                     NovaMap argsMap = new NovaMap();
                     for (Map.Entry<String, NovaValue> e : annArgs.entrySet()) {
                         argsMap.put(NovaString.of(e.getKey()), e.getValue());
                     }
-                    ((NovaCallable) handlerHolder[0]).call(interp2, Arrays.asList(NovaString.of(propertyName), argsMap));
+                    ((NovaCallable) handlerHolder[0]).call(ctx, Arrays.asList(NovaString.of(propertyName), argsMap));
                 }
             };
 
@@ -521,7 +522,7 @@ public final class Builtins {
             } else {
                 block = interp.asCallable(args.get(0), "coroutineScope");
             }
-            NovaScope scope = new NovaScope(interp, exec, false);
+            NovaScope scope = new NovaScope((Interpreter) interp, exec, false);
             NovaValue result = block.call(interp, java.util.Collections.singletonList(scope));
             scope.joinAll();
             return result;
@@ -540,7 +541,7 @@ public final class Builtins {
             } else {
                 block = interp.asCallable(args.get(0), "supervisorScope");
             }
-            NovaScope scope = new NovaScope(interp, exec, true);
+            NovaScope scope = new NovaScope((Interpreter) interp, exec, true);
             NovaValue result = block.call(interp, java.util.Collections.singletonList(scope));
             scope.joinAll();
             return result;
@@ -553,7 +554,7 @@ public final class Builtins {
             long delayMs = args.get(0).asLong();
             NovaCallable block = interp.asCallable(args.get(1), "schedule");
             NovaScheduler.Cancellable handle = sched.scheduleLater(delayMs, () ->
-                    block.call(new Interpreter(interp), java.util.Collections.emptyList()));
+                    block.call(interp.createChild(), java.util.Collections.emptyList()));
             return new NovaTask(handle);
         }));
 
@@ -565,7 +566,7 @@ public final class Builtins {
             long periodMs = args.get(1).asLong();
             NovaCallable block = interp.asCallable(args.get(2), "scheduleRepeat");
             NovaScheduler.Cancellable handle = sched.scheduleRepeat(delayMs, periodMs, () ->
-                    block.call(new Interpreter(interp), java.util.Collections.emptyList()));
+                    block.call(interp.createChild(), java.util.Collections.emptyList()));
             return new NovaTask(handle);
         }));
 
@@ -581,7 +582,7 @@ public final class Builtins {
             java.util.concurrent.CompletableFuture<NovaValue> future = new java.util.concurrent.CompletableFuture<>();
             Runnable task = () -> {
                 try {
-                    future.complete(block.call(new Interpreter(interp), java.util.Collections.emptyList()));
+                    future.complete(block.call(interp.createChild(), java.util.Collections.emptyList()));
                 } catch (Exception e) {
                     future.completeExceptionally(e);
                 }
@@ -617,7 +618,7 @@ public final class Builtins {
             java.util.concurrent.CompletableFuture<NovaValue> future = new java.util.concurrent.CompletableFuture<>();
             sched.mainExecutor().execute(() -> {
                 try {
-                    future.complete(block.call(new Interpreter(interp), java.util.Collections.emptyList()));
+                    future.complete(block.call(interp.createChild(), java.util.Collections.emptyList()));
                 } catch (Exception e) {
                     future.completeExceptionally(e);
                 }
@@ -637,21 +638,21 @@ public final class Builtins {
         // launch { block } — fire-and-forget 异步，返回 Job
         env.defineVal("launch", new NovaNativeFunction("launch", 1, (interp, args) -> {
             NovaCallable block = interp.asCallable(args.get(0), "launch");
-            java.util.concurrent.Executor exec = getAsyncExecutor(interp);
+            java.util.concurrent.Executor exec = getAsyncExecutor((Interpreter) interp);
             java.util.concurrent.CompletableFuture<NovaValue> future =
                 java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    block.call(new Interpreter(interp), java.util.Collections.emptyList()), exec);
+                    block.call(interp.createChild(), java.util.Collections.emptyList()), exec);
             return new NovaJob(future);
         }));
 
         // parallel(tasks...) — 并行执行多个 lambda，返回结果列表
         env.defineVal("parallel", new NovaNativeFunction("parallel", -1, (interp, args) -> {
-            java.util.concurrent.Executor exec = getAsyncExecutor(interp);
+            java.util.concurrent.Executor exec = getAsyncExecutor((Interpreter) interp);
             java.util.List<java.util.concurrent.CompletableFuture<NovaValue>> futures = new java.util.ArrayList<>();
             for (NovaValue arg : args) {
                 NovaCallable task = interp.asCallable(arg, "parallel");
                 futures.add(java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    task.call(new Interpreter(interp), java.util.Collections.emptyList()), exec));
+                    task.call(interp.createChild(), java.util.Collections.emptyList()), exec));
             }
             NovaList results = new NovaList();
             for (java.util.concurrent.CompletableFuture<NovaValue> f : futures) {
@@ -673,10 +674,10 @@ public final class Builtins {
         env.defineVal("withTimeout", new NovaNativeFunction("withTimeout", 2, (interp, args) -> {
             long timeout = args.get(0).asLong();
             NovaCallable block = interp.asCallable(args.get(1), "withTimeout");
-            java.util.concurrent.Executor exec = getAsyncExecutor(interp);
+            java.util.concurrent.Executor exec = getAsyncExecutor((Interpreter) interp);
             java.util.concurrent.CompletableFuture<NovaValue> future =
                 java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    block.call(new Interpreter(interp), java.util.Collections.emptyList()), exec);
+                    block.call(interp.createChild(), java.util.Collections.emptyList()), exec);
             try {
                 return future.get(timeout, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (java.util.concurrent.TimeoutException e) {
@@ -825,7 +826,7 @@ public final class Builtins {
                 if (javaObj instanceof java.util.concurrent.Future) {
                     try {
                         Object result = ((java.util.concurrent.Future<?>) javaObj).get();
-                        results.add(NovaValue.fromJava(result));
+                        results.add(AbstractNovaValue.fromJava(result));
                     } catch (java.util.concurrent.ExecutionException e) {
                         Throwable cause = e.getCause();
                         if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
@@ -858,7 +859,7 @@ public final class Builtins {
                 for (java.util.concurrent.Future<Object> f : submitted) {
                     if (f.isDone()) {
                         try {
-                            return NovaValue.fromJava(f.get());
+                            return AbstractNovaValue.fromJava(f.get());
                         } catch (Exception e) {
                             throw new NovaRuntimeException("awaitFirst failed: " + e.getMessage());
                         }
@@ -880,7 +881,7 @@ public final class Builtins {
                 : java.util.concurrent.ForkJoinPool.commonPool();
             java.util.concurrent.CompletableFuture<NovaValue> future =
                 java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    block.call(new Interpreter(interp), Collections.emptyList()), exec);
+                    block.call(interp.createChild(), Collections.emptyList()), exec);
             try {
                 return future.get();
             } catch (java.util.concurrent.ExecutionException e) {

@@ -1,6 +1,9 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.Environment;
+import nova.runtime.types.NovaClass;
+import nova.runtime.types.NovaInterface;
 import com.novalang.compiler.ast.AstNode;
 import com.novalang.compiler.ast.Modifier;
 import com.novalang.compiler.ast.expr.Expression;
@@ -106,6 +109,12 @@ final class MemberResolver {
             if (r != null) return r;
         }
         if (obj instanceof NovaBuilder) return resolveHirBuilderMember((NovaBuilder) obj, memberName, node);
+        if (obj instanceof NovaLibrary) {
+            NovaValue member = ((NovaLibrary) obj).getMember(memberName);
+            if (member != null) return member;
+            throw interp.hirError("Unknown member '" + memberName + "' on library '"
+                    + ((NovaLibrary) obj).getName() + "'", node);
+        }
         { NovaValue d = MemberDispatcher.dispatch(obj, memberName, interp); if (d != null) return d; }
         if (obj instanceof NovaExternalObject) return resolveMemberOnExternal((NovaExternalObject) obj, memberName, node);
         if (obj instanceof JavaInterop.NovaJavaClass) return ((JavaInterop.NovaJavaClass) obj).getStaticField(memberName);
@@ -120,8 +129,14 @@ final class MemberResolver {
             switch (memberName) {
                 case "isActive":    return NovaBoolean.of(s.isActive());
                 case "isCancelled": return NovaBoolean.of(s.isCancelled());
-                case "async":  return new NovaNativeFunction("async", 1, (i, a) -> s.async(i.asCallable(a.get(0), "async")));
-                case "launch": return new NovaNativeFunction("launch", 1, (i, a) -> s.launch(i.asCallable(a.get(0), "launch")));
+                case "async":  return new NovaNativeFunction("async", 1, (ctx, a) -> {
+                    Interpreter interp = (Interpreter) ctx;
+                    return s.async(interp.asCallable(a.get(0), "async"));
+                });
+                case "launch": return new NovaNativeFunction("launch", 1, (ctx, a) -> {
+                    Interpreter interp = (Interpreter) ctx;
+                    return s.launch(interp.asCallable(a.get(0), "launch"));
+                });
                 case "cancel": return NovaNativeFunction.create("cancel", () -> { s.cancel(); return NovaNull.UNIT; });
             }
         }
@@ -130,8 +145,8 @@ final class MemberResolver {
             switch (memberName) {
                 case "isDone":      return NovaBoolean.of(d.isDone());
                 case "isCancelled": return NovaBoolean.of(d.isCancelled());
-                case "await": return new NovaNativeFunction("await", 0, (i, a) -> d.await(i));
-                case "get":   return new NovaNativeFunction("get", 0, (i, a) -> d.await(i));
+                case "await": return new NovaNativeFunction("await", 0, (ctx, a) -> d.await((Interpreter) ctx));
+                case "get":   return new NovaNativeFunction("get", 0, (ctx, a) -> d.await((Interpreter) ctx));
                 case "cancel": return NovaNativeFunction.create("cancel", () -> NovaBoolean.of(d.cancel()));
             }
         }
@@ -141,7 +156,7 @@ final class MemberResolver {
                 case "isActive":    return NovaBoolean.of(j.isActive());
                 case "isCompleted": return NovaBoolean.of(j.isCompleted());
                 case "isCancelled": return NovaBoolean.of(j.isCancelled());
-                case "join":   return new NovaNativeFunction("join", 0, (i, a) -> { j.join(); return NovaNull.UNIT; });
+                case "join":   return new NovaNativeFunction("join", 0, (ctx, a) -> { j.join(); return NovaNull.UNIT; });
                 case "cancel": return NovaNativeFunction.create("cancel", () -> NovaBoolean.of(j.cancel()));
             }
         }
@@ -338,6 +353,12 @@ final class MemberResolver {
         NovaValue stdlibResult = tryStdlibFallback(extObj, memberName);
         if (stdlibResult != null) return resolveAndAutoCall(stdlibResult);
 
+        // Nova 扩展方法（registerExtension / registerNovaExtension）
+        NovaCallable extFunc = interp.findExtension(extObj, memberName);
+        if (extFunc != null) return new NovaBoundMethod(extObj, extFunc);
+        extFunc = interp.findNovaExtension(extObj, memberName);
+        if (extFunc != null) return new NovaBoundMethod(extObj, extFunc);
+
         // 字段访问
         try {
             return extObj.getField(memberName);
@@ -387,8 +408,8 @@ final class MemberResolver {
                     }
                     if (obj instanceof NovaPair) {
                         NovaPair pair = (NovaPair) obj;
-                        if (n == 1) return NovaNativeFunction.create(memberName, () -> NovaValue.fromJava(pair.getFirst()));
-                        if (n == 2) return NovaNativeFunction.create(memberName, () -> NovaValue.fromJava(pair.getSecond()));
+                        if (n == 1) return NovaNativeFunction.create(memberName, () -> AbstractNovaValue.fromJava(pair.getFirst()));
+                        if (n == 2) return NovaNativeFunction.create(memberName, () -> AbstractNovaValue.fromJava(pair.getSecond()));
                     }
                 }
             } catch (NumberFormatException ignored) {}
@@ -446,7 +467,7 @@ final class MemberResolver {
         List<StdlibRegistry.ExtensionMethodInfo> overloads =
                 StdlibRegistry.getExtensionMethodOverloads(targetType, name);
 
-        return new NovaNativeFunction(name, -1, (interp2, args) -> {
+        return new NovaNativeFunction(name, -1, (ctx, args) -> {
             StdlibRegistry.ExtensionMethodInfo method = null;
             for (StdlibRegistry.ExtensionMethodInfo info : overloads) {
                 if (info.arity == args.size()) { method = info; break; }
@@ -457,12 +478,13 @@ final class MemberResolver {
             }
             Object[] fullArgs = new Object[args.size() + 1];
             fullArgs[0] = rawReceiver ? receiver : toShallowJavaValue(receiver);
+            Interpreter interp2 = (Interpreter) ctx;
             for (int i = 0; i < args.size(); i++) {
                 NovaValue arg = args.get(i);
                 fullArgs[i + 1] = argToJava(interp2, arg);
             }
             Object result = method.impl.apply(fullArgs);
-            return NovaValue.fromJava(result);
+            return AbstractNovaValue.fromJava(result);
         });
     }
 
@@ -503,18 +525,19 @@ final class MemberResolver {
         if (extMethod.isProperty) {
             Object[] fullArgs = new Object[]{ rawReceiver ? receiver : toShallowJavaValue(receiver) };
             Object result = extMethod.impl.apply(fullArgs);
-            return NovaValue.fromJava(result);
+            return AbstractNovaValue.fromJava(result);
         }
         // 方法：包装为 NovaNativeFunction
-        return new NovaNativeFunction(name, extMethod.arity, (interp2, args) -> {
+        return new NovaNativeFunction(name, extMethod.arity, (ctx, args) -> {
             Object[] fullArgs = new Object[args.size() + 1];
             fullArgs[0] = rawReceiver ? receiver : toShallowJavaValue(receiver);
+            Interpreter interp2 = (Interpreter) ctx;
             for (int i = 0; i < args.size(); i++) {
                 NovaValue arg = args.get(i);
                 fullArgs[i + 1] = argToJava(interp2, arg);
             }
             Object result = extMethod.impl.apply(fullArgs);
-            return NovaValue.fromJava(result);
+            return AbstractNovaValue.fromJava(result);
         });
     }
 
@@ -534,8 +557,8 @@ final class MemberResolver {
 
     /** 将 StdlibRegistry 方法参数从 NovaValue 转为 Java 值（保持 NovaObject/NovaPair 身份） */
     private Object argToJava(Interpreter interp2, NovaValue arg) {
-        if (arg instanceof NovaCallable) {
-            return wrapCallableAsFunction(interp2, (NovaCallable) arg);
+        if (arg instanceof nova.runtime.NovaCallable) {
+            return wrapCallableAsFunction(interp2, (nova.runtime.NovaCallable) arg);
         }
         // MIR lambda: NovaObject with invoke method → 包装为函数
         if (arg instanceof NovaObject) {
@@ -556,7 +579,7 @@ final class MemberResolver {
     }
 
     /** 将 NovaCallable 包装为 Function1/Function2（使用 Nova 函数接口，避免跨模块 cast 问题） */
-    private Object wrapCallableAsFunction(Interpreter interp2, NovaCallable callable) {
+    private Object wrapCallableAsFunction(Interpreter interp2, nova.runtime.NovaCallable callable) {
         int arity = callable.getArity();
         if (arity == 2) {
             return new CallableBridge.Arity2(callable, interp2);
@@ -606,15 +629,15 @@ final class MemberResolver {
             case "type": return fi.type != null ? NovaString.of(fi.type) : NovaNull.NULL;
             case "visibility": return NovaString.of(fi.visibility);
             case "mutable": return NovaBoolean.of(fi.mutable);
-            case "get": return new NovaNativeFunction("get", 1, (interpreter, args) -> {
+            case "get": return new NovaNativeFunction("get", 1, (ctx, args) -> {
                 if (fi.getOwnerClass() != null) {
                     NovaObject obj = (NovaObject) args.get(0);
                     return obj.getField(fi.name);
                 } else {
-                    return NovaValue.fromJava(fi.get(args.get(0).toJavaValue()));
+                    return AbstractNovaValue.fromJava(fi.get(args.get(0).toJavaValue()));
                 }
             });
-            case "set": return new NovaNativeFunction("set", 2, (interpreter, args) -> {
+            case "set": return new NovaNativeFunction("set", 2, (ctx, args) -> {
                 if (fi.getOwnerClass() != null) {
                     NovaObject obj = (NovaObject) args.get(0);
                     obj.setField(fi.name, args.get(1));
@@ -633,16 +656,16 @@ final class MemberResolver {
             case "name": return NovaString.of(mi.name);
             case "visibility": return NovaString.of(mi.visibility);
             case "params": return new NovaList(new ArrayList<>(mi.getParamInfos()));
-            case "call": return NovaNativeFunction.createVararg("call", (interpreter, args) -> {
+            case "call": return NovaNativeFunction.createVararg("call", (ctx, args) -> {
                 NovaValue instance = args.get(0);
                 List<NovaValue> methodArgs = args.subList(1, args.size());
                 if (mi.getNovaCallable() != null) {
                     NovaBoundMethod bound = new NovaBoundMethod(instance, mi.getNovaCallable());
-                    return bound.call(interpreter, methodArgs);
+                    return bound.call(ctx, methodArgs);
                 } else {
                     Object[] jArgs = new Object[methodArgs.size()];
                     for (int i = 0; i < methodArgs.size(); i++) jArgs[i] = methodArgs.get(i).toJavaValue();
-                    return NovaValue.fromJava(mi.call(instance.toJavaValue(), jArgs));
+                    return AbstractNovaValue.fromJava(mi.call(instance.toJavaValue(), jArgs));
                 }
             });
             default:
@@ -725,7 +748,7 @@ final class MemberResolver {
             for (HirField hf : hirFields) {
                 if (hf.getModifiers().contains(Modifier.STATIC)) continue;
                 String typeName = interp.getHirTypeName(hf.getType());
-                Modifier vis = cls.getFieldVisibility(hf.getName());
+                nova.runtime.types.Modifier vis = cls.getFieldVisibility(hf.getName());
                 String visStr = vis != null ? vis.name().toLowerCase() : "public";
                 boolean isMutable = !hf.isVal();
                 fields.add(new NovaFieldInfo(hf.getName(), typeName, visStr, isMutable, cls, null));
@@ -735,7 +758,7 @@ final class MemberResolver {
             HirFunctionValue ctorFunc = (HirFunctionValue) cls.getConstructorCallable();
             for (HirParam param : ctorFunc.getDeclaration().getParams()) {
                 String typeName = interp.getHirTypeName(param.getType());
-                Modifier vis = cls.getFieldVisibility(param.getName());
+                nova.runtime.types.Modifier vis = cls.getFieldVisibility(param.getName());
                 String visStr = vis != null ? vis.name().toLowerCase() : "public";
                 fields.add(new NovaFieldInfo(param.getName(), typeName, visStr, true, cls, null));
             }
@@ -745,7 +768,7 @@ final class MemberResolver {
         List<NovaMethodInfo> methods = new ArrayList<>();
         for (Map.Entry<String, NovaCallable> entry : cls.getCallableMethods().entrySet()) {
             NovaCallable callable = entry.getValue();
-            Modifier vis = cls.getMethodVisibility(entry.getKey());
+            nova.runtime.types.Modifier vis = cls.getMethodVisibility(entry.getKey());
             String visStr = vis != null ? vis.name().toLowerCase() : "public";
             List<NovaParamInfo> params = NovaClassInfo.extractParams(callable);
             methods.add(new NovaMethodInfo(entry.getKey(), visStr, params, callable));
@@ -833,7 +856,7 @@ final class MemberResolver {
         }
 
         // fluent setter: 字段名作为方法名
-        NovaCallable ctor = targetClass.getConstructorCallable();
+        nova.runtime.NovaCallable ctor = targetClass.getConstructorCallable();
         if (ctor instanceof HirFunctionValue) {
             for (HirParam p : ((HirFunctionValue) ctor).getDeclaration().getParams()) {
                 if (p.getName().equals(memberName)) {
@@ -900,13 +923,13 @@ final class MemberResolver {
         if (target instanceof NovaPair) {
             int i = ((NovaInt) index).getValue();
             NovaPair pair = (NovaPair) target;
-            if (i == 0) return NovaValue.fromJava(pair.getFirst());
-            if (i == 1) return NovaValue.fromJava(pair.getSecond());
+            if (i == 0) return AbstractNovaValue.fromJava(pair.getFirst());
+            if (i == 1) return AbstractNovaValue.fromJava(pair.getSecond());
             throw interp.hirError("Pair index out of bounds: " + i, node);
         }
         // 运算符重载 get()
         if (target instanceof NovaObject) {
-            NovaCallable getMethod = ((NovaObject) target).getNovaClass().findCallableMethod("get");
+            nova.runtime.NovaCallable getMethod = ((NovaObject) target).getNovaClass().findCallableMethod("get");
             if (getMethod != null) {
                 return new NovaBoundMethod(target, getMethod).call(interp, Collections.singletonList(index));
             }
@@ -940,7 +963,7 @@ final class MemberResolver {
     /**
      * HIR 版 data copy 函数，支持命名参数。
      */
-    static final class HirDataCopyFunction extends NovaValue implements NovaCallable {
+    static final class HirDataCopyFunction extends AbstractNovaValue implements nova.runtime.NovaCallable {
         private final NovaObject source;
 
         HirDataCopyFunction(NovaObject source) {
@@ -951,12 +974,11 @@ final class MemberResolver {
         @Override public int getArity() { return -1; }
         @Override public String getTypeName() { return "Function"; }
         @Override public Object toJavaValue() { return this; }
-        @Override public boolean isCallable() { return true; }
         @Override public String toString() { return "<fun copy>"; }
         @Override public boolean supportsNamedArgs() { return true; }
 
         @Override
-        public NovaValue callWithNamed(Interpreter interpreter, List<NovaValue> args,
+        public NovaValue callWithNamed(ExecutionContext ctx, List<NovaValue> args,
                                         Map<String, NovaValue> namedArgs) {
             NovaObject copy = new NovaObject(source.getNovaClass());
             // 先复制所有字段
@@ -980,8 +1002,8 @@ final class MemberResolver {
         }
 
         @Override
-        public NovaValue call(Interpreter interpreter, List<NovaValue> args) {
-            return callWithNamed(interpreter, args, null);
+        public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+            return callWithNamed(ctx, args, null);
         }
     }
 
@@ -1004,17 +1026,19 @@ final class MemberResolver {
             case "isErr":
                 return NovaBoolean.of(result.isErr());
             case "map":
-                return new NovaNativeFunction("map", 1, (interp2, args) -> {
+                return new NovaNativeFunction("map", 1, (ctx, args) -> {
                     if (result.isErr()) return result;
-                    NovaCallable func = interp2.asCallable(args.get(0), "Result method");
-                    NovaValue mapped = func.call(interp2, java.util.Collections.singletonList(result.getInner()));
+                    Interpreter interp2 = (Interpreter) ctx;
+                    nova.runtime.NovaCallable func = interp2.asCallable(args.get(0), "Result method");
+                    NovaValue mapped = func.call(ctx, java.util.Collections.singletonList(result.getInner()));
                     return NovaResult.ok(mapped);
                 });
             case "mapErr":
-                return new NovaNativeFunction("mapErr", 1, (interp2, args) -> {
+                return new NovaNativeFunction("mapErr", 1, (ctx, args) -> {
                     if (result.isOk()) return result;
-                    NovaCallable func = interp2.asCallable(args.get(0), "Result method");
-                    NovaValue mapped = func.call(interp2, java.util.Collections.singletonList(result.getInner()));
+                    Interpreter interp2 = (Interpreter) ctx;
+                    nova.runtime.NovaCallable func = interp2.asCallable(args.get(0), "Result method");
+                    NovaValue mapped = func.call(ctx, java.util.Collections.singletonList(result.getInner()));
                     return NovaResult.err(mapped);
                 });
             case "unwrap":
@@ -1027,10 +1051,11 @@ final class MemberResolver {
                     return result.isOk() ? result.getInner() : defaultVal;
                 });
             case "unwrapOrElse":
-                return new NovaNativeFunction("unwrapOrElse", 1, (interp2, args) -> {
+                return new NovaNativeFunction("unwrapOrElse", 1, (ctx, args) -> {
                     if (result.isOk()) return result.getInner();
-                    NovaCallable func = interp2.asCallable(args.get(0), "Result method");
-                    return func.call(interp2, java.util.Collections.singletonList(result.getInner()));
+                    Interpreter interp2 = (Interpreter) ctx;
+                    nova.runtime.NovaCallable func = interp2.asCallable(args.get(0), "Result method");
+                    return func.call(ctx, java.util.Collections.singletonList(result.getInner()));
                 });
             case "getOrNull":
                 return NovaNativeFunction.create("getOrNull", () -> {
