@@ -416,7 +416,8 @@ public class Lexer {
     private boolean isAlpha(char c) {
         return (c >= 'a' && c <= 'z') ||
                (c >= 'A' && c <= 'Z') ||
-               c == '_';
+               c == '_' ||
+               Character.isLetter(c);
     }
 
     private boolean isAlphaNumeric(char c) {

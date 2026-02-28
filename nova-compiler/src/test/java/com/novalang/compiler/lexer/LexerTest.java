@@ -1417,11 +1417,13 @@ class LexerTest {
         }
 
         @Test
-        @DisplayName("中文字符作为标识符不报错")
-        void testChineseCharWontCrash() {
-            // 中文字符不在 isAlpha 范围内，应报未知字符错误
-            String errors = scanWithErrors("你好");
-            assertTrue(errors.contains("Unexpected character"));
+        @DisplayName("中文字符作为标识符")
+        void testChineseCharAsIdentifier() {
+            // 中文字符是合法标识符
+            List<Token> toks = tokens("你好");
+            assertEquals(1, toks.size());
+            assertEquals(TokenType.IDENTIFIER, toks.get(0).getType());
+            assertEquals("你好", toks.get(0).getLexeme());
         }
     }
 
