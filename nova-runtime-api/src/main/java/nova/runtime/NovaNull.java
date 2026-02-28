@@ -3,7 +3,7 @@ package nova.runtime;
 /**
  * Nova null 值和 Unit 值
  */
-public final class NovaNull extends NovaValue {
+public final class NovaNull extends AbstractNovaValue {
 
     /** 唯一的 null 实例 */
     public static final NovaNull NULL = new NovaNull(true);

@@ -3,7 +3,7 @@ package nova.runtime;
 /**
  * Nova Long 值（64位整数）
  */
-public final class NovaLong extends NovaValue {
+public final class NovaLong extends AbstractNovaValue implements NovaNumber {
 
     // 小整数缓存
     private static final int CACHE_LOW = -128;
@@ -49,13 +49,28 @@ public final class NovaLong extends NovaValue {
     }
 
     @Override
-    public boolean isNumber() {
+    public boolean isInteger() {
         return true;
     }
 
     @Override
-    public boolean isInteger() {
-        return true;
+    public boolean isFloatingPoint() {
+        return false;
+    }
+
+    @Override
+    public int intValue() {
+        return (int) value;
+    }
+
+    @Override
+    public long longValue() {
+        return value;
+    }
+
+    @Override
+    public double doubleValue() {
+        return value;
     }
 
     @Override

@@ -9,7 +9,7 @@ package nova.runtime;
  * <p>统一版本：同时用于编译路径和解释器路径。
  * 成员方法（.map/.unwrap 等）由 MemberResolver 处理。</p>
  */
-public final class NovaResult extends NovaValue {
+public final class NovaResult extends AbstractNovaValue {
 
     private final boolean ok;
     private final Object value;  // Ok: success value, Err: error value
@@ -47,7 +47,7 @@ public final class NovaResult extends NovaValue {
 
     /** 获取内部值并转为 NovaValue */
     public NovaValue getInner() {
-        return (value instanceof NovaValue) ? (NovaValue) value : NovaValue.fromJava(value);
+        return (value instanceof NovaValue) ? (NovaValue) value : AbstractNovaValue.fromJava(value);
     }
 
     /** unwrap：Ok 返回 value，Err 抛出异常 */

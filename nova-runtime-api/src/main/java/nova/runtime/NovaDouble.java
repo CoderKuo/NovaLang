@@ -3,7 +3,7 @@ package nova.runtime;
 /**
  * Nova Double 值（64位浮点数）
  */
-public final class NovaDouble extends NovaValue {
+public final class NovaDouble extends AbstractNovaValue implements NovaNumber {
 
     private static final NovaDouble ZERO = new NovaDouble(0.0);
     private static final NovaDouble ONE = new NovaDouble(1.0);
@@ -41,13 +41,33 @@ public final class NovaDouble extends NovaValue {
     }
 
     @Override
-    public boolean isNumber() {
+    public boolean isDouble() {
         return true;
     }
 
     @Override
-    public boolean isDouble() {
+    public boolean isInteger() {
+        return false;
+    }
+
+    @Override
+    public boolean isFloatingPoint() {
         return true;
+    }
+
+    @Override
+    public int intValue() {
+        return (int) value;
+    }
+
+    @Override
+    public long longValue() {
+        return (long) value;
+    }
+
+    @Override
+    public double doubleValue() {
+        return value;
     }
 
     @Override

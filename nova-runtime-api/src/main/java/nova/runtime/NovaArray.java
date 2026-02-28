@@ -10,7 +10,7 @@ import java.util.List;
  * 内部用 {@code Object} 持有 {@code int[]}, {@code long[]}, {@code double[]} 等，
  * 通过 {@link ElementType} 枚举分发读写操作。
  */
-public final class NovaArray extends NovaValue implements Iterable<NovaValue> {
+public final class NovaArray extends AbstractNovaValue implements NovaContainer {
 
     public enum ElementType {
         INT, LONG, DOUBLE, FLOAT, BOOLEAN, CHAR, STRING, OBJECT;
@@ -74,11 +74,6 @@ public final class NovaArray extends NovaValue implements Iterable<NovaValue> {
     }
 
     @Override
-    public boolean isTruthy() {
-        return length > 0;
-    }
-
-    @Override
     public String asString() {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < length; i++) {
@@ -112,6 +107,16 @@ public final class NovaArray extends NovaValue implements Iterable<NovaValue> {
 
     // ============ 数组操作 ============
 
+    @Override
+    public int size() {
+        return length;
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return length == 0;
+    }
+
     public int length() {
         return length;
     }
@@ -142,7 +147,7 @@ public final class NovaArray extends NovaValue implements Iterable<NovaValue> {
             }
             default: {
                 Object o = ((Object[]) array)[index];
-                return o != null ? NovaValue.fromJava(o) : NovaNull.NULL;
+                return o != null ? AbstractNovaValue.fromJava(o) : NovaNull.NULL;
             }
         }
     }

@@ -11,7 +11,7 @@ import java.util.List;
 /**
  * Nova List 值（可变列表）
  */
-public final class NovaList extends NovaValue implements Iterable<NovaValue> {
+public final class NovaList extends AbstractNovaValue implements NovaContainer {
 
     private final List<NovaValue> elements;
 
@@ -48,11 +48,6 @@ public final class NovaList extends NovaValue implements Iterable<NovaValue> {
             result.add(v.toJavaValue());
         }
         return result;
-    }
-
-    @Override
-    public boolean isTruthy() {
-        return !elements.isEmpty();
     }
 
     @Override

@@ -3,6 +3,7 @@ package nova.runtime.stdlib;
 import java.util.List;
 import java.util.Map;
 
+import nova.runtime.AbstractNovaValue;
 import nova.runtime.NovaFunction;
 import nova.runtime.NovaValue;
 
@@ -75,7 +76,7 @@ public final class StdlibTypeChecks {
 
     @NovaFunction(signature = "typeof(value)", description = "获取值的类型名", returnType = "String")
     public static Object typeof(Object value) {
-        return NovaValue.typeNameOf(value);
+        return AbstractNovaValue.typeNameOf(value);
     }
 
     @NovaFunction(signature = "isCallable(value)", description = "检查值是否可调用", returnType = "Boolean")

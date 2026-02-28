@@ -3,7 +3,7 @@ package nova.runtime;
 /**
  * Nova Boolean 值
  */
-public final class NovaBoolean extends NovaValue {
+public final class NovaBoolean extends AbstractNovaValue {
 
     /** true 常量 */
     public static final NovaBoolean TRUE = new NovaBoolean(true);

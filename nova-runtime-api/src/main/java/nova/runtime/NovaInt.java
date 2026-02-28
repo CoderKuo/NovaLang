@@ -3,7 +3,7 @@ package nova.runtime;
 /**
  * Nova Int 值（32位整数）
  */
-public final class NovaInt extends NovaValue {
+public final class NovaInt extends AbstractNovaValue implements NovaNumber {
 
     // 整数缓存（覆盖常见运算范围，含 Fibonacci 等递推序列）
     private static final int CACHE_LOW = -128;
@@ -54,13 +54,28 @@ public final class NovaInt extends NovaValue {
     }
 
     @Override
-    public boolean isNumber() {
+    public boolean isInteger() {
         return true;
     }
 
     @Override
-    public boolean isInteger() {
-        return true;
+    public boolean isFloatingPoint() {
+        return false;
+    }
+
+    @Override
+    public int intValue() {
+        return value;
+    }
+
+    @Override
+    public long longValue() {
+        return value;
+    }
+
+    @Override
+    public double doubleValue() {
+        return value;
     }
 
     @Override

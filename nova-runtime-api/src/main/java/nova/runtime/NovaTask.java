@@ -6,7 +6,7 @@ package nova.runtime;
  * <p>由 {@code schedule()} / {@code scheduleRepeat()} 返回，
  * 提供 {@code cancel()} 和 {@code isCancelled} 成员。</p>
  */
-public final class NovaTask extends NovaValue {
+public final class NovaTask extends AbstractNovaValue {
 
     private final NovaScheduler.Cancellable handle;
 

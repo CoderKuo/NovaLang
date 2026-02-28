@@ -6,7 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Nova String 值
  */
-public final class NovaString extends NovaValue implements Iterable<NovaValue> {
+public final class NovaString extends AbstractNovaValue implements Iterable<NovaValue> {
 
     /** 空字符串常量 */
     public static final NovaString EMPTY = new NovaString("");

@@ -1,5 +1,4 @@
-package nova.runtime.interpreter;
-import nova.runtime.*;
+package nova.runtime;
 
 import java.util.Map;
 
@@ -13,12 +12,12 @@ public interface NovaAnnotationProcessor {
     String getAnnotationName();
 
     /** 处理类注解 */
-    default void processClass(NovaClass target, Map<String, NovaValue> args, Interpreter interpreter) {}
+    default void processClass(NovaValue target, Map<String, NovaValue> args, ExecutionContext ctx) {}
 
     /** 处理函数注解 */
-    default void processFun(NovaCallable target, Map<String, NovaValue> args, Interpreter interpreter) {}
+    default void processFun(NovaValue target, Map<String, NovaValue> args, ExecutionContext ctx) {}
 
     /** 处理属性注解 */
     default void processProperty(String propertyName, NovaValue propertyValue,
-                                  Map<String, NovaValue> args, Interpreter interpreter) {}
+                                  Map<String, NovaValue> args, ExecutionContext ctx) {}
 }

@@ -7,7 +7,7 @@ import java.util.Iterator;
  * 支持 for 循环迭代、size、contains 等操作。
  * 同时替代旧的 IntRange 类。
  */
-public final class NovaRange extends NovaValue implements Iterable<NovaValue> {
+public final class NovaRange extends AbstractNovaValue implements NovaContainer {
 
     private final int start;
     private final int end;
@@ -49,6 +49,11 @@ public final class NovaRange extends NovaValue implements Iterable<NovaValue> {
     public int size() {
         int actualEnd = inclusive ? end + 1 : end;
         return Math.max(0, actualEnd - start);
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return size() == 0;
     }
 
     public boolean contains(int value) {

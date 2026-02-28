@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * Nova Map 值（有序映射）
  */
-public final class NovaMap extends NovaValue implements Iterable<NovaValue> {
+public final class NovaMap extends AbstractNovaValue implements NovaContainer {
 
     private final Map<NovaValue, NovaValue> entries;
 
@@ -41,11 +41,6 @@ public final class NovaMap extends NovaValue implements Iterable<NovaValue> {
             result.put(entry.getKey().toJavaValue(), entry.getValue().toJavaValue());
         }
         return result;
-    }
-
-    @Override
-    public boolean isTruthy() {
-        return !entries.isEmpty();
     }
 
     @Override

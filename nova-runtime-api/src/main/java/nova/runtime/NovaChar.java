@@ -3,7 +3,7 @@ package nova.runtime;
 /**
  * Nova Char 值
  */
-public final class NovaChar extends NovaValue {
+public final class NovaChar extends AbstractNovaValue {
 
     // ASCII 缓存
     private static final NovaChar[] CACHE = new NovaChar[128];

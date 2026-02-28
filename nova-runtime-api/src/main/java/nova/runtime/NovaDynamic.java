@@ -103,7 +103,7 @@ public final class NovaDynamic {
                     NovaValue[] novaArgs = new NovaValue[args.length];
                     for (int i = 0; i < args.length; i++) {
                         novaArgs[i] = args[i] instanceof NovaValue ? (NovaValue) args[i]
-                                : NovaValue.fromJava(args[i]);
+                                : AbstractNovaValue.fromJava(args[i]);
                     }
                     return member.dynamicInvoke(novaArgs);
                 }

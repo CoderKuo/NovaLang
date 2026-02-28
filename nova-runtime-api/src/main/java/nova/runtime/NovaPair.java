@@ -4,9 +4,9 @@ package nova.runtime;
  * Nova Pair 值 — 由中缀 to 运算符创建
  *
  * <p>字段类型为 Object，兼容编译路径和解释器路径。
- * 解释器通过 MemberResolver 访问 .first/.second 时用 NovaValue.fromJava() 包装。</p>
+ * 解释器通过 MemberResolver 访问 .first/.second 时用 AbstractNovaValue.fromJava() 包装。</p>
  */
-public final class NovaPair extends NovaValue {
+public final class NovaPair extends AbstractNovaValue {
 
     private final Object first;
     private final Object second;
@@ -31,8 +31,8 @@ public final class NovaPair extends NovaValue {
 
     public NovaList toList() {
         NovaList list = new NovaList();
-        list.add(NovaValue.fromJava(first));
-        list.add(NovaValue.fromJava(second));
+        list.add(AbstractNovaValue.fromJava(first));
+        list.add(AbstractNovaValue.fromJava(second));
         return list;
     }
 
