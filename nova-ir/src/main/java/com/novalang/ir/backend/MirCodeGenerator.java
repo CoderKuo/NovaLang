@@ -8,7 +8,6 @@ import org.objectweb.asm.*;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -212,9 +211,15 @@ public class MirCodeGenerator {
         mv.visitVarInsn(ALOAD, 0); // this
         for (int i = 0; i < superParamTypes.length; i++) {
             mv.visitVarInsn(ALOAD, i + 1);
-            String internalName = superParamTypes[i].getInternalName();
-            if (!"java/lang/Object".equals(internalName)) {
-                mv.visitTypeInsn(CHECKCAST, internalName);
+            Type paramType = superParamTypes[i];
+            if (paramType.getSort() >= Type.BOOLEAN && paramType.getSort() <= Type.DOUBLE) {
+                // 原始类型：CHECKCAST 到包装类后拆箱
+                unboxForType(mv, paramType);
+            } else {
+                String internalName = paramType.getInternalName();
+                if (!"java/lang/Object".equals(internalName)) {
+                    mv.visitTypeInsn(CHECKCAST, internalName);
+                }
             }
         }
         mv.visitMethodInsn(INVOKESPECIAL, superName, "<init>", superCtorDesc, false);
@@ -291,6 +296,7 @@ public class MirCodeGenerator {
         }
 
         // 构造器初始化
+        Set<MirInst> emittedEarlyInsts = new HashSet<>();
         if ("<init>".equals(func.getName()) && superClass != null) {
             if (func.hasDelegation()) {
                 // 次级构造器: this.<init>(delegationArgs...)
@@ -304,12 +310,10 @@ public class MirCodeGenerator {
                 }
                 if (!synthLocals.isEmpty() && !func.getBlocks().isEmpty()) {
                     BasicBlock firstBlock = func.getBlocks().get(0);
-                    Iterator<MirInst> it = firstBlock.getInstructions().iterator();
-                    while (it.hasNext()) {
-                        MirInst inst = it.next();
+                    for (MirInst inst : firstBlock.getInstructions()) {
                         if (synthLocals.contains(inst.getDest())) {
                             generateInstruction(mv, inst, blockLabels, func);
-                            it.remove();
+                            emittedEarlyInsts.add(inst);
                         }
                     }
                 }
@@ -332,12 +336,10 @@ public class MirCodeGenerator {
                 }
                 if (!synthSuperLocals.isEmpty() && !func.getBlocks().isEmpty()) {
                     BasicBlock firstBlock = func.getBlocks().get(0);
-                    Iterator<MirInst> it = firstBlock.getInstructions().iterator();
-                    while (it.hasNext()) {
-                        MirInst inst = it.next();
+                    for (MirInst inst : firstBlock.getInstructions()) {
                         if (synthSuperLocals.contains(inst.getDest())) {
                             generateInstruction(mv, inst, blockLabels, func);
-                            it.remove();
+                            emittedEarlyInsts.add(inst);
                         }
                     }
                 }
@@ -423,7 +425,8 @@ public class MirCodeGenerator {
             }
 
             for (MirInst inst : instructions) {
-                if (inst == fusedCmp || fusedConstInsts.contains(inst)) continue;
+                if (inst == fusedCmp || fusedConstInsts.contains(inst)
+                        || emittedEarlyInsts.contains(inst)) continue;
                 generateInstruction(mv, inst, blockLabels, func);
             }
 
@@ -842,8 +845,19 @@ public class MirCodeGenerator {
                 int size = inst.operand(0);
                 MirType destArrayType = getLocalType(func, inst.getDest());
                 loadInt(mv, size);
-                if ("[I".equals(destArrayType.getClassName())) {
+                String arrayDesc = destArrayType.getClassName();
+                if ("[I".equals(arrayDesc)) {
                     mv.visitIntInsn(NEWARRAY, T_INT);
+                } else if ("[J".equals(arrayDesc)) {
+                    mv.visitIntInsn(NEWARRAY, T_LONG);
+                } else if ("[D".equals(arrayDesc)) {
+                    mv.visitIntInsn(NEWARRAY, T_DOUBLE);
+                } else if ("[F".equals(arrayDesc)) {
+                    mv.visitIntInsn(NEWARRAY, T_FLOAT);
+                } else if ("[Z".equals(arrayDesc)) {
+                    mv.visitIntInsn(NEWARRAY, T_BOOLEAN);
+                } else if ("[C".equals(arrayDesc)) {
+                    mv.visitIntInsn(NEWARRAY, T_CHAR);
                 } else {
                     mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
                 }
@@ -1313,9 +1327,9 @@ public class MirCodeGenerator {
             mv.visitJumpInsn(GOTO, blockLabels.get(target));
         } else if (term instanceof MirTerminator.Branch) {
             MirTerminator.Branch branch = (MirTerminator.Branch) term;
-            // 调用 NovaValue.truthyCheck(Object) 支持非 Boolean 类型的 truthy 语义
+            // 调用 AbstractNovaValue.truthyCheck(Object) 支持非 Boolean 类型的 truthy 语义
             mv.visitVarInsn(ALOAD, branch.getCondition());
-            mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaValue", "truthyCheck",
+            mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/AbstractNovaValue", "truthyCheck",
                     "(Ljava/lang/Object;)Z", false);
             mv.visitJumpInsn(IFNE, blockLabels.get(branch.getThenBlock()));
             mv.visitJumpInsn(GOTO, blockLabels.get(branch.getElseBlock()));
@@ -1377,17 +1391,36 @@ public class MirCodeGenerator {
         } else if (term instanceof MirTerminator.Switch) {
             // Switch → equals 链：逐个比较 case key，跳转到对应 block
             MirTerminator.Switch sw = (MirTerminator.Switch) term;
+            // null 安全：先检查 key 是否为 null
+            Label nullLabel = null;
+            for (Map.Entry<Object, Integer> entry : sw.getCases().entrySet()) {
+                if (entry.getKey() == null) {
+                    nullLabel = blockLabels.get(entry.getValue());
+                    break;
+                }
+            }
+            if (nullLabel != null) {
+                loadObject(mv, sw.getKey());
+                mv.visitJumpInsn(IFNULL, nullLabel);
+            }
+            // 判断是否为枚举 switch（case key 全是 String 类型 → 枚举名）
+            boolean isEnumSwitch = sw.getCases().keySet().stream()
+                    .allMatch(k -> k == null || k instanceof String);
             for (Map.Entry<Object, Integer> entry : sw.getCases().entrySet()) {
                 Object caseKey = entry.getKey();
+                if (caseKey == null) continue; // 已在上面处理
                 Label next = new Label();
                 loadObject(mv, sw.getKey());
-                // 枚举条目 key 是 String（名字），需要先 toString() 再比较
-                mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Object",
-                        "toString", "()Ljava/lang/String;", false);
-                if (caseKey instanceof String) {
+                if (isEnumSwitch) {
+                    // 枚举 switch：对象 toString() 后与枚举名 String 比较
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Object",
+                            "toString", "()Ljava/lang/String;", false);
                     mv.visitLdcInsn(caseKey);
                 } else if (caseKey instanceof Integer) {
-                    mv.visitLdcInsn(String.valueOf(caseKey));
+                    // 整数 switch：直接 equals 比较
+                    mv.visitLdcInsn(caseKey);
+                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf",
+                            "(I)Ljava/lang/Integer;", false);
                 } else {
                     mv.visitLdcInsn(caseKey.toString());
                 }
@@ -2368,22 +2401,24 @@ public class MirCodeGenerator {
         MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "hashCode", "()I", null, null);
         mv.visitCode();
 
-        // Objects.hash(field1, field2, ...)
-        pushInt(mv, fields.size());
-        mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
-        for (int i = 0; i < fields.size(); i++) {
-            mv.visitInsn(DUP);
-            pushInt(mv, i);
+        // 使用 31 * result + Objects.hashCode(field) 累加，避免 varargs 数组分配
+        // int result = 1;
+        mv.visitInsn(ICONST_1);
+        for (MirField field : fields) {
+            // result = 31 * result
+            pushInt(mv, 31);
+            mv.visitInsn(IMUL);
+            // + Objects.hashCode(this.field)
             mv.visitVarInsn(ALOAD, 0);
-            String hashFd = currentFieldDescs.getOrDefault(fields.get(i).getName(), MethodDescriptor.OBJECT_DESC);
-            mv.visitFieldInsn(GETFIELD, className, fields.get(i).getName(), hashFd);
+            String hashFd = currentFieldDescs.getOrDefault(field.getName(), MethodDescriptor.OBJECT_DESC);
+            mv.visitFieldInsn(GETFIELD, className, field.getName(), hashFd);
             if (isPrimitiveDesc(hashFd)) boxFieldValue(mv, hashFd);
-            mv.visitInsn(AASTORE);
+            mv.visitMethodInsn(INVOKESTATIC, "java/util/Objects", "hashCode",
+                    "(Ljava/lang/Object;)I", false);
+            mv.visitInsn(IADD);
         }
-        mv.visitMethodInsn(INVOKESTATIC, "java/util/Objects", "hash",
-                "([Ljava/lang/Object;)I", false);
         mv.visitInsn(IRETURN);
-        mv.visitMaxs(5, 1);
+        mv.visitMaxs(4, 1);
         mv.visitEnd();
     }
 
