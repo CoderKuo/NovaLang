@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.Environment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -47,7 +48,7 @@ class EnvironmentTest {
         @Test
         @DisplayName("获取未定义变量抛出异常")
         void testGetUndefined() {
-            assertThrows(NovaRuntimeException.class, () -> {
+            assertThrows(NovaException.class, () -> {
                 env.get("undefined");
             });
         }
@@ -57,7 +58,7 @@ class EnvironmentTest {
         void testDuplicateDefinition() {
             env.defineVal("dup", new NovaInt(1));
 
-            assertThrows(NovaRuntimeException.class, () -> {
+            assertThrows(NovaException.class, () -> {
                 env.defineVal("dup", new NovaInt(2));
             });
         }
@@ -83,7 +84,7 @@ class EnvironmentTest {
         void testValCannotAssign() {
             env.defineVal("constant", new NovaInt(100));
 
-            assertThrows(NovaRuntimeException.class, () -> {
+            assertThrows(NovaException.class, () -> {
                 env.assign("constant", new NovaInt(200));
             });
         }
@@ -91,7 +92,7 @@ class EnvironmentTest {
         @Test
         @DisplayName("赋值未定义变量抛出异常")
         void testAssignUndefined() {
-            assertThrows(NovaRuntimeException.class, () -> {
+            assertThrows(NovaException.class, () -> {
                 env.assign("notExist", new NovaInt(1));
             });
         }
@@ -152,7 +153,7 @@ class EnvironmentTest {
             assertEquals(2, level2.get("level2").asInt());
 
             // level1 不能访问 level2
-            assertThrows(NovaRuntimeException.class, () -> {
+            assertThrows(NovaException.class, () -> {
                 level1.get("level2");
             });
         }
@@ -182,7 +183,7 @@ class EnvironmentTest {
 
             env.defineVal("y", new NovaInt(1));
 
-            assertThrows(NovaRuntimeException.class, () -> {
+            assertThrows(NovaException.class, () -> {
                 env.defineVal("y", new NovaInt(2));
             });
         }

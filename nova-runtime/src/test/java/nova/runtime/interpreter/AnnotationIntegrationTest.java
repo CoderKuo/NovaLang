@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.NovaClass;
 import nova.runtime.interpreter.reflect.NovaClassInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -392,10 +393,12 @@ class AnnotationIntegrationTest {
                 }
 
                 @Override
-                public void processClass(NovaClass target, Map<String, NovaValue> args, Interpreter interp) {
+                public void processClass(NovaValue target, Map<String, NovaValue> args, ExecutionContext ctx) {
+                    NovaClass novaTarget = (NovaClass) target;
                     // 创建单例实例并存为静态字段
-                    NovaValue instance = interp.instantiate(target, java.util.Collections.emptyList(), null);
-                    target.setStaticField("instance", instance);
+                    Interpreter interp = (Interpreter) ctx;
+                    NovaValue instance = interp.instantiate(novaTarget, java.util.Collections.emptyList(), null);
+                    novaTarget.setStaticField("instance", instance);
                 }
             });
             interpreter.evalRepl("@singleton class AppConfig(val debug: Boolean = false)");
@@ -415,7 +418,7 @@ class AnnotationIntegrationTest {
                 }
 
                 @Override
-                public void processClass(NovaClass target, Map<String, NovaValue> args, Interpreter interp) {
+                public void processClass(NovaValue target, Map<String, NovaValue> args, ExecutionContext ctx) {
                     NovaValue path = args.get("path");
                     if (path != null) {
                         capturedValue[0] = path.asString();
@@ -437,8 +440,8 @@ class AnnotationIntegrationTest {
                 }
 
                 @Override
-                public void processClass(NovaClass target, Map<String, NovaValue> args, Interpreter interp) {
-                    target.setStaticField("javaProcessed", NovaBoolean.TRUE);
+                public void processClass(NovaValue target, Map<String, NovaValue> args, ExecutionContext ctx) {
+                    ((NovaClass) target).setStaticField("javaProcessed", NovaBoolean.TRUE);
                 }
             });
             // Nova 处理器

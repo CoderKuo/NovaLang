@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.types.NovaClass;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -3229,9 +3230,9 @@ class InterpreterTest {
                 }
 
                 @Override
-                public void processClass(NovaClass target, java.util.Map<String, NovaValue> args,
-                                          Interpreter interp) {
-                    target.setStaticField("javaProcessed", NovaBoolean.TRUE);
+                public void processClass(NovaValue target, java.util.Map<String, NovaValue> args,
+                                          ExecutionContext ctx) {
+                    ((NovaClass) target).setStaticField("javaProcessed", NovaBoolean.TRUE);
                 }
             });
             interpreter.evalRepl("@javaCustom class MyClass");

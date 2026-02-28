@@ -331,6 +331,85 @@ class MethodHandleCacheTest {
         }
     }
 
+    // ============ 模拟 DrawContext.fill 场景 ============
+
+    /** 模拟 Minecraft DrawContext — 多个 fill 重载，全部 int 参数 */
+    public static class FakeDrawContext {
+        public String fill(int x1, int y1, int x2, int y2, int color) {
+            return "fill5:" + x1 + "," + y1 + "," + x2 + "," + y2 + "," + color;
+        }
+        public String fill(int x1, int y1, int x2, int y2, int z, int color) {
+            return "fill6:" + x1 + "," + y1 + "," + x2 + "," + y2 + "," + z + "," + color;
+        }
+    }
+
+    /** 只有 int 参数、无 long 重载的静态方法 */
+    public static class IntOnlyHelper {
+        public static String process(int a, int b, int c) {
+            return "int3:" + a + "," + b + "," + c;
+        }
+    }
+
+    @Nested
+    @DisplayName("数值窄化回退（Long → int）")
+    class NumericNarrowingTests {
+
+        @Test
+        @DisplayName("Long 参数调用 fill(int,int,int,int,int) — 实例方法窄化")
+        void testLongToIntNarrowingInstanceMethod() throws Throwable {
+            FakeDrawContext ctx = new FakeDrawContext();
+            // Nova 算术运算产生 Long，传给只有 int 参数的 fill
+            Object result = cache.invokeMethod(ctx, "fill",
+                    new Object[]{10L, 20L, 100L, 200L, 0xFF0000L});
+            assertEquals("fill5:10,20,100,200,16711680", result);
+        }
+
+        @Test
+        @DisplayName("Long 参数调用 fill(int*6) — 按参数数量选正确重载")
+        void testLongToIntNarrowingSixParams() throws Throwable {
+            FakeDrawContext ctx = new FakeDrawContext();
+            Object result = cache.invokeMethod(ctx, "fill",
+                    new Object[]{10L, 20L, 100L, 200L, 0L, 0xFF0000L});
+            assertEquals("fill6:10,20,100,200,0,16711680", result);
+        }
+
+        @Test
+        @DisplayName("Long 参数调用只有 int 重载的静态方法")
+        void testLongToIntNarrowingStaticMethod() throws Throwable {
+            Object result = cache.invokeStatic(IntOnlyHelper.class, "process",
+                    new Object[]{1L, 2L, 3L});
+            assertEquals("int3:1,2,3", result);
+        }
+
+        @Test
+        @DisplayName("Long 参数有 long 重载时优先选 long（不走窄化）")
+        void testLongPrefersLongOverload() throws Throwable {
+            // OverloadHelper 有 num(int), num(long), num(double)
+            // Long 应该精确匹配 num(long)，不应窄化到 num(int)
+            Object result = cache.invokeStatic(OverloadHelper.class, "num",
+                    new Object[]{5L});
+            assertEquals("long:5", result);
+        }
+
+        @Test
+        @DisplayName("Integer 参数仍然优先选 int 重载")
+        void testIntegerStillPrefersInt() throws Throwable {
+            Object result = cache.invokeStatic(OverloadHelper.class, "num",
+                    new Object[]{5});
+            assertEquals("int:5", result);
+        }
+
+        @Test
+        @DisplayName("混合 Long 和 Integer 参数")
+        void testMixedLongAndInteger() throws Throwable {
+            FakeDrawContext ctx = new FakeDrawContext();
+            // 混合：有些是 Integer，有些是 Long
+            Object result = cache.invokeMethod(ctx, "fill",
+                    new Object[]{10, 20L, 100, 200L, 0xFF0000L});
+            assertEquals("fill5:10,20,100,200,16711680", result);
+        }
+    }
+
     // ============ 数值宽化测试 ============
 
     @Nested
