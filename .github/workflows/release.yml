@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 8
         uses: actions/setup-java@v4
@@ -52,43 +54,27 @@ jobs:
           echo "Release assets:"
           ls -la release/
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # 找到上一个 tag
+          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            # 没有上一个 tag，取所有 commit
+            LOG=$(git log --pretty=format:"- %s (%h)" HEAD)
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)" ${PREV_TAG}..HEAD)
+          fi
+          # 写入文件避免多行转义问题
+          echo "$LOG" > /tmp/changelog.txt
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: NovaLang ${{ steps.get_version.outputs.VERSION }}
-          body: |
-            ## NovaLang ${{ steps.get_version.outputs.VERSION }}
-
-            ### 下载说明
-
-            | 文件 | 说明 |
-            |------|------|
-            | `nova-cli-*.jar` | 命令行工具（可直接运行） |
-            | `nova-runtime-*.jar` | 完整运行时（fat jar，包含所有依赖） |
-            | `nova-bukkit-*.jar` | Bukkit 调度器适配（瘦包，需配合 runtime 使用） |
-
-            ### 使用方式
-
-            **命令行**：
-            ```bash
-            # 运行脚本
-            java -jar nova-cli-${{ steps.get_version.outputs.VERSION }}.jar script.nova
-
-            # REPL
-            java -jar nova-cli-${{ steps.get_version.outputs.VERSION }}.jar
-            ```
-
-            **Java 项目嵌入**：
-            ```bash
-            java -cp nova-runtime-${{ steps.get_version.outputs.VERSION }}.jar YourApp
-            ```
-
-            **Bukkit 插件开发**：
-            1. 将 `nova-runtime-*.jar` 和 `nova-bukkit-*.jar` 放入插件依赖目录
-            2. 在 `onEnable()` 中注册调度器：
-            ```java
-            BukkitSchedulers.register(this);
-            ```
+          body_path: /tmp/changelog.txt
+          append_body: true
+          generate_release_notes: false
           files: release/*
           draft: false
           prerelease: ${{ contains(steps.get_version.outputs.VERSION, '-') }}

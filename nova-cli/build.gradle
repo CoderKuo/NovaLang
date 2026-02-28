@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'application'
-    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'com.gradleup.shadow' version '8.3.9'
 }
 
 description = 'NovaLang Command Line Interface'
@@ -37,6 +37,11 @@ shadowJar {
 // 使用 shadow jar 作为默认 jar
 jar.enabled = false
 tasks.build.dependsOn shadowJar
+
+// 显式声明 distTar/distZip/startScripts 依赖 shadowJar，避免 Gradle 8.13+ 隐式依赖报错
+tasks.distTar.dependsOn shadowJar
+tasks.distZip.dependsOn shadowJar
+tasks.startScripts.dependsOn shadowJar
 
 // 创建可执行分发包
 distributions {
