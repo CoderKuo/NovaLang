@@ -40,3 +40,5 @@ val math = Java.type("java.lang.Math")
 // === 类型注解形式 ===
 val date = Java.type("java.util.Date")()
 println(date)
+
+
