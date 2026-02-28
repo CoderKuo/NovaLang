@@ -1,10 +1,12 @@
 package nova.runtime.interpreter;
 
+import nova.runtime.NovaCallable;
 import nova.runtime.interpreter.cache.BoundedCache;
 import nova.runtime.interpreter.cache.CaffeineCache;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -28,6 +30,20 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class MethodHandleCache {
 
     private static final MethodHandleCache INSTANCE = new MethodHandleCache();
+
+    /** Sentinel: 表示"已确认方法/构造器不存在"，避免 Caffeine 不缓存 null */
+    private static final MethodHandle NOT_FOUND;
+    static {
+        try {
+            // 任意无害的 MethodHandle 作为 sentinel
+            NOT_FOUND = MethodHandles.lookup().findStatic(
+                    MethodHandleCache.class, "notFoundSentinel", MethodType.methodType(void.class));
+        } catch (Exception e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+    @SuppressWarnings("unused")
+    private static void notFoundSentinel() {}
 
     /** 方法句柄缓存 */
     private final BoundedCache<MethodKey, MethodHandle> methodCache = new CaffeineCache<>(4096);
@@ -77,11 +93,15 @@ public final class MethodHandleCache {
 
     /**
      * 受策略守卫的 setAccessible 调用。
-     * 策略不允许时静默跳过，后续 unreflect 若因访问权限失败会在 catch 中返回 null。
+     * 策略不允许时静默跳过；setAccessible 失败时也静默跳过（public 方法不需要 setAccessible 即可 unreflect）。
      */
     private static void trySetAccessible(java.lang.reflect.AccessibleObject ao) {
         if (TL_ALLOW_SET_ACCESSIBLE.get()) {
-            ao.setAccessible(true);
+            try {
+                ao.setAccessible(true);
+            } catch (Exception ignored) {
+                // 模块系统可能阻止 setAccessible，对 public 方法无影响
+            }
         }
     }
 
@@ -92,7 +112,8 @@ public final class MethodHandleCache {
      */
     public MethodHandle findMethod(Class<?> clazz, String name, Class<?>[] argTypes) {
         MethodKey key = new MethodKey(clazz, name, argTypes, false);
-        return methodCache.computeIfAbsent(key, k -> lookupMethod(clazz, name, argTypes));
+        MethodHandle mh = methodCache.computeIfAbsent(key, k -> lookupMethod(clazz, name, argTypes));
+        return mh == NOT_FOUND ? null : mh;
     }
 
     /**
@@ -117,13 +138,32 @@ public final class MethodHandleCache {
 
         MethodHandle mh = findMethod(clazz, name, argTypes);
         if (mh == null) {
-            throw new NovaRuntimeException("Method not found: " + clazz.getName() + "." + name);
+            // 诊断信息：列出实参类型，帮助定位类型不匹配问题
+            StringBuilder sb = new StringBuilder("Method not found: ")
+                    .append(clazz.getName()).append('.').append(name).append('(');
+            for (int i = 0; i < argTypes.length; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(argTypes[i] != null ? argTypes[i].getSimpleName() : "null");
+            }
+            sb.append(')');
+            // 列出该类同名方法的签名
+            List<Method> candidates = getMethodIndex(clazz).get(name);
+            if (candidates != null) {
+                sb.append(" | candidates: ");
+                for (Method m : candidates) {
+                    sb.append(m.toGenericString()).append("; ");
+                }
+            } else {
+                sb.append(" | no method named '").append(name).append("' found on ").append(clazz.getName());
+            }
+            throw new NovaRuntimeException(sb.toString());
         }
 
-        // 构建参数数组：target + args
-        Object[] fullArgs = new Object[args.length + 1];
+        // 构建参数数组：target + args（对数字参数做类型强制转换）
+        Object[] coercedArgs = coerceNumericArgs(mh, args, 1);
+        Object[] fullArgs = new Object[coercedArgs.length + 1];
         fullArgs[0] = target;
-        System.arraycopy(args, 0, fullArgs, 1, args.length);
+        System.arraycopy(coercedArgs, 0, fullArgs, 1, coercedArgs.length);
 
         return mh.invokeWithArguments(fullArgs);
     }
@@ -137,11 +177,11 @@ public final class MethodHandleCache {
         MethodKey key = new MethodKey(clazz, name, argTypes, true);
         MethodHandle mh = methodCache.computeIfAbsent(key, k -> lookupStaticMethod(clazz, name, argTypes));
 
-        if (mh == null) {
+        if (mh == NOT_FOUND) {
             throw new NovaRuntimeException("Static method not found: " + clazz.getName() + "." + name);
         }
 
-        return mh.invokeWithArguments(args);
+        return mh.invokeWithArguments(coerceNumericArgs(mh, args, 0));
     }
 
     private MethodHandle lookupMethod(Class<?> clazz, String name, Class<?>[] argTypes) {
@@ -149,16 +189,18 @@ public final class MethodHandleCache {
             Method method = findCompatibleMethod(clazz, name, argTypes, false);
             if (method != null) {
                 trySetAccessible(method);
-                MethodHandle mh = lookup.unreflect(method);
-                if (method.isVarArgs()) {
-                    Class<?>[] paramTypes = method.getParameterTypes();
-                    mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
+                MethodHandle mh = unreflectWithFallback(method);
+                if (mh != null) {
+                    if (method.isVarArgs()) {
+                        Class<?>[] paramTypes = method.getParameterTypes();
+                        mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
+                    }
+                    return mh;
                 }
-                return mh;
             }
-            return null;
+            return NOT_FOUND;
         } catch (Exception e) {
-            return null;
+            return NOT_FOUND;
         }
     }
 
@@ -167,16 +209,35 @@ public final class MethodHandleCache {
             Method method = findCompatibleMethod(clazz, name, argTypes, true);
             if (method != null) {
                 trySetAccessible(method);
-                MethodHandle mh = lookup.unreflect(method);
-                if (method.isVarArgs()) {
-                    Class<?>[] paramTypes = method.getParameterTypes();
-                    mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
+                MethodHandle mh = unreflectWithFallback(method);
+                if (mh != null) {
+                    if (method.isVarArgs()) {
+                        Class<?>[] paramTypes = method.getParameterTypes();
+                        mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
+                    }
+                    return mh;
                 }
-                return mh;
             }
-            return null;
+            return NOT_FOUND;
         } catch (Exception e) {
-            return null;
+            return NOT_FOUND;
+        }
+    }
+
+    /**
+     * unreflect 带 publicLookup 回退。
+     * 当 lookup（绑定到 MethodHandleCache 类）因跨 ClassLoader/模块访问失败时，
+     * 用 publicLookup 重试（对 public 方法始终可用）。
+     */
+    private MethodHandle unreflectWithFallback(Method method) {
+        try {
+            return lookup.unreflect(method);
+        } catch (IllegalAccessException e) {
+            try {
+                return MethodHandles.publicLookup().unreflect(method);
+            } catch (IllegalAccessException e2) {
+                return null;
+            }
         }
     }
 
@@ -210,6 +271,15 @@ public final class MethodHandleCache {
             for (Method method : candidates) {
                 if (isStatic != Modifier.isStatic(method.getModifiers())) continue;
                 if (method.isVarArgs() && isVarArgsCompatible(method.getParameterTypes(), argTypes)) {
+                    matches.add(method);
+                }
+            }
+        }
+        // 3. 窄化匹配（Long → int 等，仅在严格匹配无结果时回退）
+        if (matches.isEmpty()) {
+            for (Method method : candidates) {
+                if (isStatic != Modifier.isStatic(method.getModifiers())) continue;
+                if (!method.isVarArgs() && isCompatibleWithNarrowing(method.getParameterTypes(), argTypes)) {
                     matches.add(method);
                 }
             }
@@ -332,11 +402,17 @@ public final class MethodHandleCache {
         if (target == Object.class) {
             return true;
         }
-        // 基本类型装箱 + 数值宽化
-        if (target == int.class) return source == Integer.class;
+        // 基本类型装箱 + 数值宽化（严格：遵循 Java 规范，不含窄化）
+        if (target == int.class || target == Integer.class) {
+            return source == Integer.class || source == int.class ||
+                   source == Short.class || source == short.class ||
+                   source == Byte.class || source == byte.class;
+        }
         if (target == long.class || target == Long.class) {
             return source == Long.class || source == long.class ||
-                   source == int.class || source == Integer.class;
+                   source == int.class || source == Integer.class ||
+                   source == Short.class || source == short.class ||
+                   source == Byte.class || source == byte.class;
         }
         if (target == double.class || target == Double.class) {
             return source == Double.class || source == double.class ||
@@ -362,6 +438,35 @@ public final class MethodHandleCache {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 允许数值窄化的兼容性检查（Long → int, Double → float 等）。
+     * 仅在严格匹配（isAssignable）找不到候选方法时作为回退使用。
+     */
+    private boolean isAssignableWithNarrowing(Class<?> target, Class<?> source) {
+        if (isAssignable(target, source)) return true;
+        // 数值窄化：Long/Double/Float → int
+        if (target == int.class || target == Integer.class) {
+            return source == Long.class || source == long.class ||
+                   source == Double.class || source == double.class ||
+                   source == Float.class || source == float.class;
+        }
+        // Long → short/byte (极端情况)
+        if (target == short.class || target == Short.class ||
+            target == byte.class || target == Byte.class) {
+            return source == Long.class || source == long.class ||
+                   source == Integer.class || source == int.class;
+        }
+        return false;
+    }
+
+    private boolean isCompatibleWithNarrowing(Class<?>[] paramTypes, Class<?>[] argTypes) {
+        if (paramTypes.length != argTypes.length) return false;
+        for (int i = 0; i < paramTypes.length; i++) {
+            if (!isAssignableWithNarrowing(paramTypes[i], argTypes[i])) return false;
+        }
+        return true;
     }
 
     /**
@@ -456,7 +561,8 @@ public final class MethodHandleCache {
      */
     public MethodHandle findConstructor(Class<?> clazz, Class<?>[] argTypes) {
         ConstructorKey key = new ConstructorKey(clazz, argTypes);
-        return constructorCache.computeIfAbsent(key, k -> lookupConstructor(clazz, argTypes));
+        MethodHandle mh = constructorCache.computeIfAbsent(key, k -> lookupConstructor(clazz, argTypes));
+        return mh == NOT_FOUND ? null : mh;
     }
 
     /**
@@ -489,9 +595,9 @@ public final class MethodHandleCache {
                     return mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
                 }
             }
-            return null;
+            return NOT_FOUND;
         } catch (Exception e) {
-            return null;
+            return NOT_FOUND;
         }
     }
 
@@ -615,6 +721,41 @@ public final class MethodHandleCache {
             types[i] = args[i] != null ? args[i].getClass() : null;
         }
         return types;
+    }
+
+    /**
+     * 根据 MethodHandle 的参数类型，对数字参数做强制转换。
+     * 解决 Long → int、Double → float 等 MethodHandle 不自动窄化的问题。
+     * @param paramOffset MethodHandle 参数列表中的偏移（实例方法为 1，静态方法为 0）
+     */
+    private Object[] coerceNumericArgs(MethodHandle mh, Object[] args, int paramOffset) {
+        MethodType type = mh.type();
+        int paramCount = type.parameterCount();
+        Object[] result = args;
+        for (int i = 0; i < args.length; i++) {
+            int paramIdx = i + paramOffset;
+            if (paramIdx >= paramCount) break;
+            if (args[i] instanceof Number) {
+                Number num = (Number) args[i];
+                Class<?> pt = type.parameterType(paramIdx);
+                Object coerced = coerceNumber(num, pt);
+                if (coerced != args[i]) {
+                    if (result == args) result = args.clone();
+                    result[i] = coerced;
+                }
+            }
+        }
+        return result;
+    }
+
+    private static Object coerceNumber(Number num, Class<?> target) {
+        if (target == int.class || target == Integer.class) return num.intValue();
+        if (target == long.class || target == Long.class) return num.longValue();
+        if (target == float.class || target == Float.class) return num.floatValue();
+        if (target == double.class || target == Double.class) return num.doubleValue();
+        if (target == short.class || target == Short.class) return num.shortValue();
+        if (target == byte.class || target == Byte.class) return num.byteValue();
+        return num;
     }
 
     /**
