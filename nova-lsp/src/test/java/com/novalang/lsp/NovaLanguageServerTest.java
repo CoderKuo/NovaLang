@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -262,6 +264,300 @@ class NovaLanguageServerTest {
         }
         assertThat(hasVal).isTrue();
         assertThat(hasVar).isTrue();
+    }
+
+    @Test
+    @DisplayName("completion 支持工作区未打开符号并附带自动导入")
+    void testCompletionWithWorkspaceAutoImport() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-completion-import");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "package lib\nclass Greeter {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "Gre";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject completionParams = new JsonObject();
+        JsonObject textDocId = new JsonObject();
+        textDocId.addProperty("uri", mainFile.toUri().toString());
+        completionParams.add("textDocument", textDocId);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 0);
+        position.addProperty("character", 3);
+        completionParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/completion", completionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonArray items = response.getAsJsonArray("result");
+        JsonObject greeter = null;
+        for (int i = 0; i < items.size(); i++) {
+            JsonObject item = items.get(i).getAsJsonObject();
+            if ("Greeter".equals(item.get("label").getAsString())
+                    && item.has("detail")
+                    && item.get("detail").getAsString().contains("lib.Greeter")) {
+                greeter = item;
+                break;
+            }
+        }
+
+        assertThat(greeter).isNotNull();
+        assertThat(greeter.has("additionalTextEdits")).isTrue();
+        assertThat(greeter.getAsJsonArray("additionalTextEdits").toString()).contains("import lib.Greeter");
+    }
+
+    @Test
+    @DisplayName("completion 对已导入符号不重复生成自动导入")
+    void testCompletionWithoutDuplicateAutoImport() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-completion-imported");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "package lib\nclass Greeter {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "import lib.Greeter\nGre";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject completionParams = new JsonObject();
+        JsonObject textDocId = new JsonObject();
+        textDocId.addProperty("uri", mainFile.toUri().toString());
+        completionParams.add("textDocument", textDocId);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", 3);
+        completionParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/completion", completionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonArray items = response.getAsJsonArray("result");
+        JsonObject greeter = null;
+        for (int i = 0; i < items.size(); i++) {
+            JsonObject item = items.get(i).getAsJsonObject();
+            if ("Greeter".equals(item.get("label").getAsString())
+                    && item.has("detail")
+                    && item.get("detail").getAsString().contains("lib.Greeter")) {
+                greeter = item;
+                break;
+            }
+        }
+
+        assertThat(greeter).isNotNull();
+        assertThat(greeter.has("additionalTextEdits")).isFalse();
+    }
+
+    @Test
+    @DisplayName("hover 支持工作区未打开符号")
+    void testHoverForWorkspaceSymbol() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-hover-workspace");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "package lib\nfun greet(name: String): String {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "import lib.greet\nfun main() { greet(\"x\") }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject hoverParams = new JsonObject();
+        JsonObject hoverTextDoc = new JsonObject();
+        hoverTextDoc.addProperty("uri", mainFile.toUri().toString());
+        hoverParams.add("textDocument", hoverTextDoc);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", "fun main() { greet(\"x\") }".indexOf("greet") + 1);
+        hoverParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/hover", hoverParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject result = response.getAsJsonObject("result");
+        assertThat(result).isNotNull();
+        assertThat(result.getAsJsonObject("contents").get("value").getAsString()).contains("lib.greet");
+    }
+
+    @Test
+    @DisplayName("signatureHelp 支持工作区未打开函数")
+    void testSignatureHelpForWorkspaceFunction() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-signature-workspace");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "package lib\nfun greet(name: String, times: Int): String {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "import lib.greet\nfun main() { greet(\"x\", ) }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject sigParams = new JsonObject();
+        JsonObject sigTextDoc = new JsonObject();
+        sigTextDoc.addProperty("uri", mainFile.toUri().toString());
+        sigParams.add("textDocument", sigTextDoc);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", "fun main() { greet(\"x\", ) }".indexOf(",") + 1);
+        sigParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/signatureHelp", sigParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject result = response.getAsJsonObject("result");
+        assertThat(result).isNotNull();
+        assertThat(result.getAsJsonArray("signatures").get(0).getAsJsonObject().get("label").getAsString())
+                .contains("greet(name: String, times: Int)");
+    }
+
+    @Test
+    @DisplayName("codeAction 支持 organize imports")
+    void testCodeActionOrganizeImports() throws IOException {
+        String content = "import zeta.B\nimport alpha.A\nimport alpha.A\nfun main() {}\n";
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", "file:///test.nova");
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", content);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject codeActionParams = new JsonObject();
+        JsonObject textDocId = new JsonObject();
+        textDocId.addProperty("uri", "file:///test.nova");
+        codeActionParams.add("textDocument", textDocId);
+        JsonObject range = new JsonObject();
+        JsonObject start = new JsonObject();
+        start.addProperty("line", 0);
+        start.addProperty("character", 0);
+        JsonObject end = new JsonObject();
+        end.addProperty("line", 0);
+        end.addProperty("character", 0);
+        range.add("start", start);
+        range.add("end", end);
+        codeActionParams.add("range", range);
+        JsonObject context = new JsonObject();
+        context.add("diagnostics", new JsonArray());
+        codeActionParams.add("context", context);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", new JsonObject())),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/codeAction", codeActionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonArray actions = response.getAsJsonArray("result");
+        JsonObject organize = null;
+        for (int i = 0; i < actions.size(); i++) {
+            JsonObject action = actions.get(i).getAsJsonObject();
+            if (action.has("kind") && "source.organizeImports".equals(action.get("kind").getAsString())) {
+                organize = action;
+                break;
+            }
+        }
+
+        assertThat(organize).isNotNull();
+        assertThat(organize.getAsJsonObject("edit").getAsJsonObject("changes").toString())
+                .contains("import alpha.A\\nimport zeta.B");
     }
 
     @Test
@@ -579,5 +875,581 @@ class NovaLanguageServerTest {
                 .getAsJsonObject("capabilities");
 
         assertThat(capabilities.get("documentFormattingProvider").getAsBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("workspace/symbol 可搜索未打开文件中的符号")
+    void testWorkspaceSymbolsFromIndexedFiles() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-workspace-symbols");
+        Path libFile = workspace.resolve("lib.nova");
+        Files.write(libFile, "fun greet() {}\n".getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject symbolParams = new JsonObject();
+        symbolParams.addProperty("query", "greet");
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(request(2, "workspace/symbol", symbolParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonArray result = response.getAsJsonArray("result");
+        assertThat(result).isNotNull();
+        assertThat(result.size()).isGreaterThan(0);
+        assertThat(result.get(0).getAsJsonObject().get("name").getAsString()).isEqualTo("greet");
+        assertThat(result.get(0).getAsJsonObject().getAsJsonObject("location").get("uri").getAsString())
+                .isEqualTo(libFile.toUri().toString());
+    }
+
+    @Test
+    @DisplayName("definition 可跳转到工作区未打开文件")
+    void testDefinitionAcrossWorkspaceFiles() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-workspace-definition");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "fun greet() {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "fun main() { greet() }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject definitionParams = new JsonObject();
+        JsonObject definitionTextDocument = new JsonObject();
+        definitionTextDocument.addProperty("uri", mainFile.toUri().toString());
+        definitionParams.add("textDocument", definitionTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 0);
+        position.addProperty("character", mainContent.indexOf("greet") + 1);
+        definitionParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/definition", definitionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject location = response.getAsJsonObject("result");
+        assertThat(location).isNotNull();
+        assertThat(location.get("uri").getAsString()).isEqualTo(libFile.toUri().toString());
+    }
+
+    @Test
+    @DisplayName("references 可返回跨文件声明与引用")
+    void testReferencesAcrossWorkspaceFiles() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-workspace-references");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "fun greet() {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "fun main() { greet() }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject referencesParams = new JsonObject();
+        JsonObject referencesTextDocument = new JsonObject();
+        referencesTextDocument.addProperty("uri", mainFile.toUri().toString());
+        referencesParams.add("textDocument", referencesTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 0);
+        position.addProperty("character", mainContent.indexOf("greet") + 1);
+        referencesParams.add("position", position);
+        JsonObject context = new JsonObject();
+        context.addProperty("includeDeclaration", true);
+        referencesParams.add("context", context);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/references", referencesParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonArray refs = response.getAsJsonArray("result");
+        assertThat(refs).isNotNull();
+        assertThat(refs.size()).isGreaterThanOrEqualTo(2);
+        assertThat(refs.toString()).contains(libFile.toUri().toString());
+        assertThat(refs.toString()).contains(mainFile.toUri().toString());
+    }
+
+    @Test
+    @DisplayName("rename 可修改跨文件声明与引用")
+    void testRenameAcrossWorkspaceFiles() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-workspace-rename");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "fun greet() {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "fun main() { greet() }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject renameParams = new JsonObject();
+        JsonObject renameTextDocument = new JsonObject();
+        renameTextDocument.addProperty("uri", mainFile.toUri().toString());
+        renameParams.add("textDocument", renameTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 0);
+        position.addProperty("character", mainContent.indexOf("greet") + 1);
+        renameParams.add("position", position);
+        renameParams.addProperty("newName", "welcome");
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/rename", renameParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject changes = response.getAsJsonObject("result").getAsJsonObject("changes");
+        assertThat(changes).isNotNull();
+        assertThat(changes.has(mainFile.toUri().toString())).isTrue();
+        assertThat(changes.has(libFile.toUri().toString())).isTrue();
+    }
+
+    @Test
+    @DisplayName("definition 支持 import as 别名跳转")
+    void testDefinitionWithImportAlias() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-alias-definition");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "package lib\nfun greet() {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "import lib.greet as hello\nfun main() { hello() }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject definitionParams = new JsonObject();
+        JsonObject definitionTextDocument = new JsonObject();
+        definitionTextDocument.addProperty("uri", mainFile.toUri().toString());
+        definitionParams.add("textDocument", definitionTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", "fun main() { hello() }".indexOf("hello") + 1);
+        definitionParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/definition", definitionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject location = response.getAsJsonObject("result");
+        assertThat(location).isNotNull();
+        assertThat(location.get("uri").getAsString()).isEqualTo(libFile.toUri().toString());
+    }
+
+    @Test
+    @DisplayName("rename 在 import as 场景下只改声明与导入源名")
+    void testRenameWithImportAlias() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-alias-rename");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        String libContent = "package lib\nfun greet() {}\n";
+        Files.write(libFile, libContent.getBytes(StandardCharsets.UTF_8));
+        String mainContent = "import lib.greet as hello\nfun main() { hello() }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", libFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", libContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject renameParams = new JsonObject();
+        JsonObject renameTextDocument = new JsonObject();
+        renameTextDocument.addProperty("uri", libFile.toUri().toString());
+        renameParams.add("textDocument", renameTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", "fun greet() {}".indexOf("greet") + 1);
+        renameParams.add("position", position);
+        renameParams.addProperty("newName", "welcome");
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/rename", renameParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject changes = response.getAsJsonObject("result").getAsJsonObject("changes");
+        assertThat(changes.has(libFile.toUri().toString())).isTrue();
+        assertThat(changes.has(mainFile.toUri().toString())).isTrue();
+        assertThat(changes.getAsJsonArray(mainFile.toUri().toString()).size()).isEqualTo(1);
+        assertThat(changes.getAsJsonArray(mainFile.toUri().toString()).get(0).getAsJsonObject().get("newText").getAsString())
+                .isEqualTo("welcome");
+    }
+
+    @Test
+    @DisplayName("definition 支持 wildcard import 跳转")
+    void testDefinitionWithWildcardImport() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-wildcard-definition");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(libFile, "package lib\nfun greet() {}\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "import lib.*\nfun main() { greet() }\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject definitionParams = new JsonObject();
+        JsonObject definitionTextDocument = new JsonObject();
+        definitionTextDocument.addProperty("uri", mainFile.toUri().toString());
+        definitionParams.add("textDocument", definitionTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", "fun main() { greet() }".indexOf("greet") + 1);
+        definitionParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/definition", definitionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject location = response.getAsJsonObject("result");
+        assertThat(location).isNotNull();
+        assertThat(location.get("uri").getAsString()).isEqualTo(libFile.toUri().toString());
+    }
+
+    @Test
+    @DisplayName("definition 支持跨文件类成员跳转")
+    void testDefinitionForMemberAcrossFiles() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-member-definition");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        String libContent = "class Greeter {\n    fun greet() {}\n}\n";
+        Files.write(libFile, libContent.getBytes(StandardCharsets.UTF_8));
+        String mainContent = "fun main() {\n    val g = Greeter()\n    g.greet()\n}\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject definitionParams = new JsonObject();
+        JsonObject definitionTextDocument = new JsonObject();
+        definitionTextDocument.addProperty("uri", mainFile.toUri().toString());
+        definitionParams.add("textDocument", definitionTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 2);
+        position.addProperty("character", "    g.greet()".indexOf("greet") + 1);
+        definitionParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/definition", definitionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject location = response.getAsJsonObject("result");
+        assertThat(location).isNotNull();
+        assertThat(location.get("uri").getAsString()).isEqualTo(libFile.toUri().toString());
+    }
+
+    @Test
+    @DisplayName("rename 支持跨文件类成员重命名")
+    void testRenameForMemberAcrossFiles() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-member-rename");
+        Path libFile = workspace.resolve("lib.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        String libContent = "class Greeter {\n    fun greet() {}\n}\n";
+        Files.write(libFile, libContent.getBytes(StandardCharsets.UTF_8));
+        String mainContent = "fun main() {\n    val g = Greeter()\n    g.greet()\n}\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", libFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", libContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject renameParams = new JsonObject();
+        JsonObject renameTextDocument = new JsonObject();
+        renameTextDocument.addProperty("uri", libFile.toUri().toString());
+        renameParams.add("textDocument", renameTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", "    fun greet() {}".indexOf("greet") + 1);
+        renameParams.add("position", position);
+        renameParams.addProperty("newName", "welcome");
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/rename", renameParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject changes = response.getAsJsonObject("result").getAsJsonObject("changes");
+        assertThat(changes.has(libFile.toUri().toString())).isTrue();
+        assertThat(changes.has(mainFile.toUri().toString())).isTrue();
+    }
+
+    @Test
+    @DisplayName("definition 在不同 package 的同名类型中可精确跳转")
+    void testDefinitionForSameNameTypeAcrossPackages() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-package-definition");
+        Path aFile = workspace.resolve("a.nova");
+        Path bFile = workspace.resolve("b.nova");
+        Path mainFile = workspace.resolve("main.nova");
+
+        Files.write(aFile, "package a\nclass Greeter { fun greet() {} }\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(bFile, "package b\nclass Greeter { fun greet() {} }\n".getBytes(StandardCharsets.UTF_8));
+        String mainContent = "import b.Greeter\nfun main() {\n    val g = Greeter()\n    g.greet()\n}\n";
+        Files.write(mainFile, mainContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", mainFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", mainContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject definitionParams = new JsonObject();
+        JsonObject definitionTextDocument = new JsonObject();
+        definitionTextDocument.addProperty("uri", mainFile.toUri().toString());
+        definitionParams.add("textDocument", definitionTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 3);
+        position.addProperty("character", "    g.greet()".indexOf("greet") + 1);
+        definitionParams.add("position", position);
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/definition", definitionParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject location = response.getAsJsonObject("result");
+        assertThat(location).isNotNull();
+        assertThat(location.get("uri").getAsString()).isEqualTo(bFile.toUri().toString());
+    }
+
+    @Test
+    @DisplayName("rename 在不同 package 的同名成员中只修改目标 package")
+    void testRenameForSameNameMemberAcrossPackages() throws IOException {
+        Path workspace = Files.createTempDirectory("nova-lsp-package-rename");
+        Path aFile = workspace.resolve("a.nova");
+        Path bFile = workspace.resolve("b.nova");
+
+        String aContent = "package a\nclass Greeter { fun greet() {} }\n";
+        String bContent = "package b\nclass Greeter { fun greet() {} }\n";
+        Files.write(aFile, aContent.getBytes(StandardCharsets.UTF_8));
+        Files.write(bFile, bContent.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject initParams = new JsonObject();
+        initParams.addProperty("rootUri", workspace.toUri().toString());
+
+        JsonObject didOpenParams = new JsonObject();
+        JsonObject textDocument = new JsonObject();
+        textDocument.addProperty("uri", bFile.toUri().toString());
+        textDocument.addProperty("languageId", "nova");
+        textDocument.addProperty("version", 1);
+        textDocument.addProperty("text", bContent);
+        didOpenParams.add("textDocument", textDocument);
+
+        JsonObject renameParams = new JsonObject();
+        JsonObject renameTextDocument = new JsonObject();
+        renameTextDocument.addProperty("uri", bFile.toUri().toString());
+        renameParams.add("textDocument", renameTextDocument);
+        JsonObject position = new JsonObject();
+        position.addProperty("line", 1);
+        position.addProperty("character", "class Greeter { fun greet() {} }".indexOf("greet") + 1);
+        renameParams.add("position", position);
+        renameParams.addProperty("newName", "welcome");
+
+        byte[] input = concat(
+                encode(request(1, "initialize", initParams)),
+                encode(notification("initialized", null)),
+                encode(notification("textDocument/didOpen", didOpenParams)),
+                encode(request(2, "textDocument/rename", renameParams)),
+                encode(request(3, "shutdown", null)),
+                encode(notification("exit", null))
+        );
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new NovaLanguageServer(new ByteArrayInputStream(input), out).run();
+
+        JsonObject[] messages = parseAllMessages(out.toByteArray());
+        JsonObject response = findResponse(messages, 2);
+
+        assertThat(response).isNotNull();
+        JsonObject changes = response.getAsJsonObject("result").getAsJsonObject("changes");
+        assertThat(changes).isNotNull();
+        assertThat(changes.has(bFile.toUri().toString())).isTrue();
+        assertThat(changes.has(aFile.toUri().toString())).isFalse();
     }
 }

@@ -320,19 +320,19 @@ class LexerTest {
         }
 
         @Test
-        @DisplayName("单个 & 报错")
-        void testSingleAmpersandError() {
-            String errors = scanWithErrors("&");
-            assertTrue(errors.contains("&"));
-            assertTrue(errors.contains("&&"));
+        @DisplayName("单个 & 是位与运算符")
+        void testSingleAmpersandIsBitwiseAnd() {
+            List<Token> toks = tokens("&");
+            assertEquals(1, toks.size());
+            assertEquals(TokenType.BAND, toks.get(0).getType());
         }
 
         @Test
-        @DisplayName("单个 | 报错")
-        void testSinglePipeError() {
-            String errors = scanWithErrors("|");
-            assertTrue(errors.contains("|"));
-            assertTrue(errors.contains("||"));
+        @DisplayName("单个 | 是位或运算符")
+        void testSinglePipeIsBitwiseOr() {
+            List<Token> toks = tokens("|");
+            assertEquals(1, toks.size());
+            assertEquals(TokenType.BOR, toks.get(0).getType());
         }
     }
 
@@ -1402,6 +1402,262 @@ class LexerTest {
     }
 
     // ================================================================
+    // 位运算操作符
+    // ================================================================
+
+    @Nested
+    @DisplayName("位运算操作符")
+    class BitwiseOperatorTests {
+
+        // ---------- 正常值：基本 token ----------
+
+        @Test
+        @DisplayName("& 位与")
+        void testBitwiseAnd() {
+            assertSingleToken("&", TokenType.BAND);
+        }
+
+        @Test
+        @DisplayName("| 位或")
+        void testBitwiseOr() {
+            assertSingleToken("|", TokenType.BOR);
+        }
+
+        @Test
+        @DisplayName("^ 位异或")
+        void testBitwiseXor() {
+            assertSingleToken("^", TokenType.BXOR);
+        }
+
+        @Test
+        @DisplayName("~ 位非")
+        void testBitwiseNot() {
+            assertSingleToken("~", TokenType.BNOT);
+        }
+
+        @Test
+        @DisplayName("<< 左移")
+        void testShiftLeft() {
+            assertSingleToken("<<", TokenType.SHL);
+        }
+
+        @Test
+        @DisplayName(">> 右移")
+        void testShiftRight() {
+            assertSingleToken(">>", TokenType.SHR);
+        }
+
+        @Test
+        @DisplayName(">>> 无符号右移")
+        void testUnsignedShiftRight() {
+            assertSingleToken(">>>", TokenType.USHR);
+        }
+
+        // ---------- 正常值：复合赋值 ----------
+
+        @Test
+        @DisplayName("&= 位与赋值")
+        void testBitwiseAndAssign() {
+            assertSingleToken("&=", TokenType.BAND_ASSIGN);
+        }
+
+        @Test
+        @DisplayName("|= 位或赋值")
+        void testBitwiseOrAssign() {
+            assertSingleToken("|=", TokenType.BOR_ASSIGN);
+        }
+
+        @Test
+        @DisplayName("^= 位异或赋值")
+        void testBitwiseXorAssign() {
+            assertSingleToken("^=", TokenType.BXOR_ASSIGN);
+        }
+
+        @Test
+        @DisplayName("<<= 左移赋值")
+        void testShiftLeftAssign() {
+            assertSingleToken("<<=", TokenType.SHL_ASSIGN);
+        }
+
+        @Test
+        @DisplayName(">>= 右移赋值")
+        void testShiftRightAssign() {
+            assertSingleToken(">>=", TokenType.SHR_ASSIGN);
+        }
+
+        @Test
+        @DisplayName(">>>= 无符号右移赋值")
+        void testUnsignedShiftRightAssign() {
+            assertSingleToken(">>>=", TokenType.USHR_ASSIGN);
+        }
+
+        // ---------- 边缘值：与逻辑运算符消歧 ----------
+
+        @Test
+        @DisplayName("&& 仍然是逻辑与")
+        void testLogicalAndStillWorks() {
+            assertSingleToken("&&", TokenType.AND);
+        }
+
+        @Test
+        @DisplayName("|| 仍然是逻辑或")
+        void testLogicalOrStillWorks() {
+            assertSingleToken("||", TokenType.OR);
+        }
+
+        @Test
+        @DisplayName("&&= 仍然是逻辑与赋值")
+        void testLogicalAndAssignStillWorks() {
+            assertSingleToken("&&=", TokenType.AND_ASSIGN);
+        }
+
+        @Test
+        @DisplayName("||= 仍然是逻辑或赋值")
+        void testLogicalOrAssignStillWorks() {
+            assertSingleToken("||=", TokenType.OR_ASSIGN);
+        }
+
+        @Test
+        @DisplayName("|> 仍然是管道操作符")
+        void testPipelineStillWorks() {
+            assertSingleToken("|>", TokenType.PIPELINE);
+        }
+
+        @Test
+        @DisplayName("< 仍然是小于号")
+        void testLessThanStillWorks() {
+            assertSingleToken("<", TokenType.LT);
+        }
+
+        @Test
+        @DisplayName("> 仍然是大于号")
+        void testGreaterThanStillWorks() {
+            assertSingleToken(">", TokenType.GT);
+        }
+
+        @Test
+        @DisplayName("<= 仍然是小于等于")
+        void testLessEqualStillWorks() {
+            assertSingleToken("<=", TokenType.LE);
+        }
+
+        @Test
+        @DisplayName(">= 仍然是大于等于")
+        void testGreaterEqualStillWorks() {
+            assertSingleToken(">=", TokenType.GE);
+        }
+
+        // ---------- 边缘值：连续操作符 ----------
+
+        @Test
+        @DisplayName("a & b 位与表达式")
+        void testBitwiseAndExpr() {
+            List<Token> toks = tokens("a & b");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.IDENTIFIER, toks.get(0).getType());
+            assertEquals(TokenType.BAND, toks.get(1).getType());
+            assertEquals(TokenType.IDENTIFIER, toks.get(2).getType());
+        }
+
+        @Test
+        @DisplayName("a | b 位或表达式")
+        void testBitwiseOrExpr() {
+            List<Token> toks = tokens("a | b");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.BOR, toks.get(1).getType());
+        }
+
+        @Test
+        @DisplayName("a ^ b 位异或表达式")
+        void testBitwiseXorExpr() {
+            List<Token> toks = tokens("a ^ b");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.BXOR, toks.get(1).getType());
+        }
+
+        @Test
+        @DisplayName("~a 位非表达式")
+        void testBitwiseNotExpr() {
+            List<Token> toks = tokens("~a");
+            assertEquals(2, toks.size());
+            assertEquals(TokenType.BNOT, toks.get(0).getType());
+            assertEquals(TokenType.IDENTIFIER, toks.get(1).getType());
+        }
+
+        @Test
+        @DisplayName("a << b 左移表达式")
+        void testShiftLeftExpr() {
+            List<Token> toks = tokens("a << b");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.SHL, toks.get(1).getType());
+        }
+
+        @Test
+        @DisplayName("a >> b 右移表达式")
+        void testShiftRightExpr() {
+            List<Token> toks = tokens("a >> b");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.SHR, toks.get(1).getType());
+        }
+
+        @Test
+        @DisplayName("a >>> b 无符号右移表达式")
+        void testUnsignedShiftRightExpr() {
+            List<Token> toks = tokens("a >>> b");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.USHR, toks.get(1).getType());
+        }
+
+        @Test
+        @DisplayName("位运算与逻辑运算混合")
+        void testBitwiseAndLogicalMixed() {
+            // a & b && c | d || e
+            List<Token> toks = tokens("a & b && c | d || e");
+            assertEquals(9, toks.size());
+            assertEquals(TokenType.BAND, toks.get(1).getType());
+            assertEquals(TokenType.AND, toks.get(3).getType());
+            assertEquals(TokenType.BOR, toks.get(5).getType());
+            assertEquals(TokenType.OR, toks.get(7).getType());
+        }
+
+        @Test
+        @DisplayName("a <<= b 复合赋值表达式")
+        void testShiftLeftAssignExpr() {
+            List<Token> toks = tokens("a <<= b");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.SHL_ASSIGN, toks.get(1).getType());
+        }
+
+        @Test
+        @DisplayName("连续移位: a << b >> c")
+        void testConsecutiveShifts() {
+            List<Token> toks = tokens("a << b >> c");
+            assertEquals(5, toks.size());
+            assertEquals(TokenType.SHL, toks.get(1).getType());
+            assertEquals(TokenType.SHR, toks.get(3).getType());
+        }
+
+        @Test
+        @DisplayName("~~a 双重位非")
+        void testDoubleBitwiseNot() {
+            List<Token> toks = tokens("~~a");
+            assertEquals(3, toks.size());
+            assertEquals(TokenType.BNOT, toks.get(0).getType());
+            assertEquals(TokenType.BNOT, toks.get(1).getType());
+            assertEquals(TokenType.IDENTIFIER, toks.get(2).getType());
+        }
+
+        @Test
+        @DisplayName("泛型 < 与左移 << 不冲突")
+        void testGenericVsShiftLeft() {
+            // Box<Int> 的 < 是 LT
+            List<Token> toks = tokens("Box<Int>");
+            assertEquals(TokenType.LT, toks.get(1).getType());
+            assertEquals(TokenType.GT, toks.get(3).getType());
+        }
+    }
+
+    // ================================================================
     // 异常字符
     // ================================================================
 
@@ -1410,10 +1666,11 @@ class LexerTest {
     class UnexpectedCharTests {
 
         @Test
-        @DisplayName("未知字符报错")
-        void testUnexpectedChar() {
-            String errors = scanWithErrors("~");
-            assertTrue(errors.contains("Unexpected character"));
+        @DisplayName("~ 是位非运算符")
+        void testTildeIsBitwiseNot() {
+            List<Token> toks = tokens("~");
+            assertEquals(1, toks.size());
+            assertEquals(TokenType.BNOT, toks.get(0).getType());
         }
 
         @Test

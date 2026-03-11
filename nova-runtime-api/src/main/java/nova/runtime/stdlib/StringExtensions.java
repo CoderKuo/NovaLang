@@ -1,6 +1,7 @@
 package nova.runtime.stdlib;
 
 import nova.runtime.Function1;
+import nova.runtime.NovaDynamic;
 
 import java.util.*;
 import java.util.function.Function;
@@ -140,6 +141,9 @@ public final class StringExtensions {
     // ========== 单参数方法 ==========
 
     public static Object split(Object str, Object separator) {
+        if (!(str instanceof String)) {
+            return NovaDynamic.invoke1(str, "split", separator);
+        }
         return new ArrayList<>(Arrays.asList(
                 ((String) str).split(Pattern.quote(separator.toString()), -1)));
     }
@@ -161,6 +165,9 @@ public final class StringExtensions {
     }
 
     public static Object replace(Object str, Object target, Object replacement) {
+        if (!(str instanceof String)) {
+            return NovaDynamic.invoke2(str, "replace", target, replacement);
+        }
         return ((String) str).replace(target.toString(), replacement.toString());
     }
 
@@ -299,12 +306,18 @@ public final class StringExtensions {
     }
 
     public static Object matches(Object str, Object regex) {
+        if (!(str instanceof String)) {
+            return NovaDynamic.invoke1(str, "matches", regex);
+        }
         return ((String) str).matches(regex.toString());
     }
 
     // ── 双参数方法 ──
 
     public static Object replaceFirst(Object str, Object regex, Object replacement) {
+        if (!(str instanceof String)) {
+            return NovaDynamic.invoke2(str, "replaceFirst", regex, replacement);
+        }
         return ((String) str).replaceFirst(
                 java.util.regex.Pattern.quote(regex.toString()),
                 java.util.regex.Matcher.quoteReplacement(replacement.toString()));

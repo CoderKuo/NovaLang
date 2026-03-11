@@ -1378,6 +1378,12 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 case GT:  return NovaBoolean.of(lv > rv);
                 case LE:  return NovaBoolean.of(lv <= rv);
                 case GE:  return NovaBoolean.of(lv >= rv);
+                case BAND: return NovaInt.of(lv & rv);
+                case BOR:  return NovaInt.of(lv | rv);
+                case BXOR: return NovaInt.of(lv ^ rv);
+                case SHL:  return NovaInt.of(lv << rv);
+                case SHR:  return NovaInt.of(lv >> rv);
+                case USHR: return NovaInt.of(lv >>> rv);
                 default: break; // REF_EQ, IN, TO 等走通用路径
             }
         }
@@ -1439,6 +1445,12 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 case IN:  return NovaBoolean.of(checkContains(right, left));
                 case NOT_IN: return NovaBoolean.of(!checkContains(right, left));
                 case TO:  return new NovaPair(left, right);
+                case BAND: return BinaryOps.bitwiseAnd(left, right);
+                case BOR:  return BinaryOps.bitwiseOr(left, right);
+                case BXOR: return BinaryOps.bitwiseXor(left, right);
+                case SHL:  return BinaryOps.shiftLeft(left, right);
+                case SHR:  return BinaryOps.shiftRight(left, right);
+                case USHR: return BinaryOps.unsignedShiftRight(left, right);
                 default:
                     throw hirError("Unknown binary operator: " + node.getOperator(), node);
             }
@@ -1479,6 +1491,9 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
 
             case NOT:
                 return NovaBoolean.of(!operand.isTruthy());
+
+            case BNOT:
+                return BinaryOps.bitwiseNot(operand);
 
             case INC: {
                 NovaValue result;

@@ -174,6 +174,13 @@ public final class NovaExternalObject extends AbstractNovaValue {
     }
 
     /**
+     * 检查是否存在指定名称的字段
+     */
+    public boolean hasField(String fieldName) {
+        return cache.hasField(objectClass, fieldName);
+    }
+
+    /**
      * 检查是否存在指定名称的方法（通过 MethodHandleCache 的方法名索引 O(1) 查找）
      */
     public boolean hasMethod(String methodName) {

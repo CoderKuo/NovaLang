@@ -1020,6 +1020,12 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             case MOD_ASSIGN: binOp = BinaryOp.MOD; break;
             case OR_ASSIGN:  binOp = BinaryOp.OR;  break;
             case AND_ASSIGN: binOp = BinaryOp.AND; break;
+            case BAND_ASSIGN: binOp = BinaryOp.BAND; break;
+            case BOR_ASSIGN:  binOp = BinaryOp.BOR;  break;
+            case BXOR_ASSIGN: binOp = BinaryOp.BXOR; break;
+            case SHL_ASSIGN:  binOp = BinaryOp.SHL;  break;
+            case SHR_ASSIGN:  binOp = BinaryOp.SHR;  break;
+            case USHR_ASSIGN: binOp = BinaryOp.USHR; break;
             default:
                 throw new IllegalStateException("Unhandled compound assign operator: " + node.getOperator());
         }

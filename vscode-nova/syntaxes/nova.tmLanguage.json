@@ -469,7 +469,7 @@
                 },
                 {
                     "name": "keyword.operator.assignment.nova",
-                    "match": "(\\+=|-=|\\*=|/=|%=|\\?\\?=|=)"
+                    "match": "(>>>=|<<=|>>=|&=|\\|=|\\^=|\\+=|-=|\\*=|/=|%=|\\?\\?=|=)"
                 },
                 {
                     "name": "keyword.operator.arithmetic.nova",
@@ -478,6 +478,10 @@
                 {
                     "name": "keyword.operator.logical.nova",
                     "match": "(&&|\\|\\||!(?!=))"
+                },
+                {
+                    "name": "keyword.operator.bitwise.nova",
+                    "match": "(>>>|<<|>>|&|\\||\\^|~)"
                 },
                 {
                     "name": "keyword.operator.range.nova",

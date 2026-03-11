@@ -1,5 +1,92 @@
 plugins {
     id 'java-library'
+    id 'me.champeau.jmh' version '0.7.2'
 }
 
 description = 'NovaLang Runtime API - runtime support classes for compiled bytecode'
+
+def resolveOptionalPath = { String propertyName, String defaultPath ->
+    def value = project.findProperty(propertyName)
+    if (!value) {
+        return file(defaultPath)
+    }
+    File explicit = new File(value.toString())
+    return explicit.isAbsolute() ? explicit : project.file(value.toString())
+}
+
+dependencies {
+    implementation 'com.google.code.gson:gson:2.10.1'
+    jmh 'org.openjdk.jmh:jmh-core:1.37'
+    jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+}
+
+jmh {
+    includes = ['NovaDynamicBenchmark']
+    benchmarkMode = ['avgt']
+    warmupIterations = 5
+    iterations = 8
+    fork = 2
+    timeOnIteration = '500ms'
+    resultFormat = 'JSON'
+    resultsFile = resolveOptionalPath('jmhResultFile', "$buildDir/reports/jmh/results.json")
+    humanOutputFile = resolveOptionalPath('jmhHumanFile', "$buildDir/reports/jmh/human.txt")
+}
+
+tasks.register('jmhNovaDynamic') {
+    group = 'verification'
+    description = 'Runs the NovaDynamic JMH benchmarks.'
+    dependsOn tasks.named('jmh')
+}
+
+tasks.register('compareNovaDynamicJmh') {
+    group = 'verification'
+    description = 'Compares two NovaDynamic JMH JSON reports. Use -Pbaseline=... -Pcandidate=...'
+
+    doLast {
+        def baselineProp = project.findProperty('baseline')
+        def candidateProp = project.findProperty('candidate')
+        if (!baselineProp || !candidateProp) {
+            throw new GradleException('Usage: gradlew :nova-runtime-api:compareNovaDynamicJmh -Pbaseline=path -Pcandidate=path')
+        }
+
+        def resolveReport = { Object value ->
+            File report = new File(value.toString())
+            if (report.isAbsolute()) {
+                return report
+            }
+            File rootRelative = rootProject.file(value.toString())
+            return rootRelative.exists() ? rootRelative : project.file(value.toString())
+        }
+
+        File baselineFile = resolveReport(baselineProp)
+        File candidateFile = resolveReport(candidateProp)
+        if (!baselineFile.isFile()) {
+            throw new GradleException("Baseline report not found: ${baselineFile}")
+        }
+        if (!candidateFile.isFile()) {
+            throw new GradleException("Candidate report not found: ${candidateFile}")
+        }
+
+        def parseScores = { File report ->
+            new groovy.json.JsonSlurper().parse(report).collectEntries { entry ->
+                [(entry.benchmark.tokenize('.').last()): entry.primaryMetric.score as BigDecimal]
+            }
+        }
+
+        def baselineScores = parseScores(baselineFile)
+        def candidateScores = parseScores(candidateFile)
+        def benchmarkNames = (baselineScores.keySet() + candidateScores.keySet()).unique().sort()
+
+        println String.format('%-32s %14s %14s %12s', 'Benchmark', 'Baseline(ns)', 'Candidate(ns)', 'Delta')
+        benchmarkNames.each { name ->
+            BigDecimal baseline = baselineScores[name]
+            BigDecimal candidate = candidateScores[name]
+            if (baseline == null || candidate == null) {
+                println String.format('%-32s %14s %14s %12s', name, baseline ?: 'N/A', candidate ?: 'N/A', 'N/A')
+                return
+            }
+            BigDecimal delta = ((candidate - baseline) / baseline) * 100
+            println String.format('%-32s %14.3f %14.3f %11.2f%%', name, baseline, candidate, delta)
+        }
+    }
+}

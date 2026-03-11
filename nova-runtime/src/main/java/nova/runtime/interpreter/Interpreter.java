@@ -575,14 +575,34 @@ public class Interpreter implements ExecutionContext {
         return mirPipeline.executeToMir(program);
     }
 
-    /** 执行预编译的 MIR 模块（基准测试用） */
+    static final class PreparedMirModule {
+        final MirModule mir;
+        final MirInterpreter.PreparedModule prepared;
+
+        PreparedMirModule(MirModule mir, MirInterpreter.PreparedModule prepared) {
+            this.mir = mir;
+            this.prepared = prepared;
+        }
+    }
+
+    PreparedMirModule prepareMirForReuse(MirModule mir) {
+        mirInterpreter.resetState();
+        return new PreparedMirModule(mir, mirInterpreter.prepareModule(mir));
+    }
+
+    NovaValue executePreparedMir(PreparedMirModule prepared) {
+        resetExecutionState();
+        mirInterpreter.resetExecutionState();
+        return mirInterpreter.executePreparedModule(prepared != null ? prepared.prepared : null);
+    }
+
+    /** ?????? MIR ????????? */
     NovaValue executeMir(MirModule mir) {
         resetExecutionState();
         mirInterpreter.resetState();
         return mirInterpreter.executeModule(mir);
     }
 
-    /** 重置每次 eval 的执行状态计数器 */
     private void resetExecutionState() {
         this.executionStartNanos = System.nanoTime();
         this.totalLoopIterations = 0;

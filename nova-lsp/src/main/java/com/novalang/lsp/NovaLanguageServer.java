@@ -153,6 +153,9 @@ public class NovaLanguageServer {
             case "textDocument/didClose":
                 handleDidClose(message.getAsJsonObject("params"));
                 break;
+            case "workspace/didChangeWatchedFiles":
+                handleDidChangeWatchedFiles(message.getAsJsonObject("params"));
+                break;
             case "$/cancelRequest":
                 handleCancelRequest(message.getAsJsonObject("params"));
                 break;
@@ -265,6 +268,25 @@ public class NovaLanguageServer {
     private void handleInitialize(JsonElement id, JsonObject params) throws IOException {
         // 读取 initializationOptions 中的 classpath
         List<String> classpath = new ArrayList<>();
+        Set<String> workspaceRoots = new LinkedHashSet<>();
+        boolean typeHintsEnabled = true;
+        boolean parameterHintsEnabled = true;
+        boolean semanticTokensEnabled = true;
+        if (params != null) {
+            if (params.has("rootUri") && !params.get("rootUri").isJsonNull()) {
+                workspaceRoots.add(params.get("rootUri").getAsString());
+            }
+            if (params.has("workspaceFolders") && params.get("workspaceFolders").isJsonArray()) {
+                JsonArray folders = params.getAsJsonArray("workspaceFolders");
+                for (int i = 0; i < folders.size(); i++) {
+                    JsonObject folder = folders.get(i).getAsJsonObject();
+                    if (folder != null && folder.has("uri")) {
+                        workspaceRoots.add(folder.get("uri").getAsString());
+                    }
+                }
+            }
+        }
+
         if (params != null && params.has("initializationOptions")) {
             JsonObject options = params.getAsJsonObject("initializationOptions");
             if (options != null && options.has("classpath")) {
@@ -275,12 +297,31 @@ public class NovaLanguageServer {
                     }
                 }
             }
+            if (options != null && options.has("inlayHints")) {
+                JsonObject inlayHints = options.getAsJsonObject("inlayHints");
+                if (inlayHints != null) {
+                    if (inlayHints.has("typeHints")) {
+                        typeHintsEnabled = inlayHints.get("typeHints").getAsBoolean();
+                    }
+                    if (inlayHints.has("parameterHints")) {
+                        parameterHintsEnabled = inlayHints.get("parameterHints").getAsBoolean();
+                    }
+                }
+            }
+            if (options != null && options.has("semanticHighlighting")) {
+                semanticTokensEnabled = options.get("semanticHighlighting").getAsBoolean();
+            }
         }
 
         // 创建 Java 类解析器并注入 analyzer
         JavaClassResolver javaClassResolver = new JavaClassResolver(classpath);
         analyzer.setJavaClassResolver(javaClassResolver);
+        analyzer.setWorkspaceRoots(new ArrayList<>(workspaceRoots));
+        analyzer.setInlayHintsEnabled(typeHintsEnabled, parameterHintsEnabled);
+        analyzer.setSemanticTokensEnabled(semanticTokensEnabled);
+        analyzer.rebuildWorkspaceIndex();
         LOG.info("Java classpath entries: " + classpath.size());
+        LOG.info("Workspace roots indexed: " + workspaceRoots.size());
 
         JsonObject result = new JsonObject();
 
@@ -335,7 +376,12 @@ public class NovaLanguageServer {
         capabilities.add("renameProvider", renameProvider);
 
         // 代码操作
-        capabilities.addProperty("codeActionProvider", true);
+        JsonObject codeActionProvider = new JsonObject();
+        JsonArray codeActionKinds = new JsonArray();
+        codeActionKinds.add("quickfix");
+        codeActionKinds.add("source.organizeImports");
+        codeActionProvider.add("codeActionKinds", codeActionKinds);
+        capabilities.add("codeActionProvider", codeActionProvider);
 
         // 折叠范围
         capabilities.addProperty("foldingRangeProvider", true);
@@ -418,12 +464,18 @@ public class NovaLanguageServer {
         if (textDocument == null) return;
         String uri = textDocument.get("uri").getAsString();
         documents.close(uri);
+        analyzer.reindexWorkspaceFileFromDisk(uri);
 
         // 清除诊断
         JsonObject diagParams = new JsonObject();
         diagParams.addProperty("uri", uri);
         diagParams.add("diagnostics", new JsonArray());
         transport.sendNotification("textDocument/publishDiagnostics", diagParams);
+    }
+
+    private void handleDidChangeWatchedFiles(JsonObject params) {
+        if (params == null || !params.has("changes")) return;
+        analyzer.handleWatchedFiles(params.getAsJsonArray("changes"));
     }
 
     // ============ textDocument/completion ============

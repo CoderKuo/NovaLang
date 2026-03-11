@@ -57,6 +57,7 @@ final class MirCallDispatcher {
 
     /** 重置每次 executeModule 的临时状态 */
     void resetState() {
+        scopeReceiver = null;
         envVarDefinedBy.clear();
         envVarDefinedInBlock.clear();
     }
@@ -68,6 +69,13 @@ final class MirCallDispatcher {
      * 支持 NovaObject 字段、NovaEnumEntry 字段、以及 MemberResolver 内置类型成员。
      */
     NovaValue resolveFieldOnValue(NovaValue target, String fieldName) {
+        if (target instanceof ScalarizedNovaObject) {
+            ScalarizedNovaObject sobj = (ScalarizedNovaObject) target;
+            int idx = sobj.getNovaClass().getFieldIndex(fieldName);
+            if (idx >= 0) return sobj.getFieldByIndex(idx);
+            NovaCallable method = sobj.getMethod(fieldName);
+            if (method != null) return new NovaBoundMethod(sobj.materialize(), method);
+        }
         if (target instanceof NovaObject) {
             NovaObject obj = (NovaObject) target;
             if (obj.hasField(fieldName)) return obj.getField(fieldName);
@@ -103,43 +111,93 @@ final class MirCallDispatcher {
 
         // ===== 内联缓存 + NovaObject 快速路径 =====
         // 条件：无命名参数、接收者为 NovaObject、非 super 调用
-        if (cs.namedInfo == null && receiver instanceof NovaObject
+        if (cs.namedInfo == null
+                && (receiver instanceof NovaObject || receiver instanceof ScalarizedNovaObject)
                 && (cs.owner == null || !cs.owner.startsWith(MARKER_SUPER))) {
-            NovaObject obj = (NovaObject) receiver;
-            NovaClass cls = obj.getNovaClass();
+            NovaClass cls;
             NovaCallable method;
+            if (receiver instanceof NovaObject) {
+                cls = ((NovaObject) receiver).getNovaClass();
+            } else {
+                cls = ((ScalarizedNovaObject) receiver).getNovaClass();
+            }
 
             if (cls == cs.cachedClass && cs.cachedMethod != null) {
-                // 缓存命中 — 跳过方法查找和可见性检查
+                NovaValue specialized = tryExecuteScalarizedValueMethod(receiver, cs, frame, ops);
+                if (specialized != null) {
+                    if (inst.getDest() >= 0) {
+                        frame.locals[inst.getDest()] = specialized;
+                    }
+                    return;
+                }
+                if (cs.cachedDirectMethod != null) {
+                    NovaValue result = bindAndExecuteDirect(receiver, cs.cachedDirectMethod, frame, ops);
+                    if (inst.getDest() >= 0) {
+                        frame.locals[inst.getDest()] = result != null ? result : NovaNull.UNIT;
+                    }
+                    return;
+                }
                 method = cs.cachedMethod;
             } else {
-                // 缓存未命中 — 方法查找
                 if ("getClass".equals(cs.methodName)) {
                     if (inst.getDest() >= 0) frame.locals[inst.getDest()] = cls;
                     return;
                 }
-                method = obj.getMethod(cs.methodName);
+                if (receiver instanceof ScalarizedNovaObject) {
+                    method = ((ScalarizedNovaObject) receiver).getMethod(cs.methodName);
+                } else {
+                    method = ((NovaObject) receiver).getMethod(cs.methodName);
+                }
                 if (method != null) {
-                    // 可见性检查（仅 cache miss 时执行）
                     checkMethodVisibility(cls, cs.methodName, cs.owner);
-                    // 更新缓存
                     cs.cachedClass = cls;
                     cs.cachedMethod = method;
+                    if (method instanceof MirCallable) {
+                        MirCallable mirMethod = (MirCallable) method;
+                        int argCount = ops.length - 1;
+                        if (argCount <= 2) {
+                            cs.cachedDirectMethod = mirMethod;
+                            cs.cachedDirectArity = (byte) argCount;
+                        } else {
+                            cs.cachedDirectMethod = null;
+                            cs.cachedDirectArity = -1;
+                        }
+                        cs.scalarizedPlusEligible = isScalarizedPlusMethod(cls, cs.methodName, mirMethod);
+                        cs.scalarizedFieldCount = cs.scalarizedPlusEligible ? (byte) cls.getFieldCount() : 0;
+                    } else {
+                        cs.cachedDirectMethod = null;
+                        cs.cachedDirectArity = -1;
+                        cs.scalarizedPlusEligible = false;
+                        cs.scalarizedFieldCount = 0;
+                    }
                 }
             }
 
             if (method != null) {
-                List<NovaValue> args = collectArgs(frame, ops);
-                NovaValue result = bindAndExecute(obj, method, args);
+                NovaValue result;
+                NovaValue specialized = tryExecuteScalarizedValueMethod(receiver, cs, frame, ops);
+                if (specialized != null) {
+                    result = specialized;
+                } else if (cs.cachedDirectMethod != null && cs.cachedDirectArity >= 0) {
+                    result = bindAndExecuteDirect(receiver, cs.cachedDirectMethod, frame, ops);
+                } else if (method instanceof MirCallable) {
+                    result = bindAndExecuteDirect(receiver, (MirCallable) method, frame, ops);
+                } else {
+                    List<NovaValue> args = collectArgs(frame, ops);
+                    result = bindAndExecute(receiver, method, args);
+                }
                 if (inst.getDest() >= 0) {
                     frame.locals[inst.getDest()] = result != null ? result : NovaNull.UNIT;
                 }
                 return;
             }
-            // method not found → fall through to full dispatch (extensions, stdlib, etc.)
+            // method not found -> fall through to full dispatch (extensions, stdlib, etc.)
         }
 
         // ===== 常规路径（非 NovaObject / 命名参数 / super 调用 / 方法未找到） =====
+        if (receiver instanceof ScalarizedNovaObject) {
+            receiver = ((ScalarizedNovaObject) receiver).materialize();
+        }
         List<NovaValue> allArgs = collectArgs(frame, ops);
 
         NovaValue result;
@@ -180,11 +238,18 @@ final class MirCallDispatcher {
             case "also":
                 lambda.call(interp, Collections.singletonList(receiver));
                 return receiver;
-            case "run":
-                return withScopeReceiver(receiver, () -> lambda.call(interp, Collections.emptyList()));
-            case "apply":
-                withScopeReceiver(receiver, () -> lambda.call(interp, Collections.emptyList()));
-                return receiver;
+            case "run": {
+                // ScalarizedNovaObject 必须一次性 materialize，避免每次方法调用创建副本丢失修改
+                NovaValue r = receiver instanceof ScalarizedNovaObject
+                        ? ((ScalarizedNovaObject) receiver).materialize() : receiver;
+                return withScopeReceiver(r, () -> lambda.call(interp, Collections.emptyList()));
+            }
+            case "apply": {
+                NovaValue r = receiver instanceof ScalarizedNovaObject
+                        ? ((ScalarizedNovaObject) receiver).materialize() : receiver;
+                withScopeReceiver(r, () -> lambda.call(interp, Collections.emptyList()));
+                return r;
+            }
             case "takeIf":
                 return isTruthy(lambda.call(interp, Collections.singletonList(receiver))) ? receiver : NovaNull.NULL;
             case "takeUnless":
@@ -244,6 +309,104 @@ final class MirCallDispatcher {
         return interp.executeBoundMethod(new NovaBoundMethod(receiver, method), args, null);
     }
 
+    private NovaValue bindAndExecuteDirect(NovaValue receiver, MirCallable method, MirFrame frame, int[] ops) {
+        int argCount = ops.length - 1;
+        switch (argCount) {
+            case 0:
+                return method.callBoundDirect0(interp, receiver);
+            case 1:
+                return method.callBoundDirect1(interp, receiver, frame.get(ops[1]));
+            case 2:
+                return method.callBoundDirect2(interp, receiver, frame.get(ops[1]), frame.get(ops[2]));
+            default:
+                NovaValue[] argsArray = new NovaValue[1 + argCount];
+                argsArray[0] = receiver;
+                for (int i = 0; i < argCount; i++) {
+                    argsArray[i + 1] = frame.get(ops[i + 1]);
+                }
+                return method.callDirect(interp, argsArray);
+        }
+    }
+
+
+    private NovaValue tryExecuteScalarizedValueMethod(NovaValue receiver, MirCallSite cs, MirFrame frame, int[] ops) {
+        if (!cs.scalarizedPlusEligible || ops.length != 2 || !(receiver instanceof ScalarizedNovaObject)) {
+            return null;
+        }
+        NovaValue arg = frame.get(ops[1]);
+        if (!(arg instanceof ScalarizedNovaObject)) {
+            return null;
+        }
+        ScalarizedNovaObject left = (ScalarizedNovaObject) receiver;
+        ScalarizedNovaObject right = (ScalarizedNovaObject) arg;
+        if (left.getNovaClass() != cs.cachedClass || right.getNovaClass() != cs.cachedClass) {
+            return null;
+        }
+        int fieldCount = cs.scalarizedFieldCount;
+        ScalarizedNovaObject result = new ScalarizedNovaObject(cs.cachedClass, fieldCount);
+        for (int i = 0; i < fieldCount; i++) {
+            if (!left.isRawIntFieldByIndex(i) || !right.isRawIntFieldByIndex(i)) {
+                return null;
+            }
+            result.setRawIntFieldByIndex(i, left.getRawIntFieldByIndex(i) + right.getRawIntFieldByIndex(i));
+        }
+        return result;
+    }
+
+    private boolean isScalarizedPlusMethod(NovaClass cls, String methodName, MirCallable method) {
+        if (!"plus".equals(methodName)) {
+            return false;
+        }
+        int fieldCount = cls.getFieldCount();
+        if (fieldCount <= 0 || fieldCount > 4) {
+            return false;
+        }
+        MirFunction fn = method.getFunction();
+        if (fn.getBlocks().size() != 1 || fn.getParams().size() != 1) {
+            return false;
+        }
+        BasicBlock block = fn.getBlocks().get(0);
+        List<MirInst> insts = block.getInstructions();
+        if (insts.size() != fieldCount * 3 + 1) {
+            return false;
+        }
+        String[] fieldNames = cls.getFieldNames();
+        for (int i = 0; i < fieldCount; i++) {
+            MirInst leftGet = insts.get(i * 3);
+            MirInst rightGet = insts.get(i * 3 + 1);
+            MirInst add = insts.get(i * 3 + 2);
+            if (leftGet.getOp() != MirOp.GET_FIELD || rightGet.getOp() != MirOp.GET_FIELD || add.getOp() != MirOp.BINARY) {
+                return false;
+            }
+            if (leftGet.operand(0) != 0 || rightGet.operand(0) != 1) {
+                return false;
+            }
+            if (!fieldNames[i].equals(String.valueOf(leftGet.getExtra())) || !fieldNames[i].equals(String.valueOf(rightGet.getExtra()))) {
+                return false;
+            }
+            if (add.operand(0) != leftGet.getDest() || add.operand(1) != rightGet.getDest()) {
+                return false;
+            }
+            if (add.extraAs() != BinaryOp.ADD) {
+                return false;
+            }
+        }
+        MirInst create = insts.get(fieldCount * 3);
+        if (create.getOp() != MirOp.NEW_OBJECT || !cls.getName().equals(String.valueOf(create.getExtra()))) {
+            return false;
+        }
+        int[] ctorOps = create.getOperands();
+        if (ctorOps.length != fieldCount) {
+            return false;
+        }
+        for (int i = 0; i < fieldCount; i++) {
+            if (ctorOps[i] != insts.get(i * 3 + 2).getDest()) {
+                return false;
+            }
+        }
+        MirTerminator term = block.getTerminator();
+        return term != null && term.kind == MirTerminator.KIND_RETURN && ((MirTerminator.Return) term).getValueLocal() == create.getDest();
+    }
     /** 方法可见性检查（供内联缓存 cache miss 路径复用） */
     void checkMethodVisibility(NovaClass receiverClass, String methodName, String owner) {
         nova.runtime.types.Modifier vis = receiverClass.getMethodVisibility(methodName);

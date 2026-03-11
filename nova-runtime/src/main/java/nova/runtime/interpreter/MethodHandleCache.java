@@ -373,6 +373,13 @@ public final class MethodHandleCache {
     }
 
     /**
+     * 检查类是否存在指定名称的字段（public 或 declared，递归父类）
+     */
+    public boolean hasField(Class<?> clazz, String name) {
+        return findField(clazz, name) != null;
+    }
+
+    /**
      * 检查参数类型是否兼容
      */
     private boolean isCompatible(Class<?>[] paramTypes, Class<?>[] argTypes) {
@@ -634,12 +641,16 @@ public final class MethodHandleCache {
     }
 
     private MethodHandle lookupGetter(Class<?> clazz, String name) {
-        // 1. 直接字段
+        // 1. 直接字段（带 publicLookup 回退，处理跨模块访问）
         try {
             java.lang.reflect.Field field = findField(clazz, name);
             if (field != null) {
                 trySetAccessible(field);
-                return lookup.unreflectGetter(field);
+                try {
+                    return lookup.unreflectGetter(field);
+                } catch (IllegalAccessException e) {
+                    return MethodHandles.publicLookup().unreflectGetter(field);
+                }
             }
         } catch (Exception e) { /* 继续 */ }
 
@@ -666,12 +677,16 @@ public final class MethodHandleCache {
     }
 
     private MethodHandle lookupSetter(Class<?> clazz, String name) {
-        // 1. 直接字段
+        // 1. 直接字段（带 publicLookup 回退，处理跨模块访问）
         try {
             java.lang.reflect.Field field = findField(clazz, name);
             if (field != null) {
                 trySetAccessible(field);
-                return lookup.unreflectSetter(field);
+                try {
+                    return lookup.unreflectSetter(field);
+                } catch (IllegalAccessException e) {
+                    return MethodHandles.publicLookup().unreflectSetter(field);
+                }
             }
         } catch (Exception e) { /* 继续 */ }
 

@@ -385,6 +385,8 @@ public class MirCodeGenerator {
         }
 
         // 生成每个基本块（复用集合实例，避免每个 block 重复分配）
+        StringAccumLoopPlan stringAccumLoopPlan = StringAccumLoopPlan.detect(func);
+
         Map<Integer, Integer> fusedConstants = new HashMap<>();
         Set<MirInst> fusedConstInsts = new HashSet<>();
         for (BasicBlock block : func.getBlocks()) {
@@ -393,6 +395,11 @@ public class MirCodeGenerator {
             // catch handler: 栈顶是异常对象，ASTORE 到指定 local
             if (catchHandlerLocals.containsKey(block.getId())) {
                 mv.visitVarInsn(ASTORE, catchHandlerLocals.get(block.getId()));
+            }
+
+            if (stringAccumLoopPlan != null && block.getId() == stringAccumLoopPlan.headerBlockId) {
+                generateStringAccumLoopFast(mv, stringAccumLoopPlan, func);
+                continue;
             }
 
             // 检测分支-比较融合：最后一条指令是比较，终结器是 Branch 使用该比较结果
@@ -453,6 +460,124 @@ public class MirCodeGenerator {
     }
 
     // ========== 指令生成 ==========
+
+    private void generateStringAccumLoopFast(MethodVisitor mv, StringAccumLoopPlan plan, MirFunction func) {
+        int builderLocal = func.getFrameSize();
+        Label bodyLabel = new Label();
+        Label exitLabel = new Label();
+
+        mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
+        mv.visitInsn(DUP);
+        loadObject(mv, plan.stringLocal);
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/String", "valueOf",
+                "(Ljava/lang/Object;)Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>",
+                "(Ljava/lang/String;)V", false);
+        mv.visitVarInsn(ASTORE, builderLocal);
+
+        emitStringAccumLoopCondition(mv, plan, bodyLabel, exitLabel);
+        mv.visitLabel(bodyLabel);
+        for (StringAccumLoopPlan.AppendPart part : plan.appendParts) {
+            mv.visitVarInsn(ALOAD, builderLocal);
+            switch (part.kind) {
+                case STRING_LITERAL:
+                    mv.visitLdcInsn(part.stringValue);
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                            "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false);
+                    break;
+                case INT_LOCAL:
+                    loadIntLocalValue(mv, part.localIndex);
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                            "(I)Ljava/lang/StringBuilder;", false);
+                    break;
+                case INT_CONST:
+                    pushInt(mv, part.intValue);
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                            "(I)Ljava/lang/StringBuilder;", false);
+                    break;
+                case VALUE_LOCAL:
+                    loadObject(mv, part.localIndex);
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                            "(Ljava/lang/Object;)Ljava/lang/StringBuilder;", false);
+                    break;
+                default:
+                    throw new IllegalStateException("Unsupported append part: " + part.kind);
+            }
+            mv.visitInsn(POP);
+        }
+        loadIntLocalValue(mv, plan.counterLocal);
+        pushInt(mv, plan.stepValue);
+        mv.visitInsn(IADD);
+        storeIntLocalValue(mv, plan.counterLocal);
+        emitStringAccumLoopCondition(mv, plan, bodyLabel, exitLabel);
+
+        mv.visitLabel(exitLabel);
+        mv.visitVarInsn(ALOAD, builderLocal);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, plan.stringLocal);
+        if (plan.returnKind == StringAccumLoopPlan.ReturnKind.LENGTH) {
+            mv.visitVarInsn(ALOAD, plan.stringLocal);
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/String", "length", "()I", false);
+            if (func.getReturnType().getKind() == MirType.Kind.INT) {
+                mv.visitInsn(IRETURN);
+            } else {
+                boxInt(mv);
+                mv.visitInsn(ARETURN);
+            }
+        } else {
+            mv.visitVarInsn(ALOAD, plan.stringLocal);
+            mv.visitInsn(ARETURN);
+        }
+    }
+
+    private void emitStringAccumLoopCondition(MethodVisitor mv, StringAccumLoopPlan plan,
+                                              Label loopBody, Label loopExit) {
+        loadIntLocalValue(mv, plan.counterLocal);
+        loadIntLocalValue(mv, plan.limitLocal);
+        Label trueTarget = plan.loopOnTrue ? loopBody : loopExit;
+        Label falseTarget = plan.loopOnTrue ? loopExit : loopBody;
+        switch (plan.compareOp) {
+            case LT:
+                mv.visitJumpInsn(IF_ICMPLT, trueTarget);
+                break;
+            case LE:
+                mv.visitJumpInsn(IF_ICMPLE, trueTarget);
+                break;
+            case GT:
+                mv.visitJumpInsn(IF_ICMPGT, trueTarget);
+                break;
+            case GE:
+                mv.visitJumpInsn(IF_ICMPGE, trueTarget);
+                break;
+            case EQ:
+                mv.visitJumpInsn(IF_ICMPEQ, trueTarget);
+                break;
+            case NE:
+                mv.visitJumpInsn(IF_ICMPNE, trueTarget);
+                break;
+            default:
+                throw new IllegalStateException("Unsupported string loop compare op: " + plan.compareOp);
+        }
+        mv.visitJumpInsn(GOTO, falseTarget);
+    }
+
+    private void loadIntLocalValue(MethodVisitor mv, int local) {
+        if (intLocals.contains(local)) {
+            mv.visitVarInsn(ILOAD, local);
+        } else {
+            unboxInt(mv, local);
+        }
+    }
+
+    private void storeIntLocalValue(MethodVisitor mv, int local) {
+        if (intLocals.contains(local)) {
+            mv.visitVarInsn(ISTORE, local);
+        } else {
+            boxInt(mv);
+            mv.visitVarInsn(ASTORE, local);
+        }
+    }
 
     private void generateInstruction(MethodVisitor mv, MirInst inst,
                                      Map<Integer, Label> blockLabels, MirFunction func) {
@@ -738,6 +863,35 @@ public class MirCodeGenerator {
                 String extra = (String) inst.getExtra();
                 String owner, methodName, descriptor;
 
+                // $PipeCall|funcName: 运行时分派 → NovaScriptContext.call(name, args)
+                if (extra.startsWith("$PipeCall|")) {
+                    String funcName = extra.substring("$PipeCall|".length());
+                    // 截掉 spread/typeArgs 后缀（%spread:... 或 #TypeArg,...）
+                    int pctIdx = funcName.indexOf('%');
+                    if (pctIdx >= 0) funcName = funcName.substring(0, pctIdx);
+                    int hashIdx = funcName.indexOf('#');
+                    if (hashIdx >= 0) funcName = funcName.substring(0, hashIdx);
+
+                    mv.visitLdcInsn(funcName);
+                    int argCount = inst.getOperands() != null ? inst.getOperands().length : 0;
+                    pushInt(mv, argCount);
+                    mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
+                    if (inst.getOperands() != null) {
+                        for (int i = 0; i < inst.getOperands().length; i++) {
+                            mv.visitInsn(DUP);
+                            pushInt(mv, i);
+                            loadObject(mv, inst.getOperands()[i]);
+                            mv.visitInsn(AASTORE);
+                        }
+                    }
+                    mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaScriptContext", "call",
+                            "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    if (inst.getDest() >= 0) {
+                        mv.visitVarInsn(ASTORE, inst.getDest());
+                    }
+                    break;
+                }
+
                 if (extra.contains("|")) {
                     String[] parts = extra.split("\\|", 3);
                     owner = parts[0];
@@ -807,6 +961,36 @@ public class MirCodeGenerator {
                         boxReturnIfPrimitive(mv, descriptor);
                         mv.visitVarInsn(ASTORE, inst.getDest());
                     }
+                }
+                break;
+            }
+            case INVOKE_DYNAMIC: {
+                InvokeDynamicInfo info = inst.extraAs();
+
+                // 加载所有操作数（target + args），全部为 Object
+                if (inst.getOperands() != null) {
+                    for (int op : inst.getOperands()) {
+                        loadObject(mv, op);
+                    }
+                }
+
+                // bootstrap method handle: NovaBootstrap.bootstrapInvoke(Lookup, String, MethodType) → CallSite
+                Handle bsm = new Handle(
+                        H_INVOKESTATIC,
+                        info.bootstrapClass,
+                        info.bootstrapMethod,
+                        "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+                        false
+                );
+
+                mv.visitInvokeDynamicInsn(
+                        info.methodName,
+                        info.descriptor,
+                        bsm
+                );
+
+                if (inst.getDest() >= 0 && !info.descriptor.endsWith(")V")) {
+                    mv.visitVarInsn(ASTORE, inst.getDest());
                 }
                 break;
             }
@@ -1374,7 +1558,15 @@ public class MirCodeGenerator {
                     mv.visitInsn(ARETURN);
                 }
             } else {
-                mv.visitInsn(RETURN);
+                // 裸 return：根据方法返回类型选择正确的返回指令
+                String retType = currentMethodDesc.substring(currentMethodDesc.indexOf(')') + 1);
+                if ("V".equals(retType)) {
+                    mv.visitInsn(RETURN);
+                } else {
+                    // 非 void 方法（如 lambda invoke() 返回 Object）需要返回 null
+                    mv.visitInsn(ACONST_NULL);
+                    mv.visitInsn(ARETURN);
+                }
             }
         } else if (term instanceof MirTerminator.Throw) {
             int exc = ((MirTerminator.Throw) term).getExceptionLocal();

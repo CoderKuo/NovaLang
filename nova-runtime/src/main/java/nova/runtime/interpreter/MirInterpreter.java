@@ -6,32 +6,33 @@ import nova.runtime.*;
 import nova.runtime.types.*;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * MIR 字节码解释器。
+ * MIR 瀛楄妭鐮佽В閲婂櫒銆?
  *
- * <p>直接解释执行 MIR 指令（while + switch 循环），替代 HirEvaluator 的树遍历模型。
- * 复用现有 Interpreter 的全局状态和 MemberResolver 进行成员解析。</p>
+ * <p>鐩存帴瑙ｉ噴鎵ц MIR 鎸囦护锛坵hile + switch 寰幆锛夛紝鏇夸唬 HirEvaluator 鐨勬爲閬嶅巻妯″瀷銆?
+ * 澶嶇敤鐜版湁 Interpreter 鐨勫叏灞€鐘舵€佸拰 MemberResolver 杩涜鎴愬憳瑙ｆ瀽銆?/p>
  */
 final class MirInterpreter {
 
-    // ===== MIR 特殊标记 =====
+    // ===== MIR 鐗规畩鏍囪 =====
     private static final String MARKER_LAMBDA = "$Lambda$";
     private static final String MARKER_METHOD_REF = "$MethodRef$";
 
-    // ===== 特殊方法名 =====
+    // ===== 鐗规畩鏂规硶鍚?=====
     private static final String SPECIAL_CLINIT = "<clinit>";
 
-    // ===== JVM 类名 =====
+    // ===== JVM 绫诲悕 =====
     private static final String JAVA_ARRAY_LIST = "java/util/ArrayList";
     private static final String JAVA_HASH_MAP = "java/util/HashMap";
     private static final String JAVA_LINKED_HASH_SET = "java/util/LinkedHashSet";
     private static final String JAVA_SYSTEM = "java/lang/System";
 
-    /** GET_STATIC 缓存哨兵：表示已解析但字段/类不存在 */
+    /** GET_STATIC 缂撳瓨鍝ㄥ叺锛氳〃绀哄凡瑙ｆ瀽浣嗗瓧娈?绫讳笉瀛樺湪 */
     private static final Object STATIC_FIELD_MISS = new Object();
 
-    /** JVM 内部名 → Java 点分名: "java/lang/String" → "java.lang.String" */
+    /** JVM 鍐呴儴鍚?鈫?Java 鐐瑰垎鍚? "java/lang/String" 鈫?"java.lang.String" */
     private static String toJavaDotName(String internalName) {
         return internalName.replace("/", ".");
     }
@@ -39,27 +40,137 @@ final class MirInterpreter {
     final Interpreter interp;
     final MemberResolver resolver;
 
-    /** reified 类型参数传递（$PipeCall → executeFunction） */
+    /** reified 绫诲瀷鍙傛暟浼犻€掞紙$PipeCall 鈫?executeFunction锛?*/
     String[] pendingReifiedTypeArgs;
 
-    /** MirFrame 对象池（避免递归调用时重复分配数组） */
+    /** MirFrame 瀵硅薄姹狅紙閬垮厤閫掑綊璋冪敤鏃堕噸澶嶅垎閰嶆暟缁勶級 */
     private final MirFrame[] framePool = new MirFrame[32];
     private int framePoolTop = 0;
 
-    /** 缓存的最大递归深度（避免每次调用走虚方法链） */
+    /** 缂撳瓨鐨勬渶澶ч€掑綊娣卞害锛堥伩鍏嶆瘡娆¤皟鐢ㄨ蛋铏氭柟娉曢摼锛?*/
     private final int cachedMaxRecursionDepth;
 
-    /** 模块级注册：函数名 → MirCallable */
+    /** executeFrame 异常路径设置的 TCE 计数，供 fastCall 读取 */
+    int lastTceCount;
+
+    /** 妯″潡绾ф敞鍐岋細鍑芥暟鍚?鈫?MirCallable */
     final Map<String, MirCallable> mirFunctions = new HashMap<>();
-    /** 模块级注册：类名 → MirClassInfo */
+    /** 妯″潡绾ф敞鍐岋細绫诲悕 鈫?MirClassInfo */
     final Map<String, MirClassInfo> mirClasses = new HashMap<>();
 
-    /** 类注册器 */
+    /** 绫绘敞鍐屽櫒 */
     final MirClassRegistrar classRegistrar;
-    /** 方法分派器 */
+    /** 鏂规硶鍒嗘淳鍣?*/
     final MirCallDispatcher callDispatcher;
+    private final Map<String, NovaCallFrame> emptyCallFrameCache = new HashMap<>();
+    private static final Object NO_TAIL_INT_LOOP_PLAN = new Object();
+    private static final AtomicLong STRING_ACCUM_LOOP_FAST_HITS = new AtomicLong();
+    private static final AtomicLong STRING_ACCUM_LOOP_PLAN_HITS = new AtomicLong();
+    private static final Object NO_TAIL_INT_LOOP_PLAN3 = new Object();
+    private static final Object NO_STRING_ACCUM_LOOP_PLAN = new Object();
+    private final IdentityHashMap<MirFunction, Object> tailIntLoopPlanCache = new IdentityHashMap<>();
+    private final IdentityHashMap<MirFunction, Object> tailIntLoopPlan3Cache = new IdentityHashMap<>();
+    private final IdentityHashMap<MirFunction, Object> stringAccumLoopPlanCache = new IdentityHashMap<>();
 
-    /** MIR 类的注册信息 */
+    private static final class TailIntLoopPlan {
+        static final byte ACC_RHS_OLD_COUNTER = 0;
+        static final byte ACC_RHS_NEW_COUNTER = 1;
+        static final byte ACC_RHS_CONST = 2;
+
+        final int entryBlockId;
+        final BinaryOp exitCompareOp;
+        final boolean exitOnTrue;
+        final int stopValue;
+        final int returnLocal;
+        final int counterDelta;
+        final BinaryOp accUpdateOp;
+        final byte accRhsKind;
+        final int accConst;
+
+        TailIntLoopPlan(int entryBlockId, BinaryOp exitCompareOp, boolean exitOnTrue,
+                        int stopValue, int returnLocal, int counterDelta,
+                        BinaryOp accUpdateOp, byte accRhsKind, int accConst) {
+            this.entryBlockId = entryBlockId;
+            this.exitCompareOp = exitCompareOp;
+            this.exitOnTrue = exitOnTrue;
+            this.stopValue = stopValue;
+            this.returnLocal = returnLocal;
+            this.counterDelta = counterDelta;
+            this.accUpdateOp = accUpdateOp;
+            this.accRhsKind = accRhsKind;
+            this.accConst = accConst;
+        }
+    }
+
+    private static final class TailAccSpec {
+        final BinaryOp op;
+        final byte rhsKind;
+        final int rhsConst;
+
+        TailAccSpec(BinaryOp op, byte rhsKind, int rhsConst) {
+            this.op = op;
+            this.rhsKind = rhsKind;
+            this.rhsConst = rhsConst;
+        }
+    }
+
+    private static final class IntExpr {
+        static final byte PARAM = 0;
+        static final byte CONST = 1;
+        static final byte BINARY = 2;
+
+        final byte kind;
+        final int value;
+        final BinaryOp op;
+        final IntExpr left;
+        final IntExpr right;
+
+        private IntExpr(byte kind, int value, BinaryOp op, IntExpr left, IntExpr right) {
+            this.kind = kind;
+            this.value = value;
+            this.op = op;
+            this.left = left;
+            this.right = right;
+        }
+
+        static IntExpr param(int index) {
+            return new IntExpr(PARAM, index, null, null, null);
+        }
+
+        static IntExpr constant(int value) {
+            return new IntExpr(CONST, value, null, null, null);
+        }
+
+        static IntExpr binary(BinaryOp op, IntExpr left, IntExpr right) {
+            return new IntExpr(BINARY, 0, op, left, right);
+        }
+    }
+
+    private static final class TailIntLoopPlan3 {
+        final int entryBlockId;
+        final BinaryOp exitCompareOp;
+        final boolean exitOnTrue;
+        final int stopValue;
+        final int returnLocal;
+        final int counterDelta;
+        final IntExpr update1;
+        final IntExpr update2;
+
+        TailIntLoopPlan3(int entryBlockId, BinaryOp exitCompareOp, boolean exitOnTrue,
+                         int stopValue, int returnLocal, int counterDelta,
+                         IntExpr update1, IntExpr update2) {
+            this.entryBlockId = entryBlockId;
+            this.exitCompareOp = exitCompareOp;
+            this.exitOnTrue = exitOnTrue;
+            this.stopValue = stopValue;
+            this.returnLocal = returnLocal;
+            this.counterDelta = counterDelta;
+            this.update1 = update1;
+            this.update2 = update2;
+        }
+    }
+
+    /** MIR 绫荤殑娉ㄥ唽淇℃伅 */
     static final class MirClassInfo {
         final MirClass mirClass;
         final NovaClass novaClass;
@@ -78,8 +189,8 @@ final class MirInterpreter {
     }
 
     /**
-     * 子 MirInterpreter（async 线程用）。
-     * 共享父级的函数/类注册表，拥有独立的可变执行状态（callStack、callDepth 等）。
+     * 瀛?MirInterpreter锛坅sync 绾跨▼鐢級銆?
+     * 鍏变韩鐖剁骇鐨勫嚱鏁?绫绘敞鍐岃〃锛屾嫢鏈夌嫭绔嬬殑鍙彉鎵ц鐘舵€侊紙callStack銆乧allDepth 绛夛級銆?
      */
     MirInterpreter(Interpreter childInterp, MirInterpreter parent) {
         this.interp = childInterp;
@@ -92,31 +203,84 @@ final class MirInterpreter {
     }
 
     /**
-     * 重置模块级注册状态（每次 executeModule 前调用）。
+     * 閲嶇疆妯″潡绾ф敞鍐岀姸鎬侊紙姣忔 executeModule 鍓嶈皟鐢級銆?
      */
     void resetState() {
         mirFunctions.clear();
-        // 保留 lambda 匿名类（跨 evalRepl 调用的闭包仍需要它们）
+        // 淇濈暀 lambda 鍖垮悕绫伙紙璺?evalRepl 璋冪敤鐨勯棴鍖呬粛闇€瑕佸畠浠級
         mirClasses.entrySet().removeIf(e -> !e.getKey().contains(MARKER_LAMBDA));
+        resetExecutionState();
+        tailIntLoopPlanCache.clear();
+        tailIntLoopPlan3Cache.clear();
+        stringAccumLoopPlanCache.clear();
+    }
+
+    void resetExecutionState() {
+        pendingReifiedTypeArgs = null;
         callDispatcher.resetState();
     }
 
-    /** 返回所有已注册的 Nova 类/接口名称（供下次 evalRepl 编译使用） */
+    static void resetStringAccumLoopFastHits() {
+        STRING_ACCUM_LOOP_FAST_HITS.set(0L);
+        STRING_ACCUM_LOOP_PLAN_HITS.set(0L);
+    }
+
+    static long getStringAccumLoopFastHits() {
+        return STRING_ACCUM_LOOP_FAST_HITS.get();
+    }
+
+    static long getStringAccumLoopPlanHits() {
+        return STRING_ACCUM_LOOP_PLAN_HITS.get();
+    }
+
+    /** 杩斿洖鎵€鏈夊凡娉ㄥ唽鐨?Nova 绫?鎺ュ彛鍚嶇О锛堜緵涓嬫 evalRepl 缂栬瘧浣跨敤锛?*/
     Set<String> getKnownClassNames() {
         return classRegistrar.getKnownClassNames();
     }
 
-    /** 返回已知的接口名（供跨 evalRepl 的 HirToMirLowering 识别接口类型） */
+    /** 杩斿洖宸茬煡鐨勬帴鍙ｅ悕锛堜緵璺?evalRepl 鐨?HirToMirLowering 璇嗗埆鎺ュ彛绫诲瀷锛?*/
     Set<String> getKnownInterfaceNames() {
         return classRegistrar.getKnownInterfaceNames();
     }
 
-    // ============ 模块执行 ============
+    NovaCallFrame getEmptyMirCallFrame(String displayName) {
+        NovaCallFrame frame = emptyCallFrameCache.get(displayName);
+        if (frame == null) {
+            frame = NovaCallFrame.emptyMirCallable(displayName);
+            emptyCallFrameCache.put(displayName, frame);
+        }
+        return frame;
+    }
 
-    NovaValue executeModule(MirModule module) {
-        NovaValue result = NovaNull.UNIT;
+    // ============ 妯″潡鎵ц ============
 
-        // 0. 处理 Java import（在类注册之前，使 Java 类在顶层代码中可用）
+    private static final byte EXPORT_MUT_DYNAMIC = 0;
+    private static final byte EXPORT_MUT_VAL = 1;
+    private static final byte EXPORT_MUT_VAR = 2;
+
+    static final class PreparedModule {
+        final MirFunction mainFunc;
+        final ExportSlot[] exportSlots;
+
+        PreparedModule(MirFunction mainFunc, ExportSlot[] exportSlots) {
+            this.mainFunc = mainFunc;
+            this.exportSlots = exportSlots;
+        }
+    }
+
+    static final class ExportSlot {
+        final int localIndex;
+        final String name;
+        final byte mutability;
+
+        ExportSlot(int localIndex, String name, byte mutability) {
+            this.localIndex = localIndex;
+            this.name = name;
+            this.mutability = mutability;
+        }
+    }
+
+    PreparedModule prepareModule(MirModule module) {
         for (Map.Entry<String, String> entry : module.getJavaImports().entrySet()) {
             String simpleName = entry.getKey();
             String qualifiedName = entry.getValue();
@@ -157,8 +321,7 @@ final class MirInterpreter {
             interp.wildcardJavaImports.add(wildcardPkg);
         }
 
-        // 1. 注册类（在 import 之前，使循环依赖能找到当前模块的类定义）
-        Set<String> moduleClassNames = new HashSet<>();
+        Set<String> moduleClassNames = new HashSet<String>();
         for (MirClass cls : module.getClasses()) {
             moduleClassNames.add(cls.getName());
         }
@@ -168,8 +331,6 @@ final class MirInterpreter {
         }
         classRegistrar.clearCurrentModuleClassNames();
 
-        // 2. 注册全局函数（在 import 之前，使循环依赖能找到当前模块的函数定义）
-        // 函数是惰性的——注册时不执行函数体，所以不依赖 import 提供的符号
         MirFunction mainFunc = null;
         for (MirFunction func : module.getTopLevelFunctions()) {
             if ("main".equals(func.getName())) {
@@ -181,20 +342,15 @@ final class MirInterpreter {
             }
         }
 
-        // 3. 处理 Nova 模块 import（内置模块 + 文件模块）
-        // 放在类/函数注册之后：循环依赖时对方模块能通过 ModuleLoader 缓存的环境找到已注册的符号
         for (MirModule.NovaImportInfo imp : module.getNovaImports()) {
             String qn = imp.qualifiedName;
             String[] parts = qn.split("\\.");
-
-            // 内置模块（nova.io, nova.json 等）
             String builtinModule = BuiltinModuleRegistry.resolveModuleName(java.util.Arrays.asList(parts));
             if (builtinModule != null) {
                 BuiltinModuleRegistry.load(builtinModule, interp.getEnvironment(), interp);
                 continue;
             }
 
-            // 尝试作为 Java 类
             Class<?> clazz = interp.resolveJavaClass(qn);
             if (clazz != null) {
                 if (interp.getSecurityPolicy().isClassAllowed(clazz.getName())) {
@@ -205,17 +361,16 @@ final class MirInterpreter {
                 continue;
             }
 
-            // 文件模块
             if (interp.moduleLoader == null) {
                 throw new NovaRuntimeException("Cannot resolve module: " + qn + " (no module loader)");
             }
             java.util.List<String> pathParts;
             String symbolName;
             if (imp.wildcard) {
-                pathParts = new java.util.ArrayList<>(java.util.Arrays.asList(parts));
+                pathParts = new java.util.ArrayList<String>(java.util.Arrays.asList(parts));
                 symbolName = null;
             } else {
-                pathParts = new java.util.ArrayList<>();
+                pathParts = new java.util.ArrayList<String>();
                 for (int i = 0; i < parts.length - 1; i++) {
                     pathParts.add(parts[i]);
                 }
@@ -238,12 +393,10 @@ final class MirInterpreter {
             }
         }
 
-        // 2.5 注册扩展属性
         for (MirModule.ExtensionPropertyInfo epInfo : module.getExtensionProperties()) {
             MirCallable getter = mirFunctions.get(epInfo.getterFuncName);
             if (getter != null) {
-                String novaTypeName = com.novalang.compiler.NovaTypeNames.fromBoxedInternalName(
-                        epInfo.receiverType);
+                String novaTypeName = com.novalang.compiler.NovaTypeNames.fromBoxedInternalName(epInfo.receiverType);
                 if (novaTypeName == null) {
                     novaTypeName = toJavaDotName(epInfo.receiverType);
                 }
@@ -251,12 +404,10 @@ final class MirInterpreter {
             }
         }
 
-        // 2.6 注册扩展函数（使 MemberResolver 在跨 evalRepl 时可发现）
         for (MirModule.ExtensionFunctionInfo efInfo : module.getExtensionFunctions()) {
             MirCallable func = mirFunctions.get(efInfo.functionName);
             if (func != null) {
-                String novaTypeName = com.novalang.compiler.NovaTypeNames.fromBoxedInternalName(
-                        efInfo.receiverType);
+                String novaTypeName = com.novalang.compiler.NovaTypeNames.fromBoxedInternalName(efInfo.receiverType);
                 if (novaTypeName == null) {
                     novaTypeName = toJavaDotName(efInfo.receiverType);
                 }
@@ -264,7 +415,6 @@ final class MirInterpreter {
             }
         }
 
-        // 3. 执行类的静态初始化器 (<clinit>)
         for (MirClass cls : module.getClasses()) {
             for (MirFunction method : cls.getMethods()) {
                 if (SPECIAL_CLINIT.equals(method.getName())) {
@@ -273,14 +423,12 @@ final class MirInterpreter {
             }
         }
 
-        // 3.5 枚举类后处理：将 NovaClass 转换为 NovaEnum + NovaEnumEntry
         for (MirClass cls : module.getClasses()) {
             if (cls.getKind() == ClassKind.ENUM) {
                 classRegistrar.finalizeEnumClass(cls);
             }
         }
 
-        // 3.6 单例对象: 将 Environment 中的 NovaClass 替换为 INSTANCE（NovaObject）
         for (MirClass cls : module.getClasses()) {
             if (cls.getKind() == ClassKind.OBJECT) {
                 MirClassInfo info = mirClasses.get(cls.getName());
@@ -293,35 +441,104 @@ final class MirInterpreter {
             }
         }
 
-        // 4. 执行 main 函数，并将顶层变量导出到 Environment
-        if (mainFunc != null) {
-            MirFrame frame = new MirFrame(mainFunc);
-            result = executeFrame(frame, -1);
+        return new PreparedModule(mainFunc, buildExportSlots(mainFunc));
+    }
 
-            // 导出 main 函数中的命名局部变量到 Environment
-            // （使顶层 val/var 对后续 eval 调用可见，与 HIR 路径行为一致）
-            for (MirLocal local : mainFunc.getLocals()) {
-                String name = local.getName();
-                if (name != null && !name.startsWith("$")
-                        && local.getIndex() < frame.locals.length) {
-                    NovaValue value = frame.getOrNull(local.getIndex());
-                    if (value != null) {
-                        if (interp.getEnvironment().contains(name)) {
-                            // 已通过 defineVal/defineVar 注册 → 更新值（保持原有 mutability）
-                            boolean isMutable = !interp.getEnvironment().isVal(name);
-                            interp.getEnvironment().redefine(name, value, isMutable);
-                        } else {
-                            interp.getEnvironment().redefine(name, value, false);
-                        }
-                    }
+    private ExportSlot[] buildExportSlots(MirFunction mainFunc) {
+        if (mainFunc == null) {
+            return new ExportSlot[0];
+        }
+        Map<String, Byte> mutabilityByName = new HashMap<String, Byte>();
+        Map<Integer, String> constStrings = new HashMap<Integer, String>();
+        for (BasicBlock block : mainFunc.getBlocks()) {
+            for (MirInst inst : block.getInstArray()) {
+                if (inst.getOp() == MirOp.CONST_STRING && inst.getExtra() instanceof String) {
+                    constStrings.put(Integer.valueOf(inst.getDest()), (String) inst.getExtra());
+                    continue;
+                }
+                if (inst.getOp() != MirOp.INVOKE_STATIC) {
+                    continue;
+                }
+                Object extra = inst.getExtra();
+                if (!(extra instanceof String)) {
+                    continue;
+                }
+                String extraStr = (String) extra;
+                byte mutability;
+                if (extraStr.contains("|defineVar|")) {
+                    mutability = EXPORT_MUT_VAR;
+                } else if (extraStr.contains("|defineVal|")) {
+                    mutability = EXPORT_MUT_VAL;
+                } else {
+                    continue;
+                }
+                int[] ops = inst.getOperands();
+                if (ops == null || ops.length == 0) {
+                    continue;
+                }
+                String name = constStrings.get(Integer.valueOf(ops[0]));
+                if (name != null) {
+                    mutabilityByName.put(name, Byte.valueOf(mutability));
                 }
             }
         }
 
-        return result;
+        List<ExportSlot> exports = new ArrayList<ExportSlot>();
+        for (MirLocal local : mainFunc.getLocals()) {
+            String name = local.getName();
+            if (name == null || name.startsWith("$")) {
+                continue;
+            }
+            Byte mutability = mutabilityByName.get(name);
+            exports.add(new ExportSlot(local.getIndex(), name,
+                    mutability != null ? mutability.byteValue() : EXPORT_MUT_DYNAMIC));
+        }
+        return exports.toArray(new ExportSlot[0]);
     }
 
-    // ============ 帧池化 ============
+    NovaValue executePreparedModule(PreparedModule prepared) {
+        if (prepared == null || prepared.mainFunc == null) {
+            return NovaNull.UNIT;
+        }
+        MirFrame frame = acquireFrame(prepared.mainFunc);
+        try {
+            NovaValue result = executeFrame(frame, -1);
+            Environment env = interp.getEnvironment();
+            for (ExportSlot slot : prepared.exportSlots) {
+                if (slot.localIndex >= frame.locals.length) {
+                    continue;
+                }
+                NovaValue value = frame.getOrNull(slot.localIndex);
+                if (value == null) {
+                    continue;
+                }
+                switch (slot.mutability) {
+                    case EXPORT_MUT_VAR:
+                        env.redefine(slot.name, value, true);
+                        break;
+                    case EXPORT_MUT_VAL:
+                        env.redefine(slot.name, value, false);
+                        break;
+                    default:
+                        if (env.contains(slot.name)) {
+                            env.redefine(slot.name, value, !env.isVal(slot.name));
+                        } else {
+                            env.redefine(slot.name, value, false);
+                        }
+                        break;
+                }
+            }
+            return result;
+        } finally {
+            releaseFrame(frame);
+        }
+    }
+
+    NovaValue executeModule(MirModule module) {
+        return executePreparedModule(prepareModule(module));
+    }
+
+    // ============ 甯ф睜鍖?============
 
     private MirFrame acquireFrame(MirFunction func) {
         int needed = func.getFrameSize();
@@ -342,13 +559,13 @@ final class MirInterpreter {
     }
 
     /**
-     * 快速调用路径：跳过 MirCallable.callDirect 的所有间接开销。
-     * 仅用于无 this/无捕获/非 init 的简单函数（如顶层函数递归）。
+     * 蹇€熻皟鐢ㄨ矾寰勶細璺宠繃 MirCallable.callDirect 鐨勬墍鏈夐棿鎺ュ紑閿€銆?
+     * 浠呯敤浜庢棤 this/鏃犳崟鑾?闈?init 鐨勭畝鍗曞嚱鏁帮紙濡傞《灞傚嚱鏁伴€掑綊锛夈€?
      * <ul>
-     *   <li>直接从调用者帧复制参数（传播 RAW_INT_MARKER，零装箱）</li>
-     *   <li>帧池化（消除 NovaValue[] + long[] 分配）</li>
-     *   <li>callStack 轻量推入（空参帧，异常时惰性补充参数值）</li>
-     *   <li>使用缓存的 maxRecursionDepth（避免虚方法链）</li>
+     *   <li>鐩存帴浠庤皟鐢ㄨ€呭抚澶嶅埗鍙傛暟锛堜紶鎾?RAW_INT_MARKER锛岄浂瑁呯锛?/li>
+     *   <li>甯ф睜鍖栵紙娑堥櫎 NovaValue[] + long[] 鍒嗛厤锛?/li>
+     *   <li>callStack 杞婚噺鎺ㄥ叆锛堢┖鍙傚抚锛屽紓甯告椂鎯版€цˉ鍏呭弬鏁板€硷級</li>
+     *   <li>浣跨敤缂撳瓨鐨?maxRecursionDepth锛堥伩鍏嶈櫄鏂规硶閾撅級</li>
      * </ul>
      */
     NovaValue fastCall(MirFrame callerFrame, MirFunction targetFunc, MirInst inst) {
@@ -356,63 +573,81 @@ final class MirInterpreter {
             throw new NovaRuntimeException("Maximum recursion depth exceeded (" + cachedMaxRecursionDepth + ")");
         }
         interp.callDepth++;
-        MirFrame calleeFrame = acquireFrame(targetFunc);
         int[] ops = inst.getOperands();
-        if (ops != null) {
-            for (int i = 0; i < ops.length; i++) {
-                int srcIdx = ops[i];
-                calleeFrame.locals[i] = callerFrame.locals[srcIdx];
-                if (callerFrame.locals[srcIdx] == MirFrame.RAW_INT_MARKER) {
-                    calleeFrame.rawLocals[i] = callerFrame.rawLocals[srcIdx];
-                }
-            }
-        }
-        // 推入空参帧：确保内部调用 captureStackTrace() 时本帧可见
-        interp.callStack.push(NovaCallFrame.fromMirCallable(
-                targetFunc.getName(), Collections.emptyList()));
+        int argCount = ops != null ? ops.length : 0;
+        MirFrame calleeFrame = null;
+        String displayName = targetFunc.getName();
+        if ("invoke".equals(displayName)) displayName = "<lambda>";
+        interp.callStack.push(getEmptyMirCallFrame(displayName));
         try {
-            return executeFrame(calleeFrame, -1);
+            switch (argCount) {
+                case 0:
+                    return executeFunction(targetFunc, EMPTY_ARGS);
+                case 1:
+                    int op0 = ops[0];
+                    if (isSingleIntFunction(targetFunc) && callerFrame.locals[op0] == MirFrame.RAW_INT_MARKER) {
+                        return executeFunction1RawInt(targetFunc, (int) callerFrame.rawLocals[op0]);
+                    }
+                    return executeFunction1(targetFunc, callerFrame.get(op0));
+                case 2:
+                    return executeFunction2(targetFunc, callerFrame.get(ops[0]), callerFrame.get(ops[1]));
+                case 3:
+                    return executeFunction3(targetFunc, callerFrame.get(ops[0]), callerFrame.get(ops[1]), callerFrame.get(ops[2]));
+                default:
+                    calleeFrame = acquireFrame(targetFunc);
+                    for (int i = 0; i < ops.length; i++) {
+                        int srcIdx = ops[i];
+                        calleeFrame.locals[i] = callerFrame.locals[srcIdx];
+                        if (callerFrame.locals[srcIdx] == MirFrame.RAW_INT_MARKER) {
+                            calleeFrame.rawLocals[i] = callerFrame.rawLocals[srcIdx];
+                        }
+                    }
+                    return executeFrame(calleeFrame, -1);
+            }
         } catch (NovaRuntimeException e) {
             if (e.getNovaStackTrace() == null) {
-                // 替换栈顶空参帧为带参数值的帧（冷路径）
+                // Replace empty frame with full one (with params) for diagnostics
                 interp.callStack.pop();
                 int paramCount = targetFunc.getParams().size();
                 List<NovaValue> paramVals = new ArrayList<>(paramCount);
-                for (int i = 0; i < paramCount; i++) {
-                    paramVals.add(calleeFrame.get(i));
+                if (argCount == 0) {
+                    interp.callStack.push(getEmptyMirCallFrame(displayName));
+                } else {
+                    for (int i = 0; i < paramCount && i < argCount; i++) {
+                        paramVals.add(callerFrame.get(ops[i]));
+                    }
+                    interp.callStack.push(NovaCallFrame.fromMirCallable(displayName, paramVals));
                 }
-                interp.callStack.push(NovaCallFrame.fromMirCallable(
-                        targetFunc.getName(), paramVals));
                 String trace = interp.captureStackTraceString();
-                // TCE 折叠：尾递归转循环后 tceCount 为迭代次数，合成折叠提示
-                if (calleeFrame.tceCount > 0) {
-                    trace += "  ... " + calleeFrame.tceCount + " tail-call frames omitted ...\n";
+                int tce = calleeFrame != null ? calleeFrame.tceCount : lastTceCount;
+                if (tce > 0) {
+                    trace += "  ... " + tce + " tail-call frames omitted ...\n";
+                    lastTceCount = 0;
                 }
                 e.setNovaStackTrace(trace);
             }
             throw e;
         } finally {
             interp.callStack.pop();
-            releaseFrame(calleeFrame);
+            if (calleeFrame != null) {
+                releaseFrame(calleeFrame);
+            }
             interp.callDepth--;
         }
     }
 
-    // ============ 列表高阶方法批量执行 ============
-
-    /** 批量操作函数式接口 */
     @FunctionalInterface
     interface BatchOp {
         NovaValue exec(List<NovaValue> elems, int size, BatchCtx c);
     }
 
-    /** 帧复用调用上下文：封装 lambda 调用的底层细节 */
+    /** 甯у鐢ㄨ皟鐢ㄤ笂涓嬫枃锛氬皝瑁?lambda 璋冪敤鐨勫簳灞傜粏鑺?*/
     static final class BatchCtx {
         private final MirFrame frame;
         private final int slot;
         private final MirInterpreter mi;
         final NovaValue extraArg;
-        /** lambda 的实际参数数量（不含 this），用于 Map 双参分派 */
+        /** lambda 鐨勫疄闄呭弬鏁版暟閲忥紙涓嶅惈 this锛夛紝鐢ㄤ簬 Map 鍙屽弬鍒嗘淳 */
         final int lambdaParamCount;
 
         BatchCtx(MirFrame frame, int slot, MirInterpreter mi, NovaValue extraArg, int lambdaParamCount) {
@@ -423,7 +658,7 @@ final class MirInterpreter {
             this.lambdaParamCount = lambdaParamCount;
         }
 
-        /** 单参调用 */
+        /** 鍗曞弬璋冪敤 */
         NovaValue call1(NovaValue arg) {
             frame.locals[slot] = arg;
             frame.currentBlockId = 0;
@@ -431,7 +666,7 @@ final class MirInterpreter {
             return mi.executeFrame(frame, -1);
         }
 
-        /** 双参调用 */
+        /** 鍙屽弬璋冪敤 */
         NovaValue call2(NovaValue arg1, NovaValue arg2) {
             frame.locals[slot] = arg1;
             frame.locals[slot + 1] = arg2;
@@ -445,7 +680,7 @@ final class MirInterpreter {
         }
     }
 
-    /** 已注册的 NovaList 批量操作（添加新 HOF 只需在此注册一行） */
+    /** 宸叉敞鍐岀殑 NovaList 鎵归噺鎿嶄綔锛堟坊鍔犳柊 HOF 鍙渶鍦ㄦ娉ㄥ唽涓€琛岋級 */
     private static final Map<String, BatchOp> BATCH_OPS = new HashMap<>();
     static { registerBatchOps(); }
 
@@ -602,12 +837,12 @@ final class MirInterpreter {
         });
     }
 
-    // ==================== Map 批量操作 ====================
+    // ==================== Map 鎵归噺鎿嶄綔 ====================
 
-    /** Map 批量操作函数式接口：直接操作 NovaMap，各 op 自行迭代 */
+    /** Map 鎵归噺鎿嶄綔鍑芥暟寮忔帴鍙ｏ細鐩存帴鎿嶄綔 NovaMap锛屽悇 op 鑷杩唬 */
     @FunctionalInterface
     interface MapBatchOp {
-        /** @return 结果，或 null 表示此 op 不适用（例如参数数量不匹配）→ 回退到 stdlib */
+        /** @return 缁撴灉锛屾垨 null 琛ㄧず姝?op 涓嶉€傜敤锛堜緥濡傚弬鏁版暟閲忎笉鍖归厤锛夆啋 鍥為€€鍒?stdlib */
         NovaValue exec(NovaMap map, BatchCtx c);
     }
 
@@ -616,7 +851,7 @@ final class MirInterpreter {
 
     @SuppressWarnings("unchecked")
     private static void registerMapBatchOps() {
-        // ---- 双参方法（2-param only, 1-param 回退到 stdlib bridge 处理 entry/implicit-it） ----
+        // ---- 鍙屽弬鏂规硶锛?-param only, 1-param 鍥為€€鍒?stdlib bridge 澶勭悊 entry/implicit-it锛?----
         MAP_BATCH_OPS.put("forEach", (map, c) -> {
             if (c.lambdaParamCount < 2) return null;
             for (Map.Entry<NovaValue, NovaValue> e : map.getEntries().entrySet()) c.call2(e.getKey(), e.getValue());
@@ -683,7 +918,7 @@ final class MirInterpreter {
                 r.put(e.getKey(), c.call2(e.getKey(), e.getValue()));
             return new NovaMap(r);
         });
-        // ---- 单参方法（任意参数数量均可） ----
+        // ---- 鍗曞弬鏂规硶锛堜换鎰忓弬鏁版暟閲忓潎鍙級 ----
         MAP_BATCH_OPS.put("filterKeys", (map, c) -> {
             Map<NovaValue, NovaValue> r = new java.util.LinkedHashMap<>();
             for (Map.Entry<NovaValue, NovaValue> e : map.getEntries().entrySet())
@@ -699,11 +934,11 @@ final class MirInterpreter {
     }
 
     /**
-     * NovaMap 高阶方法帧复用批量执行。
-     * <p>双参方法（forEach/filter/map/...）仅处理 2-param lambda，1-param 回退到 stdlib bridge。
-     * 单参方法（filterKeys/filterValues）直接处理。
+     * NovaMap 楂橀樁鏂规硶甯у鐢ㄦ壒閲忔墽琛屻€?
+     * <p>鍙屽弬鏂规硶锛坒orEach/filter/map/...锛変粎澶勭悊 2-param lambda锛?-param 鍥為€€鍒?stdlib bridge銆?
+     * 鍗曞弬鏂规硶锛坒ilterKeys/filterValues锛夌洿鎺ュ鐞嗐€?
      *
-     * @return 结果，或 null（未注册/参数不匹配）
+     * @return 缁撴灉锛屾垨 null锛堟湭娉ㄥ唽/鍙傛暟涓嶅尮閰嶏級
      */
     NovaValue batchExecMap(NovaMap map, String methodName, NovaValue extraArg, MirCallable lambda) {
         MapBatchOp op = MAP_BATCH_OPS.get(methodName);
@@ -719,7 +954,7 @@ final class MirInterpreter {
 
         String funcName = func.getName();
         String displayName = "invoke".equals(funcName) ? "<lambda>" : funcName;
-        interp.callStack.push(NovaCallFrame.fromMirCallable(displayName, Collections.emptyList()));
+        interp.callStack.push(getEmptyMirCallFrame(displayName));
         interp.callDepth++;
 
         try {
@@ -736,11 +971,11 @@ final class MirInterpreter {
     }
 
     /**
-     * NovaList 高阶方法帧复用批量执行（统一入口）。
-     * <p>根据 BATCH_OPS 注册表分派。添加新 HOF 只需注册一行。
+     * NovaList 楂橀樁鏂规硶甯у鐢ㄦ壒閲忔墽琛岋紙缁熶竴鍏ュ彛锛夈€?
+     * <p>鏍规嵁 BATCH_OPS 娉ㄥ唽琛ㄥ垎娲俱€傛坊鍔犳柊 HOF 鍙渶娉ㄥ唽涓€琛屻€?
      *
-     * @param extraArg fold/reduce 的初始值，其他方法传 null
-     * @return 操作结果，或 null 如果 methodName 未注册
+     * @param extraArg fold/reduce 鐨勫垵濮嬪€硷紝鍏朵粬鏂规硶浼?null
+     * @return 鎿嶄綔缁撴灉锛屾垨 null 濡傛灉 methodName 鏈敞鍐?
      */
     NovaValue batchExec(NovaList list, String methodName, NovaValue extraArg, MirCallable lambda) {
         BatchOp op = BATCH_OPS.get(methodName);
@@ -756,7 +991,7 @@ final class MirInterpreter {
 
         String funcName = func.getName();
         String displayName = "invoke".equals(funcName) ? "<lambda>" : funcName;
-        interp.callStack.push(NovaCallFrame.fromMirCallable(displayName, Collections.emptyList()));
+        interp.callStack.push(getEmptyMirCallFrame(displayName));
         interp.callDepth++;
 
         try {
@@ -772,16 +1007,120 @@ final class MirInterpreter {
         }
     }
 
-    // ============ 函数执行 ============
+    // ============ 鍑芥暟鎵ц ============
+
+    private NovaValue getMemoizedResult(MirFunction func, MemoKey key) {
+        if (!func.isMemoized()) {
+            return null;
+        }
+        Object cached = func.getMemoCache().get(key);
+        return cached instanceof NovaValue ? (NovaValue) cached : null;
+    }
+
+    private void putMemoizedResult(MirFunction func, MemoKey key, NovaValue result) {
+        if (func.isMemoized() && result != null) {
+            func.getMemoCache().put(key, result);
+        }
+    }
+
+    private boolean isSingleIntFunction(MirFunction func) {
+        return func.getParams().size() == 1
+                && func.getParams().get(0).getType().getKind() == MirType.Kind.INT;
+    }
+
+    private NovaValue getMemoizedIntResult(MirFunction func, int arg) {
+        if (!func.isMemoized() || !isSingleIntFunction(func)) {
+            return null;
+        }
+        Object cached = func.getIntMemoized(arg);
+        return cached instanceof NovaValue ? (NovaValue) cached : null;
+    }
+
+    private void putMemoizedIntResult(MirFunction func, int arg, NovaValue result) {
+        if (func.isMemoized() && isSingleIntFunction(func) && result != null) {
+            func.putIntMemoized(arg, result);
+        }
+    }
+
+    private NovaValue executeFunction1RawInt(MirFunction func, int value) {
+        NovaValue cached = getMemoizedIntResult(func, value);
+        if (cached != null) {
+            return cached;
+        }
+        MirFrame frame = acquireFrame(func);
+        frame.locals[0] = MirFrame.RAW_INT_MARKER;
+        frame.rawLocals[0] = value;
+        try {
+            NovaValue result = executeFrame(frame, -1);
+            putMemoizedIntResult(func, value, result);
+            return result;
+        } finally {
+            releaseFrame(frame);
+        }
+    }
+
+    NovaValue executeFunction1(MirFunction func, NovaValue a0) {
+        if (isSingleIntFunction(func) && a0 != null && a0.isInt()) {
+            return executeFunction1RawInt(func, a0.asInt());
+        }
+        MemoKey memoKey = func.isMemoized() ? MemoKey.of1(a0) : null;
+        NovaValue cached = memoKey != null ? getMemoizedResult(func, memoKey) : null;
+        if (cached != null) return cached;
+        MirFrame frame = acquireFrame(func);
+        frame.locals[0] = a0;
+        try {
+            NovaValue result = executeFrame(frame, -1);
+            if (memoKey != null) putMemoizedResult(func, memoKey, result);
+            return result;
+        } finally {
+            releaseFrame(frame);
+        }
+    }
+
+    NovaValue executeFunction2(MirFunction func, NovaValue a0, NovaValue a1) {
+        MemoKey memoKey = func.isMemoized() ? MemoKey.of2(a0, a1) : null;
+        NovaValue cached = memoKey != null ? getMemoizedResult(func, memoKey) : null;
+        if (cached != null) return cached;
+        MirFrame frame = acquireFrame(func);
+        frame.locals[0] = a0;
+        frame.locals[1] = a1;
+        try {
+            NovaValue result = executeFrame(frame, -1);
+            if (memoKey != null) putMemoizedResult(func, memoKey, result);
+            return result;
+        } finally {
+            releaseFrame(frame);
+        }
+    }
+
+    NovaValue executeFunction3(MirFunction func, NovaValue a0, NovaValue a1, NovaValue a2) {
+        MemoKey memoKey = func.isMemoized() ? MemoKey.of3(a0, a1, a2) : null;
+        NovaValue cached = memoKey != null ? getMemoizedResult(func, memoKey) : null;
+        if (cached != null) return cached;
+        MirFrame frame = acquireFrame(func);
+        frame.locals[0] = a0;
+        frame.locals[1] = a1;
+        frame.locals[2] = a2;
+        try {
+            NovaValue result = executeFrame(frame, -1);
+            if (memoKey != null) putMemoizedResult(func, memoKey, result);
+            return result;
+        } finally {
+            releaseFrame(frame);
+        }
+    }
 
     NovaValue executeFunction(MirFunction func, NovaValue[] args) {
+        MemoKey memoKey = func.isMemoized() ? MemoKey.ofArray(args) : null;
+        NovaValue cached = memoKey != null ? getMemoizedResult(func, memoKey) : null;
+        if (cached != null) return cached;
         MirFrame frame = acquireFrame(func);
-        // 参数绑定：前 N 个 locals = args
+        // 鍙傛暟缁戝畾锛氬墠 N 涓?locals = args
         for (int i = 0; i < args.length && i < frame.locals.length; i++) {
             frame.locals[i] = args[i];
         }
         try {
-        // 绑定 reified 类型参数到栈帧
+        // 缁戝畾 reified 绫诲瀷鍙傛暟鍒版爤甯?
         if (pendingReifiedTypeArgs != null) {
             List<String> typeParams = func.getTypeParams();
             if (!typeParams.isEmpty()) {
@@ -790,7 +1129,7 @@ final class MirInterpreter {
                     reifiedMap.put(typeParams.get(i), pendingReifiedTypeArgs[i]);
                 }
                 frame.reifiedTypes = reifiedMap;
-                // 绑定 __reified_T 局部变量（供 T::class 引用使用）
+                // 缁戝畾 __reified_T 灞€閮ㄥ彉閲忥紙渚?T::class 寮曠敤浣跨敤锛?
                 for (Map.Entry<String, String> entry : reifiedMap.entrySet()) {
                     String localName = "__reified_" + entry.getKey();
                     for (MirLocal local : func.getLocals()) {
@@ -804,28 +1143,28 @@ final class MirInterpreter {
             pendingReifiedTypeArgs = null;
         }
 
-        // 次级构造器委托：delegation 信息作为元数据存储在 MirFunction 上
+        // 娆＄骇鏋勯€犲櫒濮旀墭锛歞elegation 淇℃伅浣滀负鍏冩暟鎹瓨鍌ㄥ湪 MirFunction 涓?
         if (func.hasDelegation()) {
-            // block 0 = delegation args 专用块（由 lowerConstructor 重排到 position 0）
-            // block 1+ = 构造器 body（可能为空）
+            // block 0 = delegation args 涓撶敤鍧楋紙鐢?lowerConstructor 閲嶆帓鍒?position 0锛?
+            // block 1+ = 鏋勯€犲櫒 body锛堝彲鑳戒负绌猴級
             List<BasicBlock> blocks = func.getBlocks();
             if (!blocks.isEmpty()) {
                 for (MirInst inst : blocks.get(0).getInstructions()) {
                     executeInst(frame, inst);
                 }
             }
-            // 读取委托参数
+            // 璇诲彇濮旀墭鍙傛暟
             int[] delegLocals = func.getDelegationArgLocals();
             NovaValue thisObj = frame.locals[0];
             NovaValue[] delegArgs = new NovaValue[delegLocals.length];
             for (int i = 0; i < delegLocals.length; i++) {
                 delegArgs[i] = delegLocals[i] < frame.locals.length ? frame.get(delegLocals[i]) : NovaNull.NULL;
             }
-            // 调用目标构造器（主构造器或其他次级构造器）
+            // 璋冪敤鐩爣鏋勯€犲櫒锛堜富鏋勯€犲櫒鎴栧叾浠栨绾ф瀯閫犲櫒锛?
             if (thisObj instanceof NovaObject) {
                 NovaClass cls = ((NovaObject) thisObj).getNovaClass();
                 NovaCallable ctor = cls.getConstructorByArity(delegArgs.length);
-                // 跳过自身（避免递归）
+                // 璺宠繃鑷韩锛堥伩鍏嶉€掑綊锛?
                 if (ctor instanceof MirCallable && ((MirCallable) ctor).getFunction() == func) {
                     ctor = null;
                     for (NovaCallable c : cls.getHirConstructors()) {
@@ -845,16 +1184,16 @@ final class MirInterpreter {
                     }
                 }
             }
-            // 执行委托后的构造器 body（block 1+）
+            // 鎵ц濮旀墭鍚庣殑鏋勯€犲櫒 body锛坆lock 1+锛?
             if (blocks.size() > 1) {
                 executeFrame(frame, blocks.get(1).getId());
             }
             return thisObj;
         }
 
-        // 超类构造器调用：superInitArgLocals 作为元数据存储在 MirFunction 上
+        // 瓒呯被鏋勯€犲櫒璋冪敤锛歴uperInitArgLocals 浣滀负鍏冩暟鎹瓨鍌ㄥ湪 MirFunction 涓?
         if (func.hasSuperInitArgs()) {
-            // 执行 entry block 的 CONST 指令来初始化合成局部变量
+            // 鎵ц entry block 鐨?CONST 鎸囦护鏉ュ垵濮嬪寲鍚堟垚灞€閮ㄥ彉閲?
             List<BasicBlock> blocks = func.getBlocks();
             if (!blocks.isEmpty()) {
                 for (MirInst inst : blocks.get(0).getInstructions()) {
@@ -870,8 +1209,8 @@ final class MirInterpreter {
                 superArgs.add(localIdx < frame.locals.length ? frame.get(localIdx) : NovaNull.NULL);
             }
             if (thisObj instanceof NovaObject) {
-                // 使用 MirFunction 上记录的超类名（而非 thisObj.getNovaClass()），
-                // 避免继承链中 B→A 查找时误用具体类 C 的超类导致无限递归
+                // 浣跨敤 MirFunction 涓婅褰曠殑瓒呯被鍚嶏紙鑰岄潪 thisObj.getNovaClass()锛夛紝
+                // 閬垮厤缁ф壙閾句腑 B鈫扐 鏌ユ壘鏃惰鐢ㄥ叿浣撶被 C 鐨勮秴绫诲鑷存棤闄愰€掑綊
                 NovaClass superclass = null;
                 String superName = func.getSuperClassName();
                 if (superName != null) {
@@ -881,7 +1220,7 @@ final class MirInterpreter {
                     }
                 }
                 if (superclass == null) {
-                    // 回退：从运行时对象获取（仅在无 superClassName 元数据时）
+                    // 鍥為€€锛氫粠杩愯鏃跺璞¤幏鍙栵紙浠呭湪鏃?superClassName 鍏冩暟鎹椂锛?
                     superclass = ((NovaObject) thisObj).getNovaClass().getSuperclass();
                 }
                 if (superclass != null) {
@@ -894,12 +1233,727 @@ final class MirInterpreter {
                     }
                 }
             }
-            // 继续执行当前构造器体（SET_FIELD 等）
+            // 缁х画鎵ц褰撳墠鏋勯€犲櫒浣擄紙SET_FIELD 绛夛級
         }
 
-        return executeFrame(frame, -1);
+        NovaValue result = executeFrame(frame, -1);
+        if (memoKey != null) putMemoizedResult(func, memoKey, result);
+        return result;
         } finally {
             releaseFrame(frame);
+        }
+    }
+
+    private boolean isTailIntLoopCandidate(MirFunction func) {
+        return func.getParams().size() == 2
+                && func.getReturnType().getKind() == MirType.Kind.INT
+                && func.getParams().get(0).getType().getKind() == MirType.Kind.INT
+                && func.getParams().get(1).getType().getKind() == MirType.Kind.INT
+                && func.getTryCatchEntries().isEmpty();
+    }
+
+    private TailIntLoopPlan resolveTailIntLoopPlan(MirFunction func, BasicBlock[] blockArr) {
+        Object cached = tailIntLoopPlanCache.get(func);
+        if (cached == NO_TAIL_INT_LOOP_PLAN) {
+            return null;
+        }
+        if (cached instanceof TailIntLoopPlan) {
+            return (TailIntLoopPlan) cached;
+        }
+        TailIntLoopPlan plan = detectTailIntLoopPlan(func, blockArr);
+        tailIntLoopPlanCache.put(func, plan != null ? plan : NO_TAIL_INT_LOOP_PLAN);
+        return plan;
+    }
+
+    private TailIntLoopPlan detectTailIntLoopPlan(MirFunction func, BasicBlock[] blockArr) {
+        if (func.getParams().size() != 2
+                || func.getReturnType().getKind() != MirType.Kind.INT
+                || func.getParams().get(0).getType().getKind() != MirType.Kind.INT
+                || func.getParams().get(1).getType().getKind() != MirType.Kind.INT
+                || !func.getTryCatchEntries().isEmpty()) {
+            return null;
+        }
+        int entryBlockId = func.getBodyStartBlockId() > 0
+                ? func.getBodyStartBlockId()
+                : func.getBlocks().get(0).getId();
+        if (entryBlockId < 0 || entryBlockId >= blockArr.length) {
+            return null;
+        }
+        BasicBlock entryBlock = blockArr[entryBlockId];
+        if (entryBlock == null || !(entryBlock.getTerminator() instanceof MirTerminator.Branch)) {
+            return null;
+        }
+        MirTerminator.Branch branch = (MirTerminator.Branch) entryBlock.getTerminator();
+        BinaryOp exitCompareOp = branch.getFusedCmpOp();
+        if (exitCompareOp == null) {
+            return null;
+        }
+        int constLocal;
+        if (branch.getFusedLeft() == 0) {
+            constLocal = branch.getFusedRight();
+        } else if (branch.getFusedRight() == 0) {
+            constLocal = branch.getFusedLeft();
+            exitCompareOp = reverseCompare(exitCompareOp);
+        } else {
+            return null;
+        }
+        Integer stopValue = findConstInt(entryBlock.getInstArray(), constLocal);
+        if (stopValue == null) {
+            return null;
+        }
+        TailIntLoopPlan plan = buildTailIntLoopPlan(entryBlockId, exitCompareOp, true,
+                stopValue.intValue(), branch.getThenBlock(), branch.getElseBlock(), blockArr);
+        if (plan != null) {
+            return plan;
+        }
+        return buildTailIntLoopPlan(entryBlockId, exitCompareOp, false,
+                stopValue.intValue(), branch.getElseBlock(), branch.getThenBlock(), blockArr);
+    }
+
+    private TailIntLoopPlan buildTailIntLoopPlan(int entryBlockId, BinaryOp exitCompareOp,
+                                                 boolean exitOnTrue, int stopValue,
+                                                 int exitBlockId, int bodyBlockId,
+                                                 BasicBlock[] blockArr) {
+        if (exitBlockId < 0 || exitBlockId >= blockArr.length
+                || bodyBlockId < 0 || bodyBlockId >= blockArr.length) {
+            return null;
+        }
+        BasicBlock exitBlock = blockArr[exitBlockId];
+        BasicBlock bodyBlock = blockArr[bodyBlockId];
+        if (exitBlock == null || bodyBlock == null) {
+            return null;
+        }
+        Integer returnLocal = resolveTailReturnLocal(exitBlock, 1);
+        if (returnLocal == null) {
+            return null;
+        }
+        TailAccSpec accSpec = resolveTailAccSpec(bodyBlock, entryBlockId);
+        if (accSpec == null) {
+            return null;
+        }
+        Integer counterDelta = resolveTailCounterDelta(bodyBlock);
+        if (counterDelta == null) {
+            return null;
+        }
+        return new TailIntLoopPlan(entryBlockId, exitCompareOp, exitOnTrue, stopValue,
+                returnLocal.intValue(), counterDelta.intValue(), accSpec.op,
+                accSpec.rhsKind, accSpec.rhsConst);
+    }
+
+    private Integer resolveTailReturnLocal(BasicBlock exitBlock, int maxParamIndex) {
+        MirTerminator term = exitBlock.getTerminator();
+        if (!(term instanceof MirTerminator.Return)) {
+            return null;
+        }
+        int returnLocal = ((MirTerminator.Return) term).getValueLocal();
+        MirInst[] insts = exitBlock.getInstArray();
+        if (insts.length == 0) {
+            return returnLocal >= 0 && returnLocal <= maxParamIndex ? Integer.valueOf(returnLocal) : null;
+        }
+        if (insts.length == 1 && insts[0].getOp() == MirOp.MOVE && insts[0].getDest() == returnLocal) {
+            int src = insts[0].operand(0);
+            return src >= 0 && src <= maxParamIndex ? Integer.valueOf(src) : null;
+        }
+        return null;
+    }
+
+    private Integer resolveTailCounterDelta(BasicBlock bodyBlock) {
+        MirInst[] insts = bodyBlock.getInstArray();
+        Map<Integer, Integer> constInts = collectConstInts(insts);
+        MirInst counterBinary = findCounterUpdate(insts, constInts);
+        if (counterBinary == null || !writesLocal(insts, counterBinary.getDest(), 0)) {
+            return null;
+        }
+        return extractCounterDelta(counterBinary, constInts);
+    }
+
+    private TailAccSpec resolveTailAccSpec(BasicBlock bodyBlock, int entryBlockId) {
+        MirTerminator term = bodyBlock.getTerminator();
+        if (!(term instanceof MirTerminator.TailCall)
+                || ((MirTerminator.TailCall) term).getEntryBlockId() != entryBlockId) {
+            return null;
+        }
+        MirInst[] insts = bodyBlock.getInstArray();
+        Map<Integer, Integer> constInts = collectConstInts(insts);
+        MirInst counterBinary = findCounterUpdate(insts, constInts);
+        if (counterBinary == null) {
+            return null;
+        }
+        MirInst accBinary = null;
+        for (MirInst inst : insts) {
+            if (inst == counterBinary || inst.getOp() != MirOp.BINARY) {
+                continue;
+            }
+            TailAccSpec spec = extractAccSpec(inst, constInts, counterBinary.getDest());
+            if (spec != null) {
+                if (accBinary != null) {
+                    return null;
+                }
+                accBinary = inst;
+            }
+        }
+        if (accBinary == null || !writesLocal(insts, accBinary.getDest(), 1)) {
+            return null;
+        }
+        TailAccSpec accSpec = extractAccSpec(accBinary, constInts, counterBinary.getDest());
+        if (accSpec == null) {
+            return null;
+        }
+        for (MirInst inst : insts) {
+            MirOp op = inst.getOp();
+            if (op == MirOp.CONST_INT) {
+                continue;
+            }
+            if (inst == counterBinary || inst == accBinary) {
+                continue;
+            }
+            if (op == MirOp.MOVE) {
+                int src = inst.operand(0);
+                if (inst.getDest() == 0 && src == counterBinary.getDest()) {
+                    continue;
+                }
+                if (inst.getDest() == 1 && src == accBinary.getDest()) {
+                    continue;
+                }
+            }
+            return null;
+        }
+        return accSpec;
+    }
+
+    private Map<Integer, Integer> collectConstInts(MirInst[] insts) {
+        Map<Integer, Integer> constInts = new HashMap<Integer, Integer>();
+        for (MirInst inst : insts) {
+            if (inst.getOp() == MirOp.CONST_INT) {
+                constInts.put(Integer.valueOf(inst.getDest()), Integer.valueOf(inst.extraInt));
+            }
+        }
+        return constInts;
+    }
+
+    private MirInst findCounterUpdate(MirInst[] insts, Map<Integer, Integer> constInts) {
+        MirInst counterBinary = null;
+        for (MirInst inst : insts) {
+            if (inst.getOp() != MirOp.BINARY) {
+                continue;
+            }
+            if (extractCounterDelta(inst, constInts) != null) {
+                if (counterBinary != null) {
+                    return null;
+                }
+                counterBinary = inst;
+            }
+        }
+        return counterBinary;
+    }
+
+    private Integer extractCounterDelta(MirInst inst, Map<Integer, Integer> constInts) {
+        BinaryOp op = inst.extraAs();
+        if (op != BinaryOp.ADD && op != BinaryOp.SUB) {
+            return null;
+        }
+        int left = inst.operand(0);
+        int right = inst.operand(1);
+        Integer rightConst = constInts.get(Integer.valueOf(right));
+        if (left == 0 && rightConst != null) {
+            return Integer.valueOf(op == BinaryOp.ADD ? rightConst.intValue() : -rightConst.intValue());
+        }
+        Integer leftConst = constInts.get(Integer.valueOf(left));
+        if (right == 0 && leftConst != null && op == BinaryOp.ADD) {
+            return leftConst;
+        }
+        return null;
+    }
+
+    private TailAccSpec extractAccSpec(MirInst inst, Map<Integer, Integer> constInts, int counterTempLocal) {
+        BinaryOp op = inst.extraAs();
+        if ((op != BinaryOp.ADD && op != BinaryOp.SUB) || inst.operand(0) != 1) {
+            return null;
+        }
+        int rhs = inst.operand(1);
+        if (rhs == 0) {
+            return new TailAccSpec(op, TailIntLoopPlan.ACC_RHS_OLD_COUNTER, 0);
+        }
+        if (rhs == counterTempLocal) {
+            return new TailAccSpec(op, TailIntLoopPlan.ACC_RHS_NEW_COUNTER, 0);
+        }
+        Integer rhsConst = constInts.get(Integer.valueOf(rhs));
+        if (rhsConst != null) {
+            return new TailAccSpec(op, TailIntLoopPlan.ACC_RHS_CONST, rhsConst.intValue());
+        }
+        return null;
+    }
+
+    private boolean writesLocal(MirInst[] insts, int sourceLocal, int targetLocal) {
+        if (sourceLocal == targetLocal) {
+            return true;
+        }
+        for (MirInst inst : insts) {
+            if (inst.getOp() == MirOp.MOVE && inst.getDest() == targetLocal && inst.operand(0) == sourceLocal) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Integer findConstInt(MirInst[] insts, int local) {
+        for (MirInst inst : insts) {
+            if (inst.getOp() == MirOp.CONST_INT && inst.getDest() == local) {
+                return Integer.valueOf(inst.extraInt);
+            }
+        }
+        return null;
+    }
+
+    private BinaryOp reverseCompare(BinaryOp op) {
+        switch (op) {
+            case LT:
+                return BinaryOp.GT;
+            case GT:
+                return BinaryOp.LT;
+            case LE:
+                return BinaryOp.GE;
+            case GE:
+                return BinaryOp.LE;
+            default:
+                return op;
+        }
+    }
+
+    private NovaValue executeTailIntLoopFast(MirFrame frame, TailIntLoopPlan plan) {
+        NovaValue[] locals = frame.locals;
+        long[] rawLocals = frame.rawLocals;
+
+        long counter;
+        NovaValue counterVal = locals[0];
+        if (counterVal == MirFrame.RAW_INT_MARKER) {
+            counter = rawLocals[0];
+        } else if (counterVal instanceof NovaInt) {
+            counter = ((NovaInt) counterVal).getValue();
+        } else {
+            return null;
+        }
+
+        long acc;
+        NovaValue accVal = locals[1];
+        if (accVal == MirFrame.RAW_INT_MARKER) {
+            acc = rawLocals[1];
+        } else if (accVal instanceof NovaInt) {
+            acc = ((NovaInt) accVal).getValue();
+        } else {
+            return null;
+        }
+
+        int tceCount = frame.tceCount;
+        while (true) {
+            boolean exit = compareTailInt(counter, plan.exitCompareOp, plan.stopValue);
+            if (exit == plan.exitOnTrue) {
+                rawLocals[0] = counter;
+                locals[0] = MirFrame.RAW_INT_MARKER;
+                rawLocals[1] = acc;
+                locals[1] = MirFrame.RAW_INT_MARKER;
+                frame.tceCount = tceCount;
+                long result = plan.returnLocal == 0 ? counter : acc;
+                return result >= Integer.MIN_VALUE && result <= Integer.MAX_VALUE
+                        ? NovaInt.of((int) result) : NovaLong.of(result);
+            }
+
+            long nextCounter = counter + plan.counterDelta;
+            long rhs;
+            switch (plan.accRhsKind) {
+                case TailIntLoopPlan.ACC_RHS_NEW_COUNTER:
+                    rhs = nextCounter;
+                    break;
+                case TailIntLoopPlan.ACC_RHS_CONST:
+                    rhs = plan.accConst;
+                    break;
+                default:
+                    rhs = counter;
+                    break;
+            }
+            long nextAcc = applyTailIntBinary(acc, rhs, plan.accUpdateOp);
+
+            counter = nextCounter;
+            acc = nextAcc;
+            rawLocals[0] = counter;
+            locals[0] = MirFrame.RAW_INT_MARKER;
+            rawLocals[1] = acc;
+            locals[1] = MirFrame.RAW_INT_MARKER;
+
+            tceCount++;
+            frame.tceCount = tceCount;
+            if (cachedMaxRecursionDepth > 0 && tceCount >= cachedMaxRecursionDepth) {
+                throw new NovaRuntimeException("Maximum recursion depth exceeded (" + cachedMaxRecursionDepth + ")");
+            }
+            if (interp.hasSecurityLimits) {
+                interp.checkLoopLimits();
+            }
+        }
+    }
+
+    private StringAccumLoopPlan resolveStringAccumLoopPlan(MirFunction func) {
+        Object cached = stringAccumLoopPlanCache.get(func);
+        if (cached == NO_STRING_ACCUM_LOOP_PLAN) {
+            return null;
+        }
+        if (cached instanceof StringAccumLoopPlan) {
+            return (StringAccumLoopPlan) cached;
+        }
+        StringAccumLoopPlan plan = StringAccumLoopPlan.detect(func);
+        if (plan != null) {
+            STRING_ACCUM_LOOP_PLAN_HITS.incrementAndGet();
+        }
+        stringAccumLoopPlanCache.put(func, plan != null ? plan : NO_STRING_ACCUM_LOOP_PLAN);
+        return plan;
+    }
+
+    private int readIntLocal(MirFrame frame, int localIndex) {
+        NovaValue slot = frame.locals[localIndex];
+        if (slot == MirFrame.RAW_INT_MARKER) {
+            return (int) frame.rawLocals[localIndex];
+        }
+        if (slot instanceof NovaInt) {
+            return ((NovaInt) slot).getValue();
+        }
+        return frame.get(localIndex).asInt();
+    }
+
+    private boolean compareStringLoopInt(int left, BinaryOp op, int right) {
+        switch (op) {
+            case LT:
+                return left < right;
+            case LE:
+                return left <= right;
+            case GT:
+                return left > right;
+            case GE:
+                return left >= right;
+            case EQ:
+                return left == right;
+            case NE:
+                return left != right;
+            default:
+                return false;
+        }
+    }
+
+    private NovaValue executeStringAccumLoopFast(MirFrame frame, StringAccumLoopPlan plan) {
+        STRING_ACCUM_LOOP_FAST_HITS.incrementAndGet();
+        NovaValue currentString = frame.locals[plan.stringLocal];
+        String initial;
+        if (currentString == null || currentString == NovaNull.NULL) {
+            initial = "";
+        } else if (currentString instanceof NovaString) {
+            initial = ((NovaString) currentString).getValue();
+        } else {
+            initial = frame.get(plan.stringLocal).asString();
+        }
+        StringBuilder sb = new StringBuilder(initial);
+        int counter = readIntLocal(frame, plan.counterLocal);
+        int limit = readIntLocal(frame, plan.limitLocal);
+
+        while (compareStringLoopInt(counter, plan.compareOp, limit) == plan.loopOnTrue) {
+            if (interp.hasSecurityLimits) {
+                interp.checkLoopLimits();
+            }
+            for (StringAccumLoopPlan.AppendPart part : plan.appendParts) {
+                switch (part.kind) {
+                    case STRING_LITERAL:
+                        sb.append(part.stringValue);
+                        break;
+                    case INT_LOCAL:
+                        if (part.localIndex == plan.counterLocal) {
+                            sb.append(counter);
+                        } else {
+                            sb.append(readIntLocal(frame, part.localIndex));
+                        }
+                        break;
+                    case INT_CONST:
+                        sb.append(part.intValue);
+                        break;
+                    case VALUE_LOCAL:
+                        sb.append(frame.get(part.localIndex).asString());
+                        break;
+                    default:
+                        throw new NovaRuntimeException("Unsupported string append part: " + part.kind);
+                }
+            }
+            counter += plan.stepValue;
+        }
+
+        NovaString finalString = NovaString.of(sb.toString());
+        frame.locals[plan.stringLocal] = finalString;
+        frame.locals[plan.counterLocal] = MirFrame.RAW_INT_MARKER;
+        frame.rawLocals[plan.counterLocal] = counter;
+        if (plan.returnKind == StringAccumLoopPlan.ReturnKind.LENGTH) {
+            return NovaInt.of(finalString.length());
+        }
+        return finalString;
+    }
+
+    private boolean compareTailInt(long left, BinaryOp op, int right) {
+        switch (op) {
+            case EQ:
+                return left == right;
+            case NE:
+                return left != right;
+            case LT:
+                return left < right;
+            case GT:
+                return left > right;
+            case LE:
+                return left <= right;
+            case GE:
+                return left >= right;
+            default:
+                return false;
+        }
+    }
+
+    private long applyTailIntBinary(long left, long right, BinaryOp op) {
+        switch (op) {
+            case ADD:
+                return left + right;
+            case SUB:
+                return left - right;
+            default:
+                throw new NovaRuntimeException("Unsupported tail int op: " + op);
+        }
+    }
+
+    private boolean isTailIntLoopCandidate3(MirFunction func) {
+        return func.getParams().size() == 3
+                && func.getReturnType().getKind() == MirType.Kind.INT
+                && func.getParams().get(0).getType().getKind() == MirType.Kind.INT
+                && func.getParams().get(1).getType().getKind() == MirType.Kind.INT
+                && func.getParams().get(2).getType().getKind() == MirType.Kind.INT
+                && func.getTryCatchEntries().isEmpty();
+    }
+
+    private TailIntLoopPlan3 resolveTailIntLoopPlan3(MirFunction func, BasicBlock[] blockArr) {
+        Object cached = tailIntLoopPlan3Cache.get(func);
+        if (cached == NO_TAIL_INT_LOOP_PLAN3) {
+            return null;
+        }
+        if (cached instanceof TailIntLoopPlan3) {
+            return (TailIntLoopPlan3) cached;
+        }
+        TailIntLoopPlan3 plan = detectTailIntLoopPlan3(func, blockArr);
+        tailIntLoopPlan3Cache.put(func, plan != null ? plan : NO_TAIL_INT_LOOP_PLAN3);
+        return plan;
+    }
+
+    private TailIntLoopPlan3 detectTailIntLoopPlan3(MirFunction func, BasicBlock[] blockArr) {
+        if (!isTailIntLoopCandidate3(func)) {
+            return null;
+        }
+        int entryBlockId = func.getBodyStartBlockId() > 0
+                ? func.getBodyStartBlockId()
+                : func.getBlocks().get(0).getId();
+        if (entryBlockId < 0 || entryBlockId >= blockArr.length) {
+            return null;
+        }
+        BasicBlock entryBlock = blockArr[entryBlockId];
+        if (entryBlock == null || !(entryBlock.getTerminator() instanceof MirTerminator.Branch)) {
+            return null;
+        }
+        MirTerminator.Branch branch = (MirTerminator.Branch) entryBlock.getTerminator();
+        BinaryOp exitCompareOp = branch.getFusedCmpOp();
+        if (exitCompareOp == null) {
+            return null;
+        }
+        int constLocal;
+        if (branch.getFusedLeft() == 0) {
+            constLocal = branch.getFusedRight();
+        } else if (branch.getFusedRight() == 0) {
+            constLocal = branch.getFusedLeft();
+            exitCompareOp = reverseCompare(exitCompareOp);
+        } else {
+            return null;
+        }
+        Integer stopValue = findConstInt(entryBlock.getInstArray(), constLocal);
+        if (stopValue == null) {
+            return null;
+        }
+        TailIntLoopPlan3 plan = buildTailIntLoopPlan3(entryBlockId, exitCompareOp, true,
+                stopValue.intValue(), branch.getThenBlock(), branch.getElseBlock(), blockArr);
+        if (plan != null) {
+            return plan;
+        }
+        return buildTailIntLoopPlan3(entryBlockId, exitCompareOp, false,
+                stopValue.intValue(), branch.getElseBlock(), branch.getThenBlock(), blockArr);
+    }
+
+    private TailIntLoopPlan3 buildTailIntLoopPlan3(int entryBlockId, BinaryOp exitCompareOp,
+                                                   boolean exitOnTrue, int stopValue,
+                                                   int exitBlockId, int bodyBlockId,
+                                                   BasicBlock[] blockArr) {
+        if (exitBlockId < 0 || exitBlockId >= blockArr.length
+                || bodyBlockId < 0 || bodyBlockId >= blockArr.length) {
+            return null;
+        }
+        BasicBlock exitBlock = blockArr[exitBlockId];
+        BasicBlock bodyBlock = blockArr[bodyBlockId];
+        if (exitBlock == null || bodyBlock == null) {
+            return null;
+        }
+        Integer returnLocal = resolveTailReturnLocal(exitBlock, 2);
+        if (returnLocal == null) {
+            return null;
+        }
+        MirTerminator term = bodyBlock.getTerminator();
+        if (!(term instanceof MirTerminator.TailCall)
+                || ((MirTerminator.TailCall) term).getEntryBlockId() != entryBlockId) {
+            return null;
+        }
+        Map<Integer, IntExpr> exprs = new HashMap<Integer, IntExpr>();
+        exprs.put(Integer.valueOf(0), IntExpr.param(0));
+        exprs.put(Integer.valueOf(1), IntExpr.param(1));
+        exprs.put(Integer.valueOf(2), IntExpr.param(2));
+        for (MirInst inst : bodyBlock.getInstArray()) {
+            switch (inst.getOp()) {
+                case CONST_INT:
+                    exprs.put(Integer.valueOf(inst.getDest()), IntExpr.constant(inst.extraInt));
+                    break;
+                case MOVE: {
+                    IntExpr src = exprs.get(Integer.valueOf(inst.operand(0)));
+                    if (src == null) {
+                        return null;
+                    }
+                    exprs.put(Integer.valueOf(inst.getDest()), src);
+                    break;
+                }
+                case BINARY: {
+                    BinaryOp op = inst.extraAs();
+                    if (op != BinaryOp.ADD && op != BinaryOp.SUB) {
+                        return null;
+                    }
+                    IntExpr left = exprs.get(Integer.valueOf(inst.operand(0)));
+                    IntExpr right = exprs.get(Integer.valueOf(inst.operand(1)));
+                    if (left == null || right == null) {
+                        return null;
+                    }
+                    exprs.put(Integer.valueOf(inst.getDest()), IntExpr.binary(op, left, right));
+                    break;
+                }
+                default:
+                    return null;
+            }
+        }
+        IntExpr counterExpr = exprs.get(Integer.valueOf(0));
+        IntExpr update1 = exprs.get(Integer.valueOf(1));
+        IntExpr update2 = exprs.get(Integer.valueOf(2));
+        if (counterExpr == null || update1 == null || update2 == null) {
+            return null;
+        }
+        Integer counterDelta = extractCounterDelta(counterExpr);
+        if (counterDelta == null) {
+            return null;
+        }
+        return new TailIntLoopPlan3(entryBlockId, exitCompareOp, exitOnTrue, stopValue,
+                returnLocal.intValue(), counterDelta.intValue(), update1, update2);
+    }
+
+    private Integer extractCounterDelta(IntExpr expr) {
+        if (expr == null || expr.kind != IntExpr.BINARY || expr.left == null || expr.right == null) {
+            return null;
+        }
+        if (expr.left.kind == IntExpr.PARAM && expr.left.value == 0 && expr.right.kind == IntExpr.CONST) {
+            return Integer.valueOf(expr.op == BinaryOp.ADD ? expr.right.value
+                    : expr.op == BinaryOp.SUB ? -expr.right.value : 0);
+        }
+        if (expr.op == BinaryOp.ADD && expr.right.kind == IntExpr.PARAM && expr.right.value == 0
+                && expr.left.kind == IntExpr.CONST) {
+            return Integer.valueOf(expr.left.value);
+        }
+        return null;
+    }
+
+    private long evalIntExpr(IntExpr expr, long p0, long p1, long p2) {
+        switch (expr.kind) {
+            case IntExpr.PARAM:
+                switch (expr.value) {
+                    case 0:
+                        return p0;
+                    case 1:
+                        return p1;
+                    default:
+                        return p2;
+                }
+            case IntExpr.CONST:
+                return expr.value;
+            case IntExpr.BINARY:
+                return applyTailIntBinary(evalIntExpr(expr.left, p0, p1, p2),
+                        evalIntExpr(expr.right, p0, p1, p2), expr.op);
+            default:
+                throw new NovaRuntimeException("Unknown int expr kind: " + expr.kind);
+        }
+    }
+
+    private NovaValue executeTailIntLoopFast3(MirFrame frame, TailIntLoopPlan3 plan) {
+        NovaValue[] locals = frame.locals;
+        long[] rawLocals = frame.rawLocals;
+        long p0;
+        long p1;
+        long p2;
+
+        NovaValue v0 = locals[0];
+        if (v0 == MirFrame.RAW_INT_MARKER) p0 = rawLocals[0];
+        else if (v0 instanceof NovaInt) p0 = ((NovaInt) v0).getValue();
+        else return null;
+
+        NovaValue v1 = locals[1];
+        if (v1 == MirFrame.RAW_INT_MARKER) p1 = rawLocals[1];
+        else if (v1 instanceof NovaInt) p1 = ((NovaInt) v1).getValue();
+        else return null;
+
+        NovaValue v2 = locals[2];
+        if (v2 == MirFrame.RAW_INT_MARKER) p2 = rawLocals[2];
+        else if (v2 instanceof NovaInt) p2 = ((NovaInt) v2).getValue();
+        else return null;
+
+        int tceCount = frame.tceCount;
+        while (true) {
+            boolean exit = compareTailInt(p0, plan.exitCompareOp, plan.stopValue);
+            if (exit == plan.exitOnTrue) {
+                rawLocals[0] = p0;
+                rawLocals[1] = p1;
+                rawLocals[2] = p2;
+                locals[0] = MirFrame.RAW_INT_MARKER;
+                locals[1] = MirFrame.RAW_INT_MARKER;
+                locals[2] = MirFrame.RAW_INT_MARKER;
+                frame.tceCount = tceCount;
+                long result;
+                switch (plan.returnLocal) {
+                    case 0: result = p0; break;
+                    case 1: result = p1; break;
+                    default: result = p2; break;
+                }
+                return result >= Integer.MIN_VALUE && result <= Integer.MAX_VALUE
+                        ? NovaInt.of((int) result) : NovaLong.of(result);
+            }
+
+            long next0 = p0 + plan.counterDelta;
+            long next1 = evalIntExpr(plan.update1, p0, p1, p2);
+            long next2 = evalIntExpr(plan.update2, p0, p1, p2);
+            p0 = next0;
+            p1 = next1;
+            p2 = next2;
+            rawLocals[0] = p0;
+            rawLocals[1] = p1;
+            rawLocals[2] = p2;
+            locals[0] = MirFrame.RAW_INT_MARKER;
+            locals[1] = MirFrame.RAW_INT_MARKER;
+            locals[2] = MirFrame.RAW_INT_MARKER;
+
+            tceCount++;
+            frame.tceCount = tceCount;
+            if (cachedMaxRecursionDepth > 0 && tceCount >= cachedMaxRecursionDepth) {
+                throw new NovaRuntimeException("Maximum recursion depth exceeded (" + cachedMaxRecursionDepth + ")");
+            }
+            if (interp.hasSecurityLimits) {
+                interp.checkLoopLimits();
+            }
         }
     }
 
@@ -907,67 +1961,93 @@ final class MirInterpreter {
         BasicBlock[] blockArr = frame.function.getBlockArr();
         if (blockArr.length == 0) return NovaNull.UNIT;
 
-        // entry block = 指定的起始块或第一个块的 ID
+        // entry block = 鎸囧畾鐨勮捣濮嬪潡鎴栫涓€涓潡鐨?ID
         frame.currentBlockId = startBlockId >= 0 ? startBlockId
                 : frame.function.getBlocks().get(0).getId();
 
         List<MirFunction.TryCatchEntry> tryCatches = frame.function.getTryCatchEntries();
+        TailIntLoopPlan tailIntLoopPlan = isTailIntLoopCandidate(frame.function)
+                ? resolveTailIntLoopPlan(frame.function, blockArr) : null;
+        TailIntLoopPlan3 tailIntLoopPlan3 = isTailIntLoopCandidate3(frame.function)
+                ? resolveTailIntLoopPlan3(frame.function, blockArr) : null;
+        StringAccumLoopPlan stringAccumLoopPlan = resolveStringAccumLoopPlan(frame.function);
 
-        int tceCount = 0;  // TCE 尾递归转循环的迭代计数
+        int tceCount = 0;  // TCE 灏鹃€掑綊杞惊鐜殑杩唬璁℃暟
         int prevBlockId = -1;
         while (true) {
             BasicBlock block = blockArr[frame.currentBlockId];
             MirInst[] insts = block.getInstArray();
 
-            // 回边检测：跳转到 ID <= 当前块的块 → 循环迭代，检查安全限制
+            // 鍥炶竟妫€娴嬶細璺宠浆鍒?ID <= 褰撳墠鍧楃殑鍧?鈫?寰幆杩唬锛屾鏌ュ畨鍏ㄩ檺鍒?
             if (frame.currentBlockId <= prevBlockId && interp.hasSecurityLimits) {
                 interp.checkLoopLimits();
             }
 
             try {
                 prevBlockId = frame.currentBlockId;
-                // 执行块内所有指令（热操作码内联，减少方法调用开销）
+                NovaValue[] locals = frame.locals;
+                long[] rawLocals = frame.rawLocals;
+                if (tailIntLoopPlan != null && frame.currentBlockId == tailIntLoopPlan.entryBlockId) {
+                    frame.tceCount = tceCount;
+                    NovaValue fusedResult = executeTailIntLoopFast(frame, tailIntLoopPlan);
+                    tceCount = frame.tceCount;
+                    if (fusedResult != null) {
+                        return fusedResult;
+                    }
+                }
+                if (tailIntLoopPlan3 != null && frame.currentBlockId == tailIntLoopPlan3.entryBlockId) {
+                    frame.tceCount = tceCount;
+                    NovaValue fusedResult = executeTailIntLoopFast3(frame, tailIntLoopPlan3);
+                    tceCount = frame.tceCount;
+                    if (fusedResult != null) {
+                        return fusedResult;
+                    }
+                }
+                if (stringAccumLoopPlan != null && frame.currentBlockId == stringAccumLoopPlan.headerBlockId) {
+                    return executeStringAccumLoopFast(frame, stringAccumLoopPlan);
+                }
+                // 鎵ц鍧楀唴鎵€鏈夋寚浠わ紙鐑搷浣滅爜鍐呰仈锛屽噺灏戞柟娉曡皟鐢ㄥ紑閿€锛?
                 for (frame.pc = 0; frame.pc < insts.length; frame.pc++) {
                     MirInst inst = insts[frame.pc];
                     switch (inst.getOp()) {
                         case CONST_INT:
-                            frame.rawLocals[inst.getDest()] = inst.extraInt;
-                            frame.locals[inst.getDest()] = MirFrame.RAW_INT_MARKER;
+                            rawLocals[inst.getDest()] = inst.extraInt;
+                            locals[inst.getDest()] = MirFrame.RAW_INT_MARKER;
                             continue;
                         case MOVE: {
                             int src = inst.operand(0);
                             int dest = inst.getDest();
-                            NovaValue srcVal = frame.locals[src];
-                            frame.locals[dest] = srcVal;
+                            NovaValue srcVal = locals[src];
+                            locals[dest] = srcVal;
                             if (srcVal == MirFrame.RAW_INT_MARKER) {
-                                frame.rawLocals[dest] = frame.rawLocals[src];
+                                rawLocals[dest] = rawLocals[src];
                             }
                             continue;
                         }
                         case BINARY:
-                            executeBinaryRaw(frame, inst);
+                            executeBinaryRawFast(frame, inst, locals, rawLocals);
                             continue;
                         case INDEX_GET: {
-                            NovaValue tgt = frame.locals[inst.operand(0)];
+                            NovaValue tgt = locals[inst.operand(0)];
                             int ir = inst.operand(1);
-                            if (frame.locals[ir] == MirFrame.RAW_INT_MARKER) {
-                                int idx = (int) frame.rawLocals[ir];
+                            if (locals[ir] == MirFrame.RAW_INT_MARKER) {
+                                int idx = (int) rawLocals[ir];
                                 if (idx >= 0) {
                                     int d = inst.getDest();
                                     if (tgt instanceof NovaList) {
                                         NovaValue elem = ((NovaList) tgt).getElements().get(idx);
                                         if (elem instanceof NovaInt) {
-                                            frame.rawLocals[d] = ((NovaInt) elem).getValue();
-                                            frame.locals[d] = MirFrame.RAW_INT_MARKER;
+                                            rawLocals[d] = ((NovaInt) elem).getValue();
+                                            locals[d] = MirFrame.RAW_INT_MARKER;
                                         } else {
-                                            frame.locals[d] = elem;
+                                            locals[d] = elem;
                                         }
                                         continue;
                                     }
                                     if (tgt instanceof NovaArray
                                             && ((NovaArray) tgt).getElementType() == NovaArray.ElementType.INT) {
-                                        frame.rawLocals[d] = ((int[]) ((NovaArray) tgt).getRawArray())[idx];
-                                        frame.locals[d] = MirFrame.RAW_INT_MARKER;
+                                        rawLocals[d] = ((int[]) ((NovaArray) tgt).getRawArray())[idx];
+                                        locals[d] = MirFrame.RAW_INT_MARKER;
                                         continue;
                                     }
                                 }
@@ -976,17 +2056,17 @@ final class MirInterpreter {
                             continue;
                         }
                         case INDEX_SET: {
-                            NovaValue tgt = frame.locals[inst.operand(0)];
+                            NovaValue tgt = locals[inst.operand(0)];
                             int ir = inst.operand(1);
-                            if (frame.locals[ir] == MirFrame.RAW_INT_MARKER) {
-                                int idx = (int) frame.rawLocals[ir];
+                            if (locals[ir] == MirFrame.RAW_INT_MARKER) {
+                                int idx = (int) rawLocals[ir];
                                 if (idx >= 0) {
                                     if (tgt instanceof NovaArray
                                             && ((NovaArray) tgt).getElementType() == NovaArray.ElementType.INT) {
                                         int vr = inst.operand(2);
-                                        NovaValue vs = frame.locals[vr];
+                                        NovaValue vs = locals[vr];
                                         if (vs == MirFrame.RAW_INT_MARKER) {
-                                            ((int[]) ((NovaArray) tgt).getRawArray())[idx] = (int) frame.rawLocals[vr];
+                                            ((int[]) ((NovaArray) tgt).getRawArray())[idx] = (int) rawLocals[vr];
                                         } else {
                                             ((int[]) ((NovaArray) tgt).getRawArray())[idx] = vs.asInt();
                                         }
@@ -1002,14 +2082,14 @@ final class MirInterpreter {
                             continue;
                         }
                         case CONST_NULL:
-                            frame.locals[inst.getDest()] = NovaNull.NULL;
+                            locals[inst.getDest()] = NovaNull.NULL;
                             continue;
                         default:
                             executeInst(frame, inst);
                     }
                 }
 
-                // 处理终止指令
+                // 澶勭悊缁堟鎸囦护
                 MirTerminator term = block.getTerminator();
                 if (term == null) {
                     return NovaNull.UNIT;
@@ -1020,7 +2100,7 @@ final class MirInterpreter {
                         MirTerminator.Branch br = (MirTerminator.Branch) term;
                         BinaryOp fusedOp = br.getFusedCmpOp();
                         if (fusedOp != null) {
-                            frame.currentBlockId = compareFused(frame, fusedOp, br.getFusedLeft(), br.getFusedRight())
+                            frame.currentBlockId = compareFusedFast(frame, locals, rawLocals, fusedOp, br.getFusedLeft(), br.getFusedRight())
                                     ? br.getThenBlock() : br.getElseBlock();
                         } else {
                             NovaValue cond = frame.get(br.getCondition());
@@ -1030,7 +2110,10 @@ final class MirInterpreter {
                     }
                     case MirTerminator.KIND_GOTO: {
                         int targetId = ((MirTerminator.Goto) term).getTargetBlockId();
-                        // 穿透：Goto 目标为空指令块 + Branch → 直接评估 Branch，省一次块转换
+                        if (stringAccumLoopPlan != null && targetId == stringAccumLoopPlan.headerBlockId) {
+                            return executeStringAccumLoopFast(frame, stringAccumLoopPlan);
+                        }
+                        // 绌块€忥細Goto 鐩爣涓虹┖鎸囦护鍧?+ Branch 鈫?鐩存帴璇勪及 Branch锛岀渷涓€娆″潡杞崲
                         BasicBlock targetBlock = blockArr[targetId];
                         if (targetBlock.getInstArray().length == 0) {
                             MirTerminator tt = targetBlock.getTerminator();
@@ -1038,7 +2121,7 @@ final class MirInterpreter {
                                 MirTerminator.Branch br = (MirTerminator.Branch) tt;
                                 BinaryOp fop = br.getFusedCmpOp();
                                 if (fop != null) {
-                                    frame.currentBlockId = compareFused(frame, fop, br.getFusedLeft(), br.getFusedRight())
+                                    frame.currentBlockId = compareFusedFast(frame, locals, rawLocals, fop, br.getFusedLeft(), br.getFusedRight())
                                             ? br.getThenBlock() : br.getElseBlock();
                                 } else {
                                     frame.currentBlockId = isTruthy(frame.get(br.getCondition()))
@@ -1098,16 +2181,17 @@ final class MirInterpreter {
                     continue;
                 }
                 frame.tceCount = tceCount;
+                lastTceCount = tceCount;
                 throw nre;
             }
         }
     }
 
-    // ============ 指令分派 ============
+    // ============ 鎸囦护鍒嗘淳 ============
 
     private void executeInst(MirFrame frame, MirInst inst) {
         switch (inst.getOp()) {
-            // ===== 常量加载 =====
+            // ===== 甯搁噺鍔犺浇 =====
             case CONST_INT:
                 frame.rawLocals[inst.getDest()] = inst.extraInt;
                 frame.locals[inst.getDest()] = MirFrame.RAW_INT_MARKER;
@@ -1137,7 +2221,7 @@ final class MirInterpreter {
                 frame.locals[inst.getDest()] = NovaNull.NULL;
                 break;
 
-            // ===== 变量 =====
+            // ===== 鍙橀噺 =====
             case MOVE: {
                 int src = inst.operand(0);
                 int dest = inst.getDest();
@@ -1149,7 +2233,7 @@ final class MirInterpreter {
                 break;
             }
 
-            // ===== 算术/逻辑 =====
+            // ===== 绠楁湳/閫昏緫 =====
             case BINARY:
                 executeBinaryRaw(frame, inst);
                 break;
@@ -1157,7 +2241,7 @@ final class MirInterpreter {
                 executeUnary(frame, inst);
                 break;
 
-            // ===== 对象系统 =====
+            // ===== 瀵硅薄绯荤粺 =====
             case NEW_OBJECT:
                 executeNewObject(frame, inst);
                 break;
@@ -1174,7 +2258,7 @@ final class MirInterpreter {
                 executeSetStatic(frame, inst);
                 break;
 
-            // ===== 调用 =====
+            // ===== 璋冪敤 =====
             case INVOKE_VIRTUAL:
             case INVOKE_INTERFACE:
             case INVOKE_SPECIAL:
@@ -1184,7 +2268,7 @@ final class MirInterpreter {
                 callDispatcher.executeInvokeStatic(frame, inst);
                 break;
 
-            // ===== 集合/数组 =====
+            // ===== 闆嗗悎/鏁扮粍 =====
             case INDEX_GET:
                 executeIndexGet(frame, inst);
                 break;
@@ -1198,7 +2282,7 @@ final class MirInterpreter {
                 executeNewCollection(frame, inst);
                 break;
 
-            // ===== 类型 =====
+            // ===== 绫诲瀷 =====
             case TYPE_CHECK:
                 executeTypeCheck(frame, inst);
                 break;
@@ -1209,20 +2293,108 @@ final class MirInterpreter {
                 executeConstClass(frame, inst);
                 break;
 
-            // ===== 闭包 =====
+            // ===== 闂寘 =====
             case CLOSURE:
                 executeClosure(frame, inst);
                 break;
+
+            case INVOKE_DYNAMIC:
+                throw new NovaRuntimeException("INVOKE_DYNAMIC is not supported in interpreter mode");
         }
     }
 
     // ============ BINARY ============
 
     /**
-     * 双槽 BINARY 快速路径：两个操作数均为 RAW_INT_MARKER 时直接在 rawLocals 上
-     * 执行 long 运算，算术结果存回 rawLocals（不装箱），比较结果存 NovaBoolean。
-     * 非 raw 操作数回退到 executeBinary（通过 frame.get() 自动具化）。
+     * 鍙屾Ы BINARY 蹇€熻矾寰勶細涓や釜鎿嶄綔鏁板潎涓?RAW_INT_MARKER 鏃剁洿鎺ュ湪 rawLocals 涓?
+     * 鎵ц long 杩愮畻锛岀畻鏈粨鏋滃瓨鍥?rawLocals锛堜笉瑁呯锛夛紝姣旇緝缁撴灉瀛?NovaBoolean銆?
+     * 闈?raw 鎿嶄綔鏁板洖閫€鍒?executeBinary锛堥€氳繃 frame.get() 鑷姩鍏峰寲锛夈€?
      */
+    private void executeBinaryRawFast(MirFrame frame, MirInst inst, NovaValue[] locals, long[] rawLocals) {
+        int[] operands = inst.getOperands();
+        int leftIdx = operands[0];
+        int rightIdx = operands[1];
+        NovaValue leftSlot = locals[leftIdx];
+        NovaValue rightSlot = locals[rightIdx];
+        if (leftSlot == MirFrame.RAW_INT_MARKER && rightSlot == MirFrame.RAW_INT_MARKER) {
+            long a = rawLocals[leftIdx];
+            long b = rawLocals[rightIdx];
+            BinaryOp op = inst.extraAs();
+            int dest = inst.getDest();
+            switch (op) {
+                case ADD: rawLocals[dest] = a + b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case SUB: rawLocals[dest] = a - b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case MUL: rawLocals[dest] = a * b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case DIV: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a / b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case MOD: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a % b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case EQ:  locals[dest] = NovaBoolean.of(a == b); return;
+                case NE:  locals[dest] = NovaBoolean.of(a != b); return;
+                case LT:  locals[dest] = NovaBoolean.of(a < b); return;
+                case GT:  locals[dest] = NovaBoolean.of(a > b); return;
+                case LE:  locals[dest] = NovaBoolean.of(a <= b); return;
+                case GE:  locals[dest] = NovaBoolean.of(a >= b); return;
+                case SHL: rawLocals[dest] = a << b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case SHR: rawLocals[dest] = a >> b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case USHR: rawLocals[dest] = ((int) a) >>> (int) b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case BAND: rawLocals[dest] = a & b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case BOR: rawLocals[dest] = a | b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case BXOR: rawLocals[dest] = a ^ b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                default: break;
+            }
+        }
+        long a;
+        long b;
+        if (leftSlot == MirFrame.RAW_INT_MARKER) a = rawLocals[leftIdx];
+        else if (leftSlot instanceof NovaInt) a = ((NovaInt) leftSlot).getValue();
+        else { executeBinary(frame, inst); return; }
+
+        if (rightSlot == MirFrame.RAW_INT_MARKER) b = rawLocals[rightIdx];
+        else if (rightSlot instanceof NovaInt) b = ((NovaInt) rightSlot).getValue();
+        else { executeBinary(frame, inst); return; }
+
+        BinaryOp op = inst.extraAs();
+        int dest = inst.getDest();
+        switch (op) {
+            case ADD: rawLocals[dest] = a + b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case SUB: rawLocals[dest] = a - b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case MUL: rawLocals[dest] = a * b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case DIV: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a / b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case MOD: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a % b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case EQ:  locals[dest] = NovaBoolean.of(a == b); return;
+            case NE:  locals[dest] = NovaBoolean.of(a != b); return;
+            case LT:  locals[dest] = NovaBoolean.of(a < b); return;
+            case GT:  locals[dest] = NovaBoolean.of(a > b); return;
+            case LE:  locals[dest] = NovaBoolean.of(a <= b); return;
+            case GE:  locals[dest] = NovaBoolean.of(a >= b); return;
+            case SHL: rawLocals[dest] = a << b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case SHR: rawLocals[dest] = a >> b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case USHR: rawLocals[dest] = ((int) a) >>> (int) b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case BAND: rawLocals[dest] = a & b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case BOR: rawLocals[dest] = a | b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case BXOR: rawLocals[dest] = a ^ b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            default: executeBinary(frame, inst);
+        }
+    }
+
+    private boolean compareFusedFast(MirFrame frame, NovaValue[] locals, long[] rawLocals, BinaryOp op, int leftIdx, int rightIdx) {
+        boolean leftRaw = locals[leftIdx] == MirFrame.RAW_INT_MARKER;
+        boolean rightRaw = locals[rightIdx] == MirFrame.RAW_INT_MARKER;
+        if (leftRaw && rightRaw) {
+            long a = rawLocals[leftIdx];
+            long b = rawLocals[rightIdx];
+            switch (op) {
+                case EQ: return a == b;
+                case NE: return a != b;
+                case LT: return a < b;
+                case GT: return a > b;
+                case LE: return a <= b;
+                case GE: return a >= b;
+                default: break;
+            }
+        }
+        return compareFused(frame, op, leftIdx, rightIdx);
+    }
+
     private void executeBinaryRaw(MirFrame frame, MirInst inst) {
         int leftIdx = inst.operand(0);
         int rightIdx = inst.operand(1);
@@ -1246,14 +2418,14 @@ final class MirInterpreter {
                 case GE:  frame.locals[dest] = NovaBoolean.of(a >= b); return;
                 case SHL: frame.rawLocals[dest] = a << b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case SHR: frame.rawLocals[dest] = a >> b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
-                case USHR: frame.rawLocals[dest] = a >>> b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case USHR: frame.rawLocals[dest] = ((int) a) >>> (int) b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case BAND: frame.rawLocals[dest] = a & b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case BOR:  frame.rawLocals[dest] = a | b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case BXOR: frame.rawLocals[dest] = a ^ b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 default: break;
             }
         }
-        // 混合快速路径：一个 raw + 一个 NovaInt，或两个 NovaInt → 结果存 raw（逆装箱）
+        // 娣峰悎蹇€熻矾寰勶細涓€涓?raw + 涓€涓?NovaInt锛屾垨涓や釜 NovaInt 鈫?缁撴灉瀛?raw锛堥€嗚绠憋級
         long a, b;
         NovaValue lv = frame.locals[leftIdx], rv = frame.locals[rightIdx];
         if (lv == MirFrame.RAW_INT_MARKER) a = frame.rawLocals[leftIdx];
@@ -1280,7 +2452,7 @@ final class MirInterpreter {
             case GE:  frame.locals[dest] = NovaBoolean.of(a >= b); return;
             case SHL: frame.rawLocals[dest] = a << b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case SHR: frame.rawLocals[dest] = a >> b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
-            case USHR: frame.rawLocals[dest] = a >>> b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case USHR: frame.rawLocals[dest] = ((int) a) >>> (int) b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case BAND: frame.rawLocals[dest] = a & b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case BOR:  frame.rawLocals[dest] = a | b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case BXOR: frame.rawLocals[dest] = a ^ b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
@@ -1294,7 +2466,7 @@ final class MirInterpreter {
         NovaValue right = frame.get(inst.operand(1));
         BinaryOp op = inst.extraAs();
 
-        // 快速路径：int + int
+        // 蹇€熻矾寰勶細int + int
         if (left instanceof NovaInt && right instanceof NovaInt) {
             int a = ((NovaInt) left).getValue(), b = ((NovaInt) right).getValue();
             NovaValue result;
@@ -1326,15 +2498,15 @@ final class MirInterpreter {
     }
 
     private NovaValue generalBinary(NovaValue left, NovaValue right, BinaryOp op) {
-        // 逻辑运算
+        // 閫昏緫杩愮畻
         if (op == BinaryOp.AND) return NovaBoolean.of(isTruthy(left) && isTruthy(right));
         if (op == BinaryOp.OR) return NovaBoolean.of(isTruthy(left) || isTruthy(right));
 
-        // 相等性比较（处理 null）
+        // 鐩哥瓑鎬ф瘮杈冿紙澶勭悊 null锛?
         if (op == BinaryOp.EQ) return NovaBoolean.of(novaEquals(left, right));
         if (op == BinaryOp.NE) return NovaBoolean.of(!novaEquals(left, right));
 
-        // 算术运算 → BinaryOps
+        // 绠楁湳杩愮畻 鈫?BinaryOps
         switch (op) {
             case ADD: return BinaryOps.add(left, right, interp);
             case SUB: return BinaryOps.sub(left, right, interp);
@@ -1344,7 +2516,7 @@ final class MirInterpreter {
             default: break;
         }
 
-        // 比较运算 → BinaryOps
+        // 姣旇緝杩愮畻 鈫?BinaryOps
         if (op == BinaryOp.LT || op == BinaryOp.GT || op == BinaryOp.LE || op == BinaryOp.GE) {
             int cmp = BinaryOps.compare(left, right, interp);
             switch (op) {
@@ -1356,18 +2528,15 @@ final class MirInterpreter {
             }
         }
 
-        // 位运算（仅 MIR 路径支持）
-        if (left instanceof NovaInt && right instanceof NovaInt) {
-            int a = ((NovaInt) left).getValue(), b = ((NovaInt) right).getValue();
-            switch (op) {
-                case SHL:  return NovaInt.of(a << b);
-                case SHR:  return NovaInt.of(a >> b);
-                case USHR: return NovaInt.of(a >>> b);
-                case BAND: return NovaInt.of(a & b);
-                case BOR:  return NovaInt.of(a | b);
-                case BXOR: return NovaInt.of(a ^ b);
-                default: break;
-            }
+        // 浣嶈繍绠?
+        switch (op) {
+            case BAND: return BinaryOps.bitwiseAnd(left, right);
+            case BOR:  return BinaryOps.bitwiseOr(left, right);
+            case BXOR: return BinaryOps.bitwiseXor(left, right);
+            case SHL:  return BinaryOps.shiftLeft(left, right);
+            case SHR:  return BinaryOps.shiftRight(left, right);
+            case USHR: return BinaryOps.unsignedShiftRight(left, right);
+            default: break;
         }
 
         throw new NovaRuntimeException("Unsupported binary operation: " + op
@@ -1387,13 +2556,13 @@ final class MirInterpreter {
                 else if (operand instanceof NovaLong) result = NovaLong.of(-((NovaLong) operand).getValue());
                 else if (operand instanceof NovaFloat) result = NovaFloat.of(-((NovaFloat) operand).getValue());
                 else if (operand instanceof NovaObject) {
-                    // 尝试 unaryMinus 运算符重载
+                    // 灏濊瘯 unaryMinus 杩愮畻绗﹂噸杞?
                     NovaCallable method = ((NovaObject) operand).getMethod("unaryMinus");
                     if (method != null) {
                         result = method.call(interp, Collections.singletonList(operand));
                         break;
                     }
-                    // 尝试 unaryPlus（POS 操作码复用 NEG 时 extra 区分）
+                    // 灏濊瘯 unaryPlus锛圥OS 鎿嶄綔鐮佸鐢?NEG 鏃?extra 鍖哄垎锛?
                     throw new NovaRuntimeException("Cannot negate " + operand.getTypeName());
                 }
                 else throw new NovaRuntimeException("Cannot negate " + operand.getTypeName());
@@ -1427,29 +2596,48 @@ final class MirInterpreter {
     private void executeNewObject(MirFrame frame, MirInst inst) {
         String className = inst.extraAs();
         int[] ops = inst.getOperands();
-        List<NovaValue> args = Arrays.asList(collectArgsArray(frame, ops));
+        int argCount = ops != null ? ops.length : 0;
 
-        // Nova 类（Lambda 匿名类的 novaClass 为 null，跳过）
-        MirClassInfo classInfo = mirClasses.get(className);
+        NewObjectSite site = inst.cache instanceof NewObjectSite ? (NewObjectSite) inst.cache : null;
+        if (site == null || site.arity != argCount) {
+            site = resolveNewObjectSite(className, argCount);
+            if (site != null) {
+                inst.cache = site;
+            }
+        }
+
+        if (site != null && site.scalarizable) {
+            frame.locals[inst.getDest()] = ScalarizedNovaObject.fromOperands(
+                    site.novaClass, site.fieldCount, frame, ops != null ? ops : EMPTY_OPERANDS);
+            return;
+        }
+
+        if (site != null && site.fastPath) {
+            frame.locals[inst.getDest()] = interp.functionExecutor.instantiateMirFast(
+                    site.novaClass, site.constructor, frame, ops != null ? ops : EMPTY_OPERANDS);
+            return;
+        }
+
+        NovaValue[] argsArray = collectArgsArray(frame, ops);
+        List<NovaValue> args = Arrays.asList(argsArray);
+
+        MirClassInfo classInfo = site != null ? site.classInfo : mirClasses.get(className);
         if (classInfo != null && classInfo.novaClass != null) {
             frame.locals[inst.getDest()] = classInfo.novaClass.call(interp, args);
             return;
         }
 
-        // 从环境查找 Nova 类
         NovaValue classVal = interp.getEnvironment().tryGet(toJavaDotName(className));
         if (classVal instanceof NovaClass) {
             frame.locals[inst.getDest()] = ((NovaClass) classVal).call(interp, args);
             return;
         }
 
-        // Lambda / MethodRef 匿名类 → 查找对应的 MirClass 并创建 MirCallable 实例
         if (className.contains(MARKER_LAMBDA) || className.contains(MARKER_METHOD_REF)) {
-            frame.locals[inst.getDest()] = createLambdaInstance(className, frame, ops);
+            frame.locals[inst.getDest()] = createLambdaInstance(className, frame, ops != null ? ops : EMPTY_OPERANDS);
             return;
         }
 
-        // Java 集合类（由集合字面量降级生成）
         if (JAVA_ARRAY_LIST.equals(className)) {
             frame.locals[inst.getDest()] = new NovaList();
             return;
@@ -1459,11 +2647,10 @@ final class MirInterpreter {
             return;
         }
         if (JAVA_LINKED_HASH_SET.equals(className)) {
-            frame.locals[inst.getDest()] = new NovaList(); // 用 NovaList 模拟 Set
+            frame.locals[inst.getDest()] = new NovaList();
             return;
         }
 
-        // 回退：尝试 Java 反射构造（保留 Java 对象身份，不自动转换为 Nova 类型）
         try {
             Class<?> javaClass = Class.forName(toJavaDotName(className));
             Object[] javaArgs = new Object[args.size()];
@@ -1478,11 +2665,63 @@ final class MirInterpreter {
         }
     }
 
+    private NewObjectSite resolveNewObjectSite(String className, int argCount) {
+        MirClassInfo classInfo = mirClasses.get(className);
+        if (classInfo == null || classInfo.novaClass == null) {
+            return null;
+        }
+        NovaClass novaClass = classInfo.novaClass;
+        if (novaClass.hasJavaSuperTypes() || novaClass.getSuperclass() != null) {
+            return new NewObjectSite(classInfo, novaClass, null, argCount, false, false, 0);
+        }
+        NovaCallable ctor = novaClass.getConstructorByArity(argCount);
+        if (ctor instanceof MirCallable) {
+            MirCallable mirCtor = (MirCallable) ctor;
+            MirFunction ctorFunc = mirCtor.getFunction();
+            if (!ctorFunc.hasDelegation() && !ctorFunc.hasSuperInitArgs()) {
+                if (isScalarizableValueClass(classInfo, ctorFunc, argCount)) {
+                    return new NewObjectSite(classInfo, novaClass, mirCtor, argCount, false, true,
+                            classInfo.mirClass.getFields().size());
+                }
+                return new NewObjectSite(classInfo, novaClass, mirCtor, argCount, true, false, 0);
+            }
+        }
+        if (ctor == null && argCount == 0 && novaClass.getHirConstructors().isEmpty()) {
+            return new NewObjectSite(classInfo, novaClass, null, argCount, true, false, 0);
+        }
+        return new NewObjectSite(classInfo, novaClass, null, argCount, false, false, 0);
+    }
+
+    private boolean isScalarizableValueClass(MirClassInfo classInfo, MirFunction ctorFunc, int argCount) {
+        List<MirField> fields = classInfo.mirClass.getFields();
+        if (fields.isEmpty() || fields.size() > 4 || fields.size() != argCount) {
+            return false;
+        }
+        if (ctorFunc.getBlocks().size() != 1) {
+            return false;
+        }
+        BasicBlock block = ctorFunc.getBlocks().get(0);
+        List<MirInst> insts = block.getInstructions();
+        if (insts.size() != fields.size()) {
+            return false;
+        }
+        for (int i = 0; i < insts.size(); i++) {
+            MirInst inst = insts.get(i);
+            if (inst.getOp() != MirOp.SET_FIELD || inst.operand(0) != 0 || inst.operand(1) != i + 1) {
+                return false;
+            }
+            if (!fields.get(i).getName().equals(String.valueOf(inst.getExtra()))) {
+                return false;
+            }
+        }
+        return block.getTerminator() != null && block.getTerminator().kind == MirTerminator.KIND_RETURN;
+    }
+
     private NovaValue createLambdaInstance(String lambdaClassName, MirFrame frame, int[] captureOps) {
-        // 查找 Lambda 的 MirClass（在 additionalClasses 中注册）
+        // 鏌ユ壘 Lambda 鐨?MirClass锛堝湪 additionalClasses 涓敞鍐岋級
         MirClassInfo lambdaInfo = mirClasses.get(lambdaClassName);
         if (lambdaInfo != null) {
-            // 查找 invoke 方法
+            // 鏌ユ壘 invoke 鏂规硶
             MirFunction invokeFunc = null;
             for (MirFunction method : lambdaInfo.mirClass.getMethods()) {
                 if ("invoke".equals(method.getName())) {
@@ -1491,7 +2730,7 @@ final class MirInterpreter {
                 }
             }
             if (invokeFunc != null) {
-                // 构建捕获变量字段映射（字段名 → 值）
+                // 鏋勫缓鎹曡幏鍙橀噺瀛楁鏄犲皠锛堝瓧娈靛悕 鈫?鍊硷級
                 Map<String, NovaValue> captureFields = new LinkedHashMap<>();
                 List<MirField> fields = lambdaInfo.mirClass.getFields();
                 for (int i = 0; i < Math.min(fields.size(), captureOps.length); i++) {
@@ -1509,7 +2748,6 @@ final class MirInterpreter {
         NovaValue target = frame.get(inst.operand(0));
         String fieldName = inst.extraAs();
 
-        // NovaClass 单例/伴生对象 → 委托到 INSTANCE
         if (target instanceof NovaClass) {
             NovaClass cls = (NovaClass) target;
             NovaValue staticVal = cls.getStaticField(fieldName);
@@ -1532,7 +2770,6 @@ final class MirInterpreter {
             }
         }
 
-        // NovaPair.first / .second
         if (target instanceof NovaPair) {
             NovaPair pair = (NovaPair) target;
             if ("first".equals(fieldName) || "key".equals(fieldName)) {
@@ -1547,7 +2784,6 @@ final class MirInterpreter {
             }
         }
 
-        // Exception.message — 异常消息提取
         if (target instanceof NovaExternalObject && "message".equals(fieldName)) {
             Object jObj = target.toJavaValue();
             if (jObj instanceof Exception) {
@@ -1557,14 +2793,12 @@ final class MirInterpreter {
             }
         }
 
-        // Lambda 捕获字段访问
         if (target instanceof MirCallable) {
             NovaValue fieldVal = ((MirCallable) target).getCaptureField(fieldName);
             if (fieldVal != null) {
                 frame.locals[inst.getDest()] = fieldVal;
                 return;
             }
-            // 作用域函数: 从 scopeReceiver 读取字段/方法
             if (callDispatcher.scopeReceiver != null) {
                 NovaValue resolved = callDispatcher.resolveFieldOnValue(callDispatcher.scopeReceiver, fieldName);
                 if (resolved != null) {
@@ -1572,13 +2806,11 @@ final class MirInterpreter {
                     return;
                 }
             }
-            // capture field 不存在 → fallback 到环境变量（跨 evalRepl 的外部变量）
             NovaValue envVal = interp.getEnvironment().tryGet(fieldName);
             frame.locals[inst.getDest()] = envVal != null ? envVal : NovaNull.NULL;
             return;
         }
 
-        // NovaEnumEntry 字段访问
         if (target instanceof NovaEnumEntry) {
             NovaEnumEntry entry = (NovaEnumEntry) target;
             if (entry.hasField(fieldName)) {
@@ -1592,38 +2824,90 @@ final class MirInterpreter {
             }
         }
 
-        if (target instanceof NovaObject) {
-            NovaObject obj = (NovaObject) target;
-            // 快速路径：按索引直接访问字段（避免 hasField + getField 双重查找）
+        if (target instanceof ScalarizedNovaObject) {
+            ScalarizedNovaObject obj = (ScalarizedNovaObject) target;
             NovaClass objClass = obj.getNovaClass();
+            FieldAccessSite site = inst.cache instanceof FieldAccessSite ? (FieldAccessSite) inst.cache : null;
+            if (site != null && site.cachedClass == objClass && site.fieldIndex >= 0) {
+                obj.exportFieldToFrame(site.fieldIndex, frame, inst.getDest());
+                return;
+            }
             int fieldIdx = objClass.getFieldIndex(fieldName);
             if (fieldIdx >= 0) {
+                if (site == null) {
+                    site = new FieldAccessSite();
+                    inst.cache = site;
+                }
+                site.cachedClass = objClass;
+                site.fieldIndex = fieldIdx;
+                obj.exportFieldToFrame(fieldIdx, frame, inst.getDest());
+                return;
+            }
+            NovaCallable method = objClass.findCallableMethod(fieldName);
+            if (method != null) {
+                frame.locals[inst.getDest()] = method.call(interp, Collections.singletonList(target));
+                return;
+            }
+        }
+
+        if (target instanceof NovaObject) {
+            NovaObject obj = (NovaObject) target;
+            NovaClass objClass = obj.getNovaClass();
+            // DEBUG: detect lambda class accessing non-existent field (scope function scenario)
+            if (objClass.getName().contains("$Lambda$") && objClass.getFieldIndex(fieldName) < 0
+                    && !obj.hasField(fieldName) && obj.getMethod(fieldName) == null) {
+                // Lambda object missing field → check scopeReceiver
+                if (callDispatcher.scopeReceiver != null) {
+                    NovaValue resolved = callDispatcher.resolveFieldOnValue(callDispatcher.scopeReceiver, fieldName);
+                    if (resolved != null) {
+                        frame.locals[inst.getDest()] = resolved;
+                        return;
+                    }
+                }
+                NovaValue envVal = interp.getEnvironment().tryGet(fieldName);
+                if (envVal != null) {
+                    frame.locals[inst.getDest()] = envVal;
+                    return;
+                }
+            }
+            FieldAccessSite site = inst.cache instanceof FieldAccessSite ? (FieldAccessSite) inst.cache : null;
+            if (site != null && site.cachedClass == objClass && site.fieldIndex >= 0) {
+                NovaValue cachedVal = obj.getFieldByIndex(site.fieldIndex);
+                if (cachedVal != null) {
+                    frame.locals[inst.getDest()] = cachedVal;
+                    return;
+                }
+            }
+            int fieldIdx = objClass.getFieldIndex(fieldName);
+            if (fieldIdx >= 0) {
+                NovaClass currentClass = interp.getCurrentClass();
+                if (currentClass == null && frame.locals[0] instanceof NovaObject) {
+                    currentClass = ((NovaObject) frame.locals[0]).getNovaClass();
+                }
+                if (!objClass.isFieldAccessibleFrom(fieldName, currentClass)) {
+                    throw new NovaRuntimeException("Cannot access private field '" + fieldName + "'");
+                }
+                if (site == null) {
+                    site = new FieldAccessSite();
+                    inst.cache = site;
+                }
+                site.cachedClass = objClass;
+                site.fieldIndex = fieldIdx;
                 NovaValue fieldVal = obj.getFieldByIndex(fieldIdx);
                 if (fieldVal != null) {
-                    // 可见性检查（private/protected 字段不允许从外部访问）
-                    NovaClass currentClass = interp.getCurrentClass();
-                    if (currentClass == null && frame.locals[0] instanceof NovaObject) {
-                        currentClass = ((NovaObject) frame.locals[0]).getNovaClass();
-                    }
-                    if (!objClass.isFieldAccessibleFrom(fieldName, currentClass)) {
-                        throw new NovaRuntimeException("Cannot access private field '" + fieldName + "'");
-                    }
                     frame.locals[inst.getDest()] = fieldVal;
                     return;
                 }
             }
-            // overflow 字段回退（极少发生）
             if (obj.hasField(fieldName)) {
                 frame.locals[inst.getDest()] = obj.getField(fieldName);
                 return;
             }
-            // 尝试无参方法（属性语法）
             NovaCallable method = obj.getMethod(fieldName);
             if (method != null) {
                 frame.locals[inst.getDest()] = method.call(interp, Collections.singletonList(target));
                 return;
             }
-            // 字段/方法不存在：回退到全局作用域（处理扩展属性体中的全局变量如 PI）
             NovaValue envVal = interp.getEnvironment().tryGet(fieldName);
             if (envVal != null) {
                 frame.locals[inst.getDest()] = envVal;
@@ -1631,7 +2915,6 @@ final class MirInterpreter {
             }
         }
 
-        // 委托给 MemberResolver（处理 NovaList.size, NovaString.length 等内置类型成员）
         frame.locals[inst.getDest()] = resolver.resolveMemberOnValue(target, fieldName, null);
     }
 
@@ -1640,24 +2923,78 @@ final class MirInterpreter {
         NovaValue value = frame.get(inst.operand(1));
         String fieldName = inst.extraAs();
 
-        // Lambda 捕获字段写入（可变捕获）
         if (target instanceof MirCallable) {
-            // 如果 field 存在于 capture 中，更新 capture
-            if (((MirCallable) target).getCaptureField(fieldName) != null) {
+            if (((MirCallable) target).hasCaptureField(fieldName)) {
                 ((MirCallable) target).setCaptureField(fieldName, value);
+            } else if (callDispatcher.scopeReceiver instanceof ScalarizedNovaObject) {
+                ScalarizedNovaObject sobj = (ScalarizedNovaObject) callDispatcher.scopeReceiver;
+                int idx = sobj.getNovaClass().getFieldIndex(fieldName);
+                if (idx >= 0) {
+                    sobj.setFieldByIndex(idx, value);
+                } else {
+                    interp.getEnvironment().redefine(fieldName, value, true);
+                }
             } else if (callDispatcher.scopeReceiver instanceof NovaObject
                     && ((NovaObject) callDispatcher.scopeReceiver).hasField(fieldName)) {
-                // 作用域函数: 写入 scopeReceiver 的字段
                 ((NovaObject) callDispatcher.scopeReceiver).setField(fieldName, value);
             } else {
-                // capture field 不存在 → 写入环境变量（跨 evalRepl 的外部变量）
                 interp.getEnvironment().redefine(fieldName, value, true);
             }
             return;
         }
 
+        if (target instanceof ScalarizedNovaObject) {
+            ScalarizedNovaObject obj = (ScalarizedNovaObject) target;
+            NovaClass objClass = obj.getNovaClass();
+            FieldAccessSite site = inst.cache instanceof FieldAccessSite ? (FieldAccessSite) inst.cache : null;
+            if (site != null && site.cachedClass == objClass && site.fieldIndex >= 0) {
+                obj.setFieldByIndex(site.fieldIndex, value);
+                return;
+            }
+            int fieldIdx = objClass.getFieldIndex(fieldName);
+            if (fieldIdx >= 0) {
+                if (site == null) {
+                    site = new FieldAccessSite();
+                    inst.cache = site;
+                }
+                site.cachedClass = objClass;
+                site.fieldIndex = fieldIdx;
+                obj.setFieldByIndex(fieldIdx, value);
+                return;
+            }
+        }
+
         if (target instanceof NovaObject) {
-            ((NovaObject) target).setField(fieldName, value);
+            NovaObject obj = (NovaObject) target;
+            NovaClass objClass = obj.getNovaClass();
+            // Lambda class SET_FIELD: field not on lambda → redirect to scopeReceiver
+            if (objClass.getName().contains("$Lambda$") && objClass.getFieldIndex(fieldName) < 0
+                    && !obj.hasField(fieldName)) {
+                if (callDispatcher.scopeReceiver instanceof NovaObject
+                        && ((NovaObject) callDispatcher.scopeReceiver).hasField(fieldName)) {
+                    ((NovaObject) callDispatcher.scopeReceiver).setField(fieldName, value);
+                } else {
+                    interp.getEnvironment().redefine(fieldName, value, true);
+                }
+                return;
+            }
+            FieldAccessSite site = inst.cache instanceof FieldAccessSite ? (FieldAccessSite) inst.cache : null;
+            if (site != null && site.cachedClass == objClass && site.fieldIndex >= 0) {
+                obj.setFieldByIndex(site.fieldIndex, value);
+                return;
+            }
+            int fieldIdx = objClass.getFieldIndex(fieldName);
+            if (fieldIdx >= 0) {
+                if (site == null) {
+                    site = new FieldAccessSite();
+                    inst.cache = site;
+                }
+                site.cachedClass = objClass;
+                site.fieldIndex = fieldIdx;
+                obj.setFieldByIndex(fieldIdx, value);
+                return;
+            }
+            obj.setField(fieldName, value);
         } else if (target instanceof NovaExternalObject) {
             ((NovaExternalObject) target).setField(fieldName, value);
         } else {
@@ -1674,7 +3011,7 @@ final class MirInterpreter {
         int pipe2 = extra.indexOf('|', pipe + 1);
         String fieldName = pipe2 >= 0 ? extra.substring(pipe + 1, pipe2) : extra.substring(pipe + 1);
 
-        // 特殊处理 System.out
+        // 鐗规畩澶勭悊 System.out
         if (JAVA_SYSTEM.equals(owner) && "out".equals(fieldName)) {
             frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(interp.getStdout());
             return;
@@ -1683,7 +3020,7 @@ final class MirInterpreter {
             frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(interp.getStderr());
             return;
         }
-        // Dispatchers: 优先使用 Builtins 注册的 NovaMap（支持动态 Main 注入）
+        // Dispatchers: 浼樺厛浣跨敤 Builtins 娉ㄥ唽鐨?NovaMap锛堟敮鎸佸姩鎬?Main 娉ㄥ叆锛?
         if ("DISPATCHERS".equals(fieldName)) {
             NovaValue dispatchers = interp.getGlobals().tryGet("Dispatchers");
             if (dispatchers != null) {
@@ -1692,7 +3029,7 @@ final class MirInterpreter {
             }
         }
 
-        // Nova 类的静态字段
+        // Nova 绫荤殑闈欐€佸瓧娈?
         String normalizedOwner = toJavaDotName(owner);
         MirClassInfo classInfo = mirClasses.get(owner);
         if (classInfo != null) {
@@ -1703,7 +3040,7 @@ final class MirInterpreter {
             }
         }
 
-        // 从环境查找类
+        // 浠庣幆澧冩煡鎵剧被
         NovaValue classVal = interp.getEnvironment().tryGet(normalizedOwner);
         if (classVal == null) classVal = interp.getEnvironment().tryGet(owner);
 
@@ -1722,7 +3059,7 @@ final class MirInterpreter {
             }
         }
 
-        // Java 静态字段：inst.cache 缓存 MethodHandle（避免每次反射）
+        // Java 闈欐€佸瓧娈碉細inst.cache 缂撳瓨 MethodHandle锛堥伩鍏嶆瘡娆″弽灏勶級
         Object cached = inst.cache;
         if (cached instanceof java.lang.invoke.MethodHandle) {
             try {
@@ -1738,7 +3075,7 @@ final class MirInterpreter {
             frame.locals[inst.getDest()] = NovaNull.NULL;
             return;
         }
-        // 首次执行：解析并缓存
+        // 棣栨鎵ц锛氳В鏋愬苟缂撳瓨
         try {
             String javaDotName = toJavaDotName(owner);
             if (!interp.getSecurityPolicy().isClassAllowed(javaDotName)) {
@@ -1800,13 +3137,13 @@ final class MirInterpreter {
             } else if (idxVal instanceof NovaInt) {
                 idx = ((NovaInt) idxVal).getValue();
             } else {
-                // 非 int 索引（Range 切片等）→ 通用路径
+                // 闈?int 绱㈠紩锛圧ange 鍒囩墖绛夛級鈫?閫氱敤璺緞
                 frame.locals[inst.getDest()] = resolver.performIndex(target, frame.get(idxReg), null);
                 return;
             }
             NovaValue elem = ((NovaList) target).getElements().get(idx);
             int dest = inst.getDest();
-            // 逆装箱：NovaInt 元素 → raw 存储，使后续 BINARY 走纯 raw 快速路径
+            // 閫嗚绠憋細NovaInt 鍏冪礌 鈫?raw 瀛樺偍锛屼娇鍚庣画 BINARY 璧扮函 raw 蹇€熻矾寰?
             if (elem instanceof NovaInt) {
                 frame.rawLocals[dest] = ((NovaInt) elem).getValue();
                 frame.locals[dest] = MirFrame.RAW_INT_MARKER;
@@ -1815,7 +3152,7 @@ final class MirInterpreter {
             }
             return;
         }
-        // NovaArray 快速路径
+        // NovaArray 蹇€熻矾寰?
         if (target instanceof NovaArray) {
             NovaArray arr = (NovaArray) target;
             int idxReg = inst.operand(1);
@@ -1838,7 +3175,7 @@ final class MirInterpreter {
             }
             return;
         }
-        // 通用路径：String/Map/Range/Pair/运算符重载
+        // 閫氱敤璺緞锛歋tring/Map/Range/Pair/杩愮畻绗﹂噸杞?
         frame.locals[inst.getDest()] = resolver.performIndex(
                 frame.get(inst.operand(0)), frame.get(inst.operand(1)), null);
     }
@@ -1861,7 +3198,7 @@ final class MirInterpreter {
             ((NovaList) target).set(idx, frame.get(inst.operand(2)));
             return;
         }
-        // NovaArray 快速路径
+        // NovaArray 蹇€熻矾寰?
         if (target instanceof NovaArray) {
             NovaArray arr = (NovaArray) target;
             int idxReg = inst.operand(1);
@@ -1877,7 +3214,7 @@ final class MirInterpreter {
                 return;
             }
             if (idx >= 0 && arr.getElementType() == NovaArray.ElementType.INT) {
-                // raw int 直通：跳过 NovaValue 装箱/拆箱
+                // raw int 鐩撮€氾細璺宠繃 NovaValue 瑁呯/鎷嗙
                 int valReg = inst.operand(2);
                 NovaValue valSlot = frame.locals[valReg];
                 if (valSlot == MirFrame.RAW_INT_MARKER) {
@@ -1899,7 +3236,7 @@ final class MirInterpreter {
 
     private void executeNewArray(MirFrame frame, MirInst inst) {
         int size = frame.get(inst.operand(0)).asInt();
-        // 检查局部变量类型决定数组元素类型
+        // 妫€鏌ュ眬閮ㄥ彉閲忕被鍨嬪喅瀹氭暟缁勫厓绱犵被鍨?
         MirLocal local = frame.function.getLocals().get(inst.getDest());
         String className = local.getType().getClassName();
         if ("[I".equals(className)) {
@@ -1915,7 +3252,7 @@ final class MirInterpreter {
         } else if ("[C".equals(className)) {
             frame.locals[inst.getDest()] = new NovaArray(NovaArray.ElementType.CHAR, size);
         } else {
-            // 通用 Object[] → 使用 NovaList 模拟
+            // 閫氱敤 Object[] 鈫?浣跨敤 NovaList 妯℃嫙
             NovaList list = new NovaList();
             for (int i = 0; i < size; i++) {
                 list.add(NovaNull.NULL);
@@ -1927,7 +3264,7 @@ final class MirInterpreter {
     // ============ NEW_COLLECTION ============
 
     private void executeNewCollection(MirFrame frame, MirInst inst) {
-        // 当前 HirToMirLowering 不产生此操作码，预留处理
+        // 褰撳墠 HirToMirLowering 涓嶄骇鐢熸鎿嶄綔鐮侊紝棰勭暀澶勭悊
         frame.locals[inst.getDest()] = new NovaList();
     }
 
@@ -1936,7 +3273,7 @@ final class MirInterpreter {
     private void executeTypeCheck(MirFrame frame, MirInst inst) {
         NovaValue value = frame.get(inst.operand(0));
         String typeName = inst.extraAs();
-        // reified 类型参数解析
+        // reified 绫诲瀷鍙傛暟瑙ｆ瀽
         if (frame.reifiedTypes != null && frame.reifiedTypes.containsKey(typeName)) {
             typeName = frame.reifiedTypes.get(typeName);
         }
@@ -1947,9 +3284,9 @@ final class MirInterpreter {
         NovaValue value = frame.get(inst.operand(0));
         String typeName = (String) inst.getExtra();
 
-        // SAM 转换：Lambda → Java 函数式接口（跳过安全转换 ?| 前缀）
+        // SAM 杞崲锛歀ambda 鈫?Java 鍑芥暟寮忔帴鍙ｏ紙璺宠繃瀹夊叏杞崲 ?| 鍓嶇紑锛?
         if (typeName != null && !typeName.startsWith("?|")) {
-            // 提取 callable：直接 NovaCallable 或 MIR lambda（NovaObject with invoke）
+            // 鎻愬彇 callable锛氱洿鎺?NovaCallable 鎴?MIR lambda锛圢ovaObject with invoke锛?
             NovaCallable callable = null;
             if (value instanceof NovaCallable) {
                 callable = (NovaCallable) value;
@@ -1966,25 +3303,25 @@ final class MirInterpreter {
                         return;
                     }
                 } catch (ClassNotFoundException e) {
-                    // 不是 Java 类，回退
+                    // 涓嶆槸 Java 绫伙紝鍥為€€
                 }
             }
         }
 
-        // 安全转换 as? — 对非匹配类型返回 null
+        // 瀹夊叏杞崲 as? 鈥?瀵归潪鍖归厤绫诲瀷杩斿洖 null
         if (typeName != null && value != null && !(value instanceof NovaNull)) {
-            // 检查是否有 safe 标记（extra 可能包含 "?|type"）
+            // 妫€鏌ユ槸鍚︽湁 safe 鏍囪锛坋xtra 鍙兘鍖呭惈 "?|type"锛?
             if (typeName.startsWith("?|")) {
                 String realType = typeName.substring(2);
                 if (!classRegistrar.isInstanceOf(value, realType)) {
                     frame.locals[inst.getDest()] = NovaNull.NULL;
                     return;
                 }
-                // 移除安全标记，后续按类型匹配处理
+                // 绉婚櫎瀹夊叏鏍囪锛屽悗缁寜绫诲瀷鍖归厤澶勭悊
                 typeName = realType;
             }
 
-            // 强制转换：验证类型兼容性
+            // 寮哄埗杞崲锛氶獙璇佺被鍨嬪吋瀹规€?
             if (!typeName.isEmpty() && !classRegistrar.isInstanceOf(value, typeName)) {
                 String operandType = value.getNovaTypeName();
                 throw new NovaRuntimeException(
@@ -2003,7 +3340,7 @@ final class MirInterpreter {
             Class<?> cls = Class.forName(toJavaDotName(className));
             frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(cls);
         } catch (ClassNotFoundException e) {
-            // 可能是 Nova 类
+            // 鍙兘鏄?Nova 绫?
             NovaValue classVal = interp.getEnvironment().tryGet(className);
             frame.locals[inst.getDest()] = classVal != null ? classVal : NovaNull.NULL;
         }
@@ -2012,12 +3349,12 @@ final class MirInterpreter {
     // ============ CLOSURE ============
 
     private void executeClosure(MirFrame frame, MirInst inst) {
-        // 当前 HirToMirLowering 不产生此操作码（Lambda → 匿名类 + NEW_OBJECT）
-        // 预留处理
+        // 褰撳墠 HirToMirLowering 涓嶄骇鐢熸鎿嶄綔鐮侊紙Lambda 鈫?鍖垮悕绫?+ NEW_OBJECT锛?
+        // 棰勭暀澶勭悊
         frame.locals[inst.getDest()] = NovaNull.NULL;
     }
 
-    // ============ 辅助方法 ============
+    // ============ 杈呭姪鏂规硶 ============
 
     private boolean isTruthy(NovaValue value) {
         if (value == null) return false;
@@ -2026,7 +3363,7 @@ final class MirInterpreter {
     }
 
     /**
-     * 融合比较+分支快速路径。双槽 raw int 时直接原始比较，否则回退到标准逻辑。
+     * 铻嶅悎姣旇緝+鍒嗘敮蹇€熻矾寰勩€傚弻妲?raw int 鏃剁洿鎺ュ師濮嬫瘮杈冿紝鍚﹀垯鍥為€€鍒版爣鍑嗛€昏緫銆?
      */
     private boolean compareFused(MirFrame frame, BinaryOp op, int leftIdx, int rightIdx) {
         boolean leftRaw = frame.locals[leftIdx] == MirFrame.RAW_INT_MARKER;
@@ -2044,21 +3381,21 @@ final class MirInterpreter {
                 default: break;
             }
         }
-        // 单侧 raw int 与 null 比较: raw int 永远不等于 null（避免装箱）
+        // 鍗曚晶 raw int 涓?null 姣旇緝: raw int 姘歌繙涓嶇瓑浜?null锛堥伩鍏嶈绠憋級
         if ((leftRaw || rightRaw) && (op == BinaryOp.EQ || op == BinaryOp.NE)) {
             NovaValue other = leftRaw ? frame.locals[rightIdx] : frame.locals[leftIdx];
             if (other instanceof NovaNull || other == null) {
                 return op == BinaryOp.NE;
             }
         }
-        // 回退：标准比较
+        // 鍥為€€锛氭爣鍑嗘瘮杈?
         NovaValue left = frame.get(leftIdx);
         NovaValue right = frame.get(rightIdx);
         NovaValue result = generalBinary(left, right, op);
         return isTruthy(result);
     }
 
-    /** MIR lowering 的 resolveMethodAlias 反向映射：Java 方法名 → Nova 方法名 */
+    /** MIR lowering 鐨?resolveMethodAlias 鍙嶅悜鏄犲皠锛欽ava 鏂规硶鍚?鈫?Nova 鏂规硶鍚?*/
     private boolean novaEquals(NovaValue a, NovaValue b) {
         if (a == b) return true;
         if (a == null || a instanceof NovaNull) return b == null || b instanceof NovaNull;
@@ -2081,7 +3418,7 @@ final class MirInterpreter {
     }
 
     private NovaValue wrapException(NovaRuntimeException e) {
-        // 返回异常消息字符串（与 HIR 路径行为一致）
+        // 杩斿洖寮傚父娑堟伅瀛楃涓诧紙涓?HIR 璺緞琛屼负涓€鑷达級
         String msg = e.getMessage();
         return msg != null ? NovaString.of(msg) : NovaNull.NULL;
     }
@@ -2096,6 +3433,33 @@ final class MirInterpreter {
     }
 
     private static final NovaValue[] EMPTY_ARGS = new NovaValue[0];
+    private static final int[] EMPTY_OPERANDS = new int[0];
+
+    private static final class NewObjectSite {
+        final MirClassInfo classInfo;
+        final NovaClass novaClass;
+        final MirCallable constructor;
+        final int arity;
+        final boolean fastPath;
+        final boolean scalarizable;
+        final int fieldCount;
+
+        NewObjectSite(MirClassInfo classInfo, NovaClass novaClass, MirCallable constructor,
+                      int arity, boolean fastPath, boolean scalarizable, int fieldCount) {
+            this.classInfo = classInfo;
+            this.novaClass = novaClass;
+            this.constructor = constructor;
+            this.arity = arity;
+            this.fastPath = fastPath;
+            this.scalarizable = scalarizable;
+            this.fieldCount = fieldCount;
+        }
+    }
+
+    private static final class FieldAccessSite {
+        NovaClass cachedClass;
+        int fieldIndex = -1;
+    }
 
     NovaValue[] collectArgsArray(MirFrame frame, int[] ops) {
         if (ops == null || ops.length == 0) return EMPTY_ARGS;

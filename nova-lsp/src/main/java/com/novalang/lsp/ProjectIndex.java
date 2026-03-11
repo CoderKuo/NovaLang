@@ -3,31 +3,35 @@ package com.novalang.lsp;
 import com.novalang.compiler.analysis.Symbol;
 import com.novalang.compiler.analysis.SymbolKind;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * 跨文件项目符号索引
- *
- * <p>维护所有打开文档的全局符号表，支持跨文件的定义跳转、引用查找和工作区符号搜索。</p>
- */
 public class ProjectIndex {
 
-    /** 符号条目 */
     public static class SymbolEntry {
         public final String name;
         public final String uri;
-        public final int line;       // 0-based
-        public final int character;  // 0-based
+        public final int line;
+        public final int character;
         public final int endLine;
         public final int endCharacter;
         public final SymbolKind kind;
         public final String typeName;
+        public final String packageName;
+        public final String qualifiedName;
         public final String containerName;
+        public final String containerQualifiedName;
 
         public SymbolEntry(String name, String uri, int line, int character,
                            int endLine, int endCharacter,
-                           SymbolKind kind, String typeName, String containerName) {
+                           SymbolKind kind, String typeName,
+                           String packageName, String qualifiedName,
+                           String containerName, String containerQualifiedName) {
             this.name = name;
             this.uri = uri;
             this.line = line;
@@ -36,21 +40,17 @@ public class ProjectIndex {
             this.endCharacter = endCharacter;
             this.kind = kind;
             this.typeName = typeName;
+            this.packageName = packageName;
+            this.qualifiedName = qualifiedName;
             this.containerName = containerName;
+            this.containerQualifiedName = containerQualifiedName;
         }
     }
 
-    /** name -> 所有文件中该名称的符号列表 */
     private final Map<String, List<SymbolEntry>> globalSymbols = new ConcurrentHashMap<>();
-
-    /** uri -> 该文件导出的所有符号名集合（用于文件更新时快速清理） */
     private final Map<String, Set<String>> fileSymbolNames = new ConcurrentHashMap<>();
 
-    /**
-     * 更新文件的符号索引
-     */
-    public void updateFile(String uri, List<Symbol> topLevelSymbols) {
-        // 先清理旧条目
+    public void updateFile(String uri, String packageName, List<Symbol> topLevelSymbols) {
         removeFile(uri);
 
         Set<String> names = new HashSet<>();
@@ -60,52 +60,60 @@ public class ProjectIndex {
                     || sym.getKind() == SymbolKind.IMPORT) {
                 continue;
             }
+
             int line = 0, col = 0;
             if (sym.getLocation() != null) {
                 line = sym.getLocation().getLine() - 1;
                 col = sym.getLocation().getColumn() - 1;
             }
+
+            String qualifiedName = qualify(packageName, sym.getName());
             SymbolEntry entry = new SymbolEntry(
                     sym.getName(), uri, line, col,
-                    line, col + (sym.getName() != null ? sym.getName().length() : 0),
-                    sym.getKind(), sym.getTypeName(), null);
+                    line, col + safeLength(sym.getName()),
+                    sym.getKind(), sym.getTypeName(),
+                    packageName, qualifiedName,
+                    null, null);
 
-            globalSymbols.computeIfAbsent(sym.getName(), k -> Collections.synchronizedList(new ArrayList<>()))
+            globalSymbols.computeIfAbsent(sym.getName(), key -> Collections.synchronizedList(new ArrayList<>()))
                     .add(entry);
             names.add(sym.getName());
 
-            // 注册类/接口成员
             if (sym.getMembers() != null) {
                 for (Map.Entry<String, Symbol> memberEntry : sym.getMembers().entrySet()) {
                     Symbol memberSym = memberEntry.getValue();
-                    int mLine = 0, mCol = 0;
+                    int memberLine = 0, memberCol = 0;
                     if (memberSym.getLocation() != null) {
-                        mLine = memberSym.getLocation().getLine() - 1;
-                        mCol = memberSym.getLocation().getColumn() - 1;
+                        memberLine = memberSym.getLocation().getLine() - 1;
+                        memberCol = memberSym.getLocation().getColumn() - 1;
                     }
-                    SymbolEntry mEntry = new SymbolEntry(
-                            memberSym.getName(), uri, mLine, mCol,
-                            mLine, mCol + (memberSym.getName() != null ? memberSym.getName().length() : 0),
-                            memberSym.getKind(), memberSym.getTypeName(), sym.getName());
-                    globalSymbols.computeIfAbsent(memberSym.getName(), k -> Collections.synchronizedList(new ArrayList<>()))
-                            .add(mEntry);
+
+                    String memberQualifiedName = qualify(qualifiedName, memberSym.getName());
+                    SymbolEntry member = new SymbolEntry(
+                            memberSym.getName(), uri, memberLine, memberCol,
+                            memberLine, memberCol + safeLength(memberSym.getName()),
+                            memberSym.getKind(), memberSym.getTypeName(),
+                            packageName, memberQualifiedName,
+                            sym.getName(), qualifiedName);
+
+                    globalSymbols.computeIfAbsent(memberSym.getName(), key -> Collections.synchronizedList(new ArrayList<>()))
+                            .add(member);
                     names.add(memberSym.getName());
                 }
             }
         }
+
         fileSymbolNames.put(uri, names);
     }
 
-    /**
-     * 移除文件的所有符号索引
-     */
     public void removeFile(String uri) {
         Set<String> names = fileSymbolNames.remove(uri);
         if (names == null) return;
+
         for (String name : names) {
             List<SymbolEntry> entries = globalSymbols.get(name);
             if (entries != null) {
-                entries.removeIf(e -> uri.equals(e.uri));
+                entries.removeIf(entry -> uri.equals(entry.uri));
                 if (entries.isEmpty()) {
                     globalSymbols.remove(name);
                 }
@@ -113,17 +121,30 @@ public class ProjectIndex {
         }
     }
 
-    /**
-     * 按名称查找符号
-     */
     public List<SymbolEntry> findByName(String name) {
         List<SymbolEntry> entries = globalSymbols.get(name);
         return entries != null ? new ArrayList<>(entries) : Collections.emptyList();
     }
 
-    /**
-     * 模糊搜索符号（workspace/symbol）
-     */
+    public SymbolEntry findByQualifiedName(String qualifiedName) {
+        if (qualifiedName == null || qualifiedName.isEmpty()) {
+            return null;
+        }
+
+        String simpleName = qualifiedName;
+        int idx = qualifiedName.lastIndexOf('.');
+        if (idx >= 0) {
+            simpleName = qualifiedName.substring(idx + 1);
+        }
+
+        for (SymbolEntry entry : findByName(simpleName)) {
+            if (qualifiedName.equals(entry.qualifiedName)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
     public List<SymbolEntry> search(String query) {
         List<SymbolEntry> results = new ArrayList<>();
         String lowerQuery = query.toLowerCase();
@@ -131,8 +152,22 @@ public class ProjectIndex {
             if (entry.getKey().toLowerCase().contains(lowerQuery)) {
                 results.addAll(entry.getValue());
             }
-            if (results.size() > 200) break; // 限制结果数量
+            if (results.size() > 200) break;
         }
         return results;
+    }
+
+    private String qualify(String prefix, String name) {
+        if (name == null || name.isEmpty()) {
+            return prefix;
+        }
+        if (prefix == null || prefix.isEmpty()) {
+            return name;
+        }
+        return prefix + "." + name;
+    }
+
+    private int safeLength(String name) {
+        return name != null ? name.length() : 0;
     }
 }

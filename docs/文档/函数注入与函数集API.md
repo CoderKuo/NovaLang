@@ -721,3 +721,70 @@ compiled.run();  // 575.0
 - 配置文件中的计算公式、条件表达式 → **`compile()`**
 - 只执行一次的临时脚本 → 直接 **`eval()`**
 - 游戏主循环中每 tick 执行的核心逻辑 → **`compileToBytecode()`**
+
+---
+
+## 宿主侧调用已注册函数
+
+### NovaRuntime 类型安全 API
+
+`NovaRuntime` 提供返回 `NovaValue` 的新 API，替代返回 `Object` 的旧方法：
+
+| 新 API | 替代的旧 API | 说明 |
+|--------|-------------|------|
+| `call(name, args...)` | `invokeFunction(name, args...)` | 调用全局函数，返回 NovaValue |
+| `callExtension(receiver, name, args...)` | `invokeExtension(receiver, name, args...)` | 调用扩展方法，返回 NovaValue |
+| `global(name)` | `getGlobal(name)` | 获取全局变量，返回 NovaValue |
+
+```java
+NovaRuntime runtime = NovaRuntime.create();
+runtime.registerFunction("add", Integer.class, Integer.class, Integer.class,
+    (a, b) -> a + b);
+
+// 类型安全：返回 NovaValue，可用 toJava() 转换
+NovaValue result = runtime.call("add", 3, 4);
+int sum = result.toJava(int.class);  // 7
+```
+
+### FunctionBuilder 泛型化 invoke
+
+`HostBindingRegistry.FunctionBuilder` 新增类型安全的 invoke 重载，自动转换参数类型：
+
+```java
+HostBindingRegistry registry = HostBindingRegistry.builder()
+    .globalFunction("add", fn -> fn
+        .invoke2(Integer.class, Integer.class, (a, b) -> a + b))
+    .globalFunction("greet", fn -> fn
+        .invoke1(String.class, name -> "Hello, " + name))
+    .build();
+```
+
+可用的泛型 invoke：
+
+| 方法 | 说明 |
+|------|------|
+| `invoke0(Class<R>, Supplier<R>)` | 0 参数，类型安全 |
+| `invoke1(Class<T1>, Function1<T1,R>)` | 1 参数，自动转换 |
+| `invoke2(Class<T1>, Class<T2>, Function2<T1,T2,R>)` | 2 参数，自动转换 |
+| `invoke3(Class<T1>, Class<T2>, Class<T3>, Function3<T1,T2,T3,R>)` | 3 参数，自动转换 |
+
+参数会通过 `NovaValueConversions` 自动转换（包括数值宽化、NovaValue 拆箱等）。
+
+### NovaValue.toJava() — 类型安全取值
+
+所有返回 `NovaValue` 的 API 都可以用 `toJava(Class<T>)` 进行类型安全转换：
+
+```java
+NovaValue val = runtime.call("compute", 100);
+
+// 指定目标类型，自动转换
+int intVal = val.toJava(int.class);
+double doubleVal = val.toJava(double.class);  // 自动数值宽化
+String strVal = val.toJava(String.class);
+
+// null 值检测
+NovaValue maybeNull = runtime.global("missing");
+if (maybeNull.isNull()) {
+    // 处理空值
+}
+```

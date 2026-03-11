@@ -33,6 +33,7 @@ public enum MirOp {
     INVOKE_STATIC,      // dest = Class.method(args)
     INVOKE_INTERFACE,   // dest = iface.method(args)
     INVOKE_SPECIAL,     // dest = super/constructor(args)
+    INVOKE_DYNAMIC,     // dest = invokedynamic methodName(args) [bootstrap]
 
     // 集合/数组
     INDEX_GET,      // dest = target[index]

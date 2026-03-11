@@ -227,6 +227,17 @@ public class MirBuilder {
         emit(new MirInst(MirOp.SET_STATIC, -1, new int[]{value}, extra, loc));
     }
 
+    /**
+     * 发射 invokedynamic 调用。
+     * extra 为 InvokeDynamicInfo，operands 为 [receiver, arg0, arg1, ...]。
+     */
+    public int emitInvokeDynamic(InvokeDynamicInfo info, int[] operands,
+                                  MirType returnType, SourceLocation loc) {
+        int dest = returnType.getKind() == MirType.Kind.VOID ? -1 : newTemp(returnType);
+        emit(new MirInst(MirOp.INVOKE_DYNAMIC, dest, operands, info, loc));
+        return dest;
+    }
+
     public int emitTypeCheck(int src, String typeName, SourceLocation loc) {
         int dest = newTemp(MirType.ofBoolean());
         emit(new MirInst(MirOp.TYPE_CHECK, dest, new int[]{src}, typeName, loc));

@@ -56,6 +56,24 @@ final class TypeOps {
         // getTypeName() fallback
         if (value.getTypeName().equals(typeName)) return true;
 
+        // ScalarizedNovaObject: same checks as NovaObject
+        if (value instanceof ScalarizedNovaObject) {
+            ScalarizedNovaObject sobj = (ScalarizedNovaObject) value;
+            NovaClass objClass = sobj.getNovaClass();
+            NovaClass cls = objClass.getSuperclass();
+            while (cls != null) {
+                if (cls.getName().equals(typeName)) return true;
+                for (NovaInterface iface : cls.getInterfaces()) {
+                    if (iface.getName().equals(typeName)) return true;
+                }
+                cls = cls.getSuperclass();
+            }
+            for (NovaInterface iface : objClass.getInterfaces()) {
+                if (iface.getName().equals(typeName)) return true;
+            }
+            return false;
+        }
+
         // NovaObject: inheritance chain + interfaces + Java types
         if (value instanceof NovaObject) {
             NovaObject novaObj = (NovaObject) value;

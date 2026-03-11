@@ -314,3 +314,24 @@ MIT License
 ## 参与贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+---
+
+## 宿主绑定配置与 YAML 嵌入
+
+NovaLang 现在支持在工作区 .nova/*.json 中声明宿主绑定元数据，并在 YAML 文本块中通过 # nova / # nova=<namespace> 使用这些提示能力。
+
+相关文档：
+
+- docs/宿主绑定配置规范.md
+- examples/embedded-yaml/README.md
+
+示例：
+
+`yaml
+# nova=reward
+action: |-
+  giveItem("diamond", 3)
+`
+
+eward 命名空间会从 .nova/*.json 中加载对应的宿主变量、函数和对象成员，用于补全、悬停、签名帮助与 YAML 嵌入脚本诊断。

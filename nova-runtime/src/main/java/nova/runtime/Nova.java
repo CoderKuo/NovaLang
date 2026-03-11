@@ -522,6 +522,7 @@ public final class Nova {
     public CompiledNova compileToBytecode(String code, String fileName) {
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
+        configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
         CompiledNova compiled = new CompiledNova(classes, extensionRegistry);
         // 注入已注册的值
@@ -544,8 +545,27 @@ public final class Nova {
     public static CompiledNova compileToBytecodeStatic(String code, String fileName) {
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
+        configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
         return new CompiledNova(classes, null);
+    }
+
+    /**
+     * 检测 Nova 类是否被 shadow relocate，如果是则配置编译器重映射字节码引用。
+     * 例如 relocate("nova.", "com.foo.nova.") 后，包名变为 "com.foo.nova.runtime"，
+     * 检测到前缀 "com/foo/" 并传给编译器。
+     *
+     * 注意：不能在代码中写 "nova.runtime" 等字面量，因为 shadow 会将其一并转换。
+     * "nova"（不带点）不会被 shadow 匹配，所以用 lastIndexOf("nova") 检测。
+     */
+    private static void configureRelocate(NovaIrCompiler compiler) {
+        String pkgName = Nova.class.getPackage().getName();
+        // 原始包名: "nova.runtime" → lastIndexOf("nova") == 0, 不需要重映射
+        // 被 relocate: "com.foo.nova.runtime" → lastIndexOf("nova") > 0, 提取前缀
+        int idx = pkgName.lastIndexOf("nova");
+        if (idx > 0) {
+            compiler.setRelocatePrefix(pkgName.substring(0, idx).replace('.', '/'));
+        }
     }
 
     // ── 调用函数 ──────────────────────────────────────────

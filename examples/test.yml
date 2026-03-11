@@ -1,0 +1,11 @@
+
+name: ''
+# nova
+reward: |-
+  val name = 1
+  fun aaa(params): Unit {
+    
+  }
+  val ccc = value
+  ccc
+

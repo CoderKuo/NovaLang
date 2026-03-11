@@ -1,29 +1,25 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.NovaCallable;
-import nova.runtime.types.*;
+import nova.runtime.types.NovaClass;
 
 /**
- * 预解析的方法调用站点，缓存在 {@link com.novalang.ir.mir.MirInst#cache} 中
- * 避免每次 INVOKE_VIRTUAL/INVOKE_STATIC 执行时重复字符串解析。
- *
- * <p>INVOKE_VIRTUAL extra 格式: {@code "owner|methodName|descriptor;named:positionalCount:key1,key2"}<br>
- * INVOKE_STATIC  extra 格式: {@code "owner|methodName|descriptor"}</p>
+ * ?????????????? MirInst.cache ??
  */
 final class MirCallSite {
 
-    final String owner;       // nullable
+    final String owner;
     final String methodName;
-    final String namedInfo;   // nullable, only for INVOKE_VIRTUAL
+    final String namedInfo;
 
-    /** 单态内联缓存：上次成功解析的接收者类 */
     NovaClass cachedClass;
-    /** 单态内联缓存：上次成功解析的方法 */
-    nova.runtime.NovaCallable cachedMethod;
+    NovaCallable cachedMethod;
+    MirCallable cachedDirectMethod;
+    byte cachedDirectArity = -1;
+    boolean scalarizedPlusEligible;
+    byte scalarizedFieldCount;
 
-    /** INVOKE_STATIC 缓存：已解析的 MirCallable（消除 HashMap 查找） */
     MirCallable resolvedCallable;
-    /** 是否可走 fastCall 路径（无 this、无捕获、非 init） */
     boolean fastCallEligible;
 
     MirCallSite(String owner, String methodName, String namedInfo) {
@@ -32,7 +28,6 @@ final class MirCallSite {
         this.namedInfo = namedInfo;
     }
 
-    /** 从 INVOKE_VIRTUAL 的 extra 字符串解析 */
     static MirCallSite parseVirtual(String extra) {
         String namedInfo = null;
         int semiColon = extra.indexOf(';');
@@ -43,7 +38,6 @@ final class MirCallSite {
         return parseCore(extra, namedInfo);
     }
 
-    /** 从 INVOKE_STATIC 的 extra 字符串解析 */
     static MirCallSite parseStatic(String extra) {
         return parseCore(extra, null);
     }

@@ -1,5 +1,7 @@
 package nova.runtime;
 
+import nova.runtime.stdlib.StdlibRegistry;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -70,6 +72,98 @@ public class NovaScriptContext {
     public static Map<String, Object> getAll() {
         NovaScriptContext ctx = CURRENT.get();
         return ctx != null ? new HashMap<>(ctx.bindings) : new HashMap<>();
+    }
+
+    /**
+     * 运行时函数分派（编译模式：未解析的函数调用通过此方法在绑定中查找并调用）
+     *
+     * <p>参数自动转换：Java 原始类型 → NovaValue，编译 lambda (FunctionN) → JavaObjectValue 包装。
+     * 返回值自动解包：NovaValue → Java 原始类型，以兼容编译路径的 NovaOps 运算。</p>
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static Object call(String name, Object... args) {
+        NovaScriptContext ctx = CURRENT.get();
+        if (ctx != null) {
+            Object func = ctx.bindings.get(name);
+            if (func instanceof NovaValue && ((NovaValue) func).isCallable()) {
+                NovaValue[] novaArgs = new NovaValue[args.length];
+                for (int i = 0; i < args.length; i++) {
+                    novaArgs[i] = safeToNovaValue(args[i]);
+                }
+                Object result = ((NovaValue) func).dynamicInvoke(novaArgs);
+                // 解包 NovaValue → Java 原始类型，编译路径运算符（NovaOps）期望 Number/String 等
+                if (result instanceof NovaValue) {
+                    return ((NovaValue) result).toJavaValue();
+                }
+                return result;
+            }
+            // 处理 FunctionN 类型（NativeFunctionAdapter.toBindingValue() 将宿主函数转为 FunctionN）
+            if (func != null) {
+                switch (args.length) {
+                    case 0:
+                        if (func instanceof Function0) return ((Function0) func).invoke();
+                        break;
+                    case 1:
+                        if (func instanceof Function1) return ((Function1) func).invoke(args[0]);
+                        break;
+                    case 2:
+                        if (func instanceof Function2) return ((Function2) func).invoke(args[0], args[1]);
+                        break;
+                    case 3:
+                        if (func instanceof Function3) return ((Function3) func).invoke(args[0], args[1], args[2]);
+                        break;
+                    case 4:
+                        if (func instanceof Function4) return ((Function4) func).invoke(args[0], args[1], args[2], args[3]);
+                        break;
+                    case 5:
+                        if (func instanceof Function5) return ((Function5) func).invoke(args[0], args[1], args[2], args[3], args[4]);
+                        break;
+                    case 6:
+                        if (func instanceof Function6) return ((Function6) func).invoke(args[0], args[1], args[2], args[3], args[4], args[5]);
+                        break;
+                    case 7:
+                        if (func instanceof Function7) return ((Function7) func).invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+                        break;
+                    case 8:
+                        if (func instanceof Function8) return ((Function8) func).invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
+                        break;
+                }
+                // FunctionN switch 未匹配：函数存在但 arity 不匹配或 instanceof 失败
+                throw new RuntimeException("Function '" + name + "' exists but cannot be called with "
+                        + args.length + " arg(s) (type: " + func.getClass().getName() + ")");
+            }
+        }
+        // stdlib 回退：脚本绑定中未找到时，尝试调用标准库函数（如 sin, cos, abs 等）
+        StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(name);
+        if (nfInfo != null) {
+            return nfInfo.impl.apply(args);
+        }
+        throw new RuntimeException("Undefined function: " + name);
+    }
+
+    private static NovaValue safeToNovaValue(Object arg) {
+        if (arg instanceof NovaValue) return (NovaValue) arg;
+        try {
+            return AbstractNovaValue.fromJava(arg);
+        } catch (Exception e) {
+            // 编译 lambda (FunctionN) 等无法转换的 Java 对象，包装为 JavaObjectValue
+            return new JavaObjectValue(arg);
+        }
+    }
+
+    /** 轻量包装：将任意 Java 对象表示为 NovaValue（编译 lambda、宿主对象等） */
+    private static final class JavaObjectValue extends AbstractNovaValue {
+        private final Object value;
+        JavaObjectValue(Object value) { this.value = value; }
+        @Override public String getTypeName() { return "Java:" + value.getClass().getSimpleName(); }
+        @Override public Object toJavaValue() { return value; }
+    }
+
+    /**
+     * 检查当前线程是否有活跃的脚本上下文
+     */
+    public static boolean isActive() {
+        return CURRENT.get() != null;
     }
 
     /**

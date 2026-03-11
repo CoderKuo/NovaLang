@@ -19,9 +19,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * runtime.registerExtension(String.class, "shout", String.class,
  *     s -> s.toUpperCase() + "!");
  *
- * // 调用已注册的函数
- * runtime.invokeFunction("add", 1, 2);  // 返回: 3
- * runtime.invokeExtension("hello", "shout");  // 返回: HELLO!
+ * // 调用已注册的函数（类型安全 API）
+ * NovaValue result = runtime.call("add", 1, 2);
+ * int sum = result.toJava(int.class);  // 类型安全: 3
+ *
+ * NovaValue ext = runtime.callExtension("hello", "shout");
+ * String s = ext.toJava(String.class);  // 类型安全: HELLO!
  * </pre>
  */
 public final class NovaRuntime {
@@ -140,8 +143,24 @@ public final class NovaRuntime {
     }
 
     /**
-     * 获取全局变量
+     * 获取全局变量（类型安全）
+     *
+     * @param name 变量名
+     * @return 包装为 NovaValue 的变量值，不存在时返回 {@link NovaNull#NULL}
      */
+    public NovaValue global(String name) {
+        Object value = globals.get(name);
+        if (value == null) return NovaNull.NULL;
+        if (value instanceof NovaValue) return (NovaValue) value;
+        return AbstractNovaValue.fromJava(value);
+    }
+
+    /**
+     * 获取全局变量
+     *
+     * @deprecated 使用 {@link #global(String)} 替代，返回类型安全的 NovaValue
+     */
+    @Deprecated
     public Object getGlobal(String name) {
         return globals.get(name);
     }
@@ -196,12 +215,59 @@ public final class NovaRuntime {
     }
 
     /**
-     * 调用注册的函数
+     * 调用注册的函数（类型安全）
      *
      * @param name 函数名
      * @param args 参数
-     * @return 返回值
+     * @return 包装为 NovaValue 的返回值
      */
+    public NovaValue call(String name, Object... args) throws Exception {
+        FunctionRegistry.RegisteredFunction func = functionRegistry.lookup(name);
+        if (func == null) {
+            throw new NoSuchMethodException("Function not found: " + name);
+        }
+        Object result = func.invoke(args);
+        if (result == null) return NovaNull.NULL;
+        if (result instanceof NovaValue) return (NovaValue) result;
+        return AbstractNovaValue.fromJava(result);
+    }
+
+    /**
+     * 调用扩展方法（类型安全）
+     *
+     * @param receiver   接收者对象
+     * @param methodName 方法名
+     * @param args       参数
+     * @return 包装为 NovaValue 的返回值
+     */
+    public NovaValue callExtension(Object receiver, String methodName, Object... args) throws Exception {
+        if (receiver == null) {
+            throw new NullPointerException("Cannot invoke extension method on null receiver");
+        }
+
+        Class<?>[] argTypes = new Class<?>[args.length];
+        for (int i = 0; i < args.length; i++) {
+            argTypes[i] = args[i] != null ? args[i].getClass() : Object.class;
+        }
+
+        ExtensionRegistry.RegisteredExtension ext =
+                extensionRegistry.lookup(receiver.getClass(), methodName, argTypes);
+        if (ext == null) {
+            throw new NoSuchMethodException("Extension method not found: " +
+                    receiver.getClass().getName() + "." + methodName);
+        }
+        Object result = ext.invoke(receiver, args);
+        if (result == null) return NovaNull.NULL;
+        if (result instanceof NovaValue) return (NovaValue) result;
+        return AbstractNovaValue.fromJava(result);
+    }
+
+    /**
+     * 调用注册的函数
+     *
+     * @deprecated 使用 {@link #call(String, Object...)} 替代，返回类型安全的 NovaValue
+     */
+    @Deprecated
     public Object invokeFunction(String name, Object... args) throws Exception {
         FunctionRegistry.RegisteredFunction func = functionRegistry.lookup(name);
         if (func == null) {
@@ -213,11 +279,9 @@ public final class NovaRuntime {
     /**
      * 调用扩展方法
      *
-     * @param receiver   接收者对象
-     * @param methodName 方法名
-     * @param args       参数
-     * @return 返回值
+     * @deprecated 使用 {@link #callExtension(Object, String, Object...)} 替代，返回类型安全的 NovaValue
      */
+    @Deprecated
     public Object invokeExtension(Object receiver, String methodName, Object... args) throws Exception {
         if (receiver == null) {
             throw new NullPointerException("Cannot invoke extension method on null receiver");

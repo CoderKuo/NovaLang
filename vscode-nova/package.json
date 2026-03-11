@@ -11,11 +11,24 @@
         "Programming Languages"
     ],
     "activationEvents": [
-        "onLanguage:nova"
+        "onLanguage:nova",
+        "onLanguage:yaml"
     ],
     "main": "./out/extension.js",
     "contributes": {
         "commands": [
+            {
+                "command": "nova.restartLanguageServer",
+                "title": "Restart Nova Language Server",
+                "icon": "$(debug-restart)",
+                "category": "Nova"
+            },
+            {
+                "command": "nova.organizeImports",
+                "title": "Organize Nova Imports",
+                "icon": "$(list-selection)",
+                "category": "Nova"
+            },
             {
                 "command": "nova.runFile",
                 "title": "Run Nova File",
@@ -81,6 +94,13 @@
                 "path": "./syntaxes/nova.tmLanguage.json"
             }
         ],
+        "configurationDefaults": {
+            "[yaml]": {
+                "editor.quickSuggestions": {
+                    "strings": true
+                }
+            }
+        },
         "configuration": {
             "title": "NovaLang",
             "properties": {
@@ -119,6 +139,11 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Enable semantic syntax highlighting"
+                },
+                "nova.embeddedYaml.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable Nova language features inside YAML block scalars marked with # nova or # nova=<namespace>"
                 }
             }
         },

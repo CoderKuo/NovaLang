@@ -280,7 +280,7 @@ public class MirLocalCSE implements MirPass {
             if (op == MirOp.INDEX_SET || op == MirOp.SET_FIELD
                     || op == MirOp.INVOKE_VIRTUAL
                     || op == MirOp.INVOKE_STATIC || op == MirOp.INVOKE_SPECIAL
-                    || op == MirOp.INVOKE_INTERFACE) {
+                    || op == MirOp.INVOKE_INTERFACE || op == MirOp.INVOKE_DYNAMIC) {
                 state.invalidateVolatile();
             }
         }

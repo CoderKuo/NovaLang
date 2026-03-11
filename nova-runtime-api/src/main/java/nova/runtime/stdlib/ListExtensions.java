@@ -2,6 +2,7 @@ package nova.runtime.stdlib;
 
 import nova.runtime.Function1;
 import nova.runtime.Function2;
+import nova.runtime.NovaDynamic;
 import nova.runtime.NovaPair;
 import nova.runtime.NovaRange;
 
@@ -358,6 +359,9 @@ public final class ListExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object find(Object list, Object predicate) {
+        if (!(list instanceof List)) {
+            return NovaDynamic.invoke1(list, "find", predicate);
+        }
         for (Object item : (List<?>) list) {
             if (isTruthy(invoke1(predicate, item))) return item;
         }
@@ -423,6 +427,17 @@ public final class ListExtensions {
             result.add(item);
         }
         return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object reduce(Object list, Object operation) {
+        List<?> l = (List<?>) list;
+        if (l.isEmpty()) throw new IllegalArgumentException("Cannot reduce an empty list");
+        Object acc = l.get(0);
+        for (int i = 1; i < l.size(); i++) {
+            acc = invoke2(operation, acc, l.get(i));
+        }
+        return acc;
     }
 
     @SuppressWarnings("unchecked")

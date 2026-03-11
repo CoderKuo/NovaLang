@@ -2,9 +2,11 @@ package nova.runtime.interpreter;
 import nova.runtime.*;
 import nova.runtime.types.Environment;
 
+import com.novalang.ir.hir.HirAnnotation;
 import com.novalang.ir.hir.decl.HirFunction;
 import com.novalang.ir.hir.decl.HirParam;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -17,11 +19,14 @@ public final class HirFunctionValue extends AbstractNovaValue implements nova.ru
     private final String name;
     private final HirFunction declaration;
     private final Environment closure;
+    private final boolean memoized;
+    private Map<MemoKey, NovaValue> memoCache;
 
     public HirFunctionValue(String name, HirFunction declaration, Environment closure) {
         this.name = name;
         this.declaration = declaration;
         this.closure = closure;
+        this.memoized = isMemoizedAnnotation(declaration);
     }
 
     @Override
@@ -30,6 +35,13 @@ public final class HirFunctionValue extends AbstractNovaValue implements nova.ru
     public HirFunction getDeclaration() { return declaration; }
 
     public Environment getClosure() { return closure; }
+
+    boolean isMemoized() { return memoized; }
+
+    Map<MemoKey, NovaValue> getMemoCache() {
+        if (memoCache == null) memoCache = new HashMap<>();
+        return memoCache;
+    }
 
     @Override
     public int getArity() {
@@ -64,5 +76,22 @@ public final class HirFunctionValue extends AbstractNovaValue implements nova.ru
 
     public NovaBoundMethod bind(NovaValue receiver) {
         return new NovaBoundMethod(receiver, this);
+    }
+
+    private static boolean isMemoizedAnnotation(HirFunction declaration) {
+        if (declaration == null || declaration.isConstructor() || declaration.hasReifiedTypeParams()) {
+            return false;
+        }
+        List<HirAnnotation> annotations = declaration.getAnnotations();
+        if (annotations == null || annotations.isEmpty()) {
+            return false;
+        }
+        for (HirAnnotation annotation : annotations) {
+            String name = annotation.getName();
+            if ("memoized".equalsIgnoreCase(name) || "memoize".equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

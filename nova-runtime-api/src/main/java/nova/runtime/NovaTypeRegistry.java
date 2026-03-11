@@ -391,7 +391,7 @@ public final class NovaTypeRegistry {
     // ========== Number (Int/Long/Double/Float) ==========
 
     private static void registerNumberMethods() {
-        registerType("Number", Arrays.asList(
+        List<MethodInfo> numberMethods = Arrays.asList(
             MethodInfo.method("toInt", 0, "转换为 Int", "Int"),
             MethodInfo.method("toLong", 0, "转换为 Long", "Long"),
             MethodInfo.method("toDouble", 0, "转换为 Double", "Double"),
@@ -406,7 +406,13 @@ public final class NovaTypeRegistry {
             MethodInfo.method("isFinite", 0, "是否为有限数", "Boolean"),
             MethodInfo.method("downTo", 1, "递减序列", "List"),
             MethodInfo.method("until", 1, "半开区间", "Range")
-        ));
+        );
+        registerType("Number", numberMethods);
+        // 具体数字类型共享 Number 方法，使 name.补全（name: Int）能正确返回结果
+        registerType("Int", numberMethods);
+        registerType("Long", numberMethods);
+        registerType("Float", numberMethods);
+        registerType("Double", numberMethods);
     }
 
     // ========== Result ==========

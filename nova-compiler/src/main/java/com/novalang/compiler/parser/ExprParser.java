@@ -35,7 +35,8 @@ class ExprParser {
 
         // 检查赋值运算符
         if (parser.checkAny(ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, MUL_ASSIGN, DIV_ASSIGN,
-                     MOD_ASSIGN, NULL_COALESCE_ASSIGN, OR_ASSIGN, AND_ASSIGN)) {
+                     MOD_ASSIGN, NULL_COALESCE_ASSIGN, OR_ASSIGN, AND_ASSIGN,
+                     BAND_ASSIGN, BOR_ASSIGN, BXOR_ASSIGN, SHL_ASSIGN, SHR_ASSIGN, USHR_ASSIGN)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
             Expression right = parseAssignExpr();  // 右结合
@@ -51,6 +52,12 @@ class ExprParser {
                 case NULL_COALESCE_ASSIGN: assignOp = AssignExpr.AssignOp.NULL_COALESCE; break;
                 case OR_ASSIGN: assignOp = AssignExpr.AssignOp.OR_ASSIGN; break;
                 case AND_ASSIGN: assignOp = AssignExpr.AssignOp.AND_ASSIGN; break;
+                case BAND_ASSIGN: assignOp = AssignExpr.AssignOp.BAND_ASSIGN; break;
+                case BOR_ASSIGN: assignOp = AssignExpr.AssignOp.BOR_ASSIGN; break;
+                case BXOR_ASSIGN: assignOp = AssignExpr.AssignOp.BXOR_ASSIGN; break;
+                case SHL_ASSIGN: assignOp = AssignExpr.AssignOp.SHL_ASSIGN; break;
+                case SHR_ASSIGN: assignOp = AssignExpr.AssignOp.SHR_ASSIGN; break;
+                case USHR_ASSIGN: assignOp = AssignExpr.AssignOp.USHR_ASSIGN; break;
                 default: throw new ParseException("Unexpected assignment operator", op);
             }
             return new AssignExpr(loc, left, assignOp, right);
@@ -110,12 +117,51 @@ class ExprParser {
 
     // 逻辑与 &&
     private Expression parseConjunctionExpr() {
-        Expression left = parseEqualityExpr();
+        Expression left = parseBitwiseOrExpr();
 
         while (parser.match(AND)) {
             SourceLocation loc = parser.previousLocation();
-            Expression right = parseEqualityExpr();
+            Expression right = parseBitwiseOrExpr();
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.AND, right);
+        }
+
+        return left;
+    }
+
+    // 位或 |
+    private Expression parseBitwiseOrExpr() {
+        Expression left = parseBitwiseXorExpr();
+
+        while (parser.match(BOR)) {
+            SourceLocation loc = parser.previousLocation();
+            Expression right = parseBitwiseXorExpr();
+            left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.BOR, right);
+        }
+
+        return left;
+    }
+
+    // 位异或 ^
+    private Expression parseBitwiseXorExpr() {
+        Expression left = parseBitwiseAndExpr();
+
+        while (parser.match(BXOR)) {
+            SourceLocation loc = parser.previousLocation();
+            Expression right = parseBitwiseAndExpr();
+            left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.BXOR, right);
+        }
+
+        return left;
+    }
+
+    // 位与 &
+    private Expression parseBitwiseAndExpr() {
+        Expression left = parseEqualityExpr();
+
+        while (parser.match(BAND)) {
+            SourceLocation loc = parser.previousLocation();
+            Expression right = parseEqualityExpr();
+            left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.BAND, right);
         }
 
         return left;
@@ -260,20 +306,41 @@ class ExprParser {
 
     // 范围 .. ..<
     private Expression parseRangeExpr() {
-        Expression left = parseAdditiveExpr();
+        Expression left = parseShiftExpr();
 
         if (parser.matchAny(RANGE, RANGE_EXCLUSIVE)) {
             SourceLocation loc = parser.previousLocation();
             boolean isExclusive = parser.previous.getType() == RANGE_EXCLUSIVE;
-            Expression right = parseAdditiveExpr();
+            Expression right = parseShiftExpr();
 
             Expression step = null;
             if (parser.check(IDENTIFIER) && "step".equals(parser.current.getLexeme())) {
                 parser.advance(); // 消费 "step" 软关键词
-                step = parseAdditiveExpr();
+                step = parseShiftExpr();
             }
 
             left = new RangeExpr(loc, left, right, step, isExclusive);
+        }
+
+        return left;
+    }
+
+    // 位移 << >> >>>
+    private Expression parseShiftExpr() {
+        Expression left = parseAdditiveExpr();
+
+        while (parser.checkAny(SHL, SHR, USHR)) {
+            Token op = parser.advance();
+            SourceLocation loc = parser.previousLocation();
+            Expression right = parseAdditiveExpr();
+            BinaryExpr.BinaryOp binOp;
+            switch (op.getType()) {
+                case SHL: binOp = BinaryExpr.BinaryOp.SHL; break;
+                case SHR: binOp = BinaryExpr.BinaryOp.SHR; break;
+                case USHR: binOp = BinaryExpr.BinaryOp.USHR; break;
+                default: throw new ParseException("Unexpected operator", op);
+            }
+            left = new BinaryExpr(loc, left, binOp, right);
         }
 
         return left;
@@ -316,9 +383,9 @@ class ExprParser {
         return left;
     }
 
-    // 前缀 - + ! ++ --
+    // 前缀 - + ! ~ ++ --
     private Expression parsePrefixExpr() {
-        if (parser.checkAny(MINUS, PLUS, NOT, INC, DEC)) {
+        if (parser.checkAny(MINUS, PLUS, NOT, BNOT, INC, DEC)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
 
@@ -338,6 +405,7 @@ class ExprParser {
                 case MINUS: unaryOp = UnaryExpr.UnaryOp.NEG; break;
                 case PLUS: unaryOp = UnaryExpr.UnaryOp.POS; break;
                 case NOT: unaryOp = UnaryExpr.UnaryOp.NOT; break;
+                case BNOT: unaryOp = UnaryExpr.UnaryOp.BNOT; break;
                 case INC: unaryOp = UnaryExpr.UnaryOp.INC; break;
                 case DEC: unaryOp = UnaryExpr.UnaryOp.DEC; break;
                 default: throw new ParseException("Unexpected operator", op);
@@ -795,12 +863,14 @@ class ExprParser {
     private Expression parseListLiteral() {
         SourceLocation loc = parser.location();
         parser.expect(LBRACKET, "Expected '['");
+        parser.skipNewlines();
 
         List<Expression> elements = Collections.emptyList();
         if (!parser.check(RBRACKET)) {
             elements = parseExpressionList();
         }
 
+        parser.skipNewlines();
         parser.expect(RBRACKET, "Expected ']'");
         return new CollectionLiteral(loc, CollectionLiteral.CollectionKind.LIST, elements, null);
     }
@@ -865,23 +935,30 @@ class ExprParser {
 
         // 解析第一个表达式，根据是否紧跟 : 判断 Map 还是 Set
         Expression first = parseExpression();
+        parser.skipNewlines();
 
         if (parser.check(COLON)) {
             // Map: #{key: value, ...}
             parser.advance(); // consume ':'
+            parser.skipNewlines();
             Expression value = parseExpression();
             List<CollectionLiteral.MapEntry> entries = new ArrayList<CollectionLiteral.MapEntry>();
             entries.add(new CollectionLiteral.MapEntry(parser.location(), first, value));
 
-            while (parser.match(COMMA)) {
+            while (true) {
+                parser.skipNewlines();
+                if (!parser.match(COMMA)) break;
                 parser.skipNewlines();
                 if (parser.check(RBRACE)) break;
                 Expression key = parseExpression();
+                parser.skipNewlines();
                 parser.expect(COLON, "Expected ':'");
+                parser.skipNewlines();
                 value = parseExpression();
                 entries.add(new CollectionLiteral.MapEntry(parser.location(), key, value));
             }
 
+            parser.skipNewlines();
             parser.expect(RBRACE, "Expected '}'");
             return new CollectionLiteral(loc, CollectionLiteral.CollectionKind.MAP, null, entries);
         } else {
@@ -889,12 +966,15 @@ class ExprParser {
             List<Expression> elements = new ArrayList<Expression>();
             elements.add(first);
 
-            while (parser.match(COMMA)) {
+            while (true) {
+                parser.skipNewlines();
+                if (!parser.match(COMMA)) break;
                 parser.skipNewlines();
                 if (parser.check(RBRACE)) break;
                 elements.add(parseExpression());
             }
 
+            parser.skipNewlines();
             parser.expect(RBRACE, "Expected '}'");
             return new CollectionLiteral(loc, CollectionLiteral.CollectionKind.SET, elements, null);
         }
@@ -1059,6 +1139,7 @@ class ExprParser {
             } else {
                 exprs.add(parseExpression());
             }
+            parser.skipNewlines();
         } while (parser.match(COMMA));
         return exprs;
     }

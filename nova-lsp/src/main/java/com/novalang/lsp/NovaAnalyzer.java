@@ -20,6 +20,7 @@ import nova.runtime.stdlib.StdlibRegistry;
 import static com.novalang.lsp.LspConstants.*;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * NovaLang 代码分析器
@@ -32,15 +33,22 @@ public class NovaAnalyzer {
 
     private final DocumentManager documentManager;
     private final ProjectIndex projectIndex = new ProjectIndex();
+    private final WorkspaceReferenceIndex workspaceReferenceIndex;
+    private final WorkspaceFileIndex workspaceFileIndex;
     private JavaClassResolver javaClassResolver;
+    private volatile boolean typeInlayHintsEnabled = true;
+    private volatile boolean parameterInlayHintsEnabled = true;
+    private volatile boolean semanticTokensEnabled = true;
 
     /** URI → AST 表达式位置索引（与 CachedAnalysis 生命周期一致） */
-    private final Map<String, AstExpressionIndex> exprIndexCache = new HashMap<>();
+    private final Map<String, AstExpressionIndex> exprIndexCache = new ConcurrentHashMap<>();
     /** URI → 构建索引时对应的 ParseResult 引用（用于检测刷新） */
-    private final Map<String, ParseResult> exprIndexSource = new HashMap<>();
+    private final Map<String, ParseResult> exprIndexSource = new ConcurrentHashMap<>();
 
     public NovaAnalyzer(DocumentManager documentManager) {
         this.documentManager = documentManager;
+        this.workspaceReferenceIndex = new WorkspaceReferenceIndex(projectIndex);
+        this.workspaceFileIndex = new WorkspaceFileIndex(projectIndex, workspaceReferenceIndex, documentManager);
     }
 
     public ProjectIndex getProjectIndex() {
@@ -49,6 +57,31 @@ public class NovaAnalyzer {
 
     public void setJavaClassResolver(JavaClassResolver resolver) {
         this.javaClassResolver = resolver;
+    }
+
+    public void setWorkspaceRoots(List<String> rootUris) {
+        workspaceFileIndex.setWorkspaceRoots(rootUris);
+    }
+
+    public void rebuildWorkspaceIndex() {
+        workspaceFileIndex.rebuild();
+    }
+
+    public void reindexWorkspaceFileFromDisk(String uri) {
+        workspaceFileIndex.reindexFileFromDisk(uri);
+    }
+
+    public void handleWatchedFiles(JsonArray changes) {
+        workspaceFileIndex.handleWatchedFiles(changes);
+    }
+
+    public void setInlayHintsEnabled(boolean typeHintsEnabled, boolean parameterHintsEnabled) {
+        this.typeInlayHintsEnabled = typeHintsEnabled;
+        this.parameterInlayHintsEnabled = parameterHintsEnabled;
+    }
+
+    public void setSemanticTokensEnabled(boolean semanticTokensEnabled) {
+        this.semanticTokensEnabled = semanticTokensEnabled;
     }
 
     /** 内置函数名 → 返回类型（从 Registry 动态构建） */
@@ -111,14 +144,8 @@ public class NovaAnalyzer {
         exprIndexSource.remove(uri);
         if (content == null) return null;
         try {
-            String fileName = DocumentManager.getFileName(uri);
-            Lexer lexer = new Lexer(content, fileName);
-            Parser parser = new Parser(lexer, fileName);
-            ParseResult parseResult = parser.parseTolerant();
-            SemanticAnalyzer semAnalyzer = new SemanticAnalyzer();
-            AnalysisResult analysisResult = semAnalyzer.analyze(
-                    parseResult.getProgram(), parseResult.getTopLevelStatements());
-            cached = new DocumentManager.CachedAnalysis(parseResult, analysisResult);
+            cached = NovaAnalysisSupport.analyze(uri, content);
+            if (cached == null) return null;
             ensureExprIndex(uri, cached);
             return cached;
         } catch (Exception e) {
@@ -228,6 +255,7 @@ public class NovaAnalyzer {
         // === 通用补全 ===
 
         DocumentManager.CachedAnalysis cached = ensureParsed(uri, content);
+        Set<String> addedKeys = new LinkedHashSet<String>();
 
         // 1. 从符号表获取当前作用域可见的所有符号（内置函数/常量由步骤 4 统一处理，避免重复）
         if (cached != null) {
@@ -237,8 +265,13 @@ public class NovaAnalyzer {
             for (Symbol sym : visible) {
                 if (sym.getKind() == SymbolKind.BUILTIN_FUNCTION || sym.getKind() == SymbolKind.BUILTIN_CONSTANT) continue;
                 if (!prefix.isEmpty() && !sym.getName().startsWith(prefix)) continue;
-                items.add(symbolToCompletionItem(sym));
+                JsonObject item = symbolToCompletionItem(sym);
+                if (recordCompletionKey(addedKeys, item)) {
+                    items.add(item);
+                }
             }
+
+            addWorkspaceCompletionItems(items, addedKeys, uri, content, prefix, cached);
         }
 
         // 2. 关键词补全
@@ -474,6 +507,14 @@ public class NovaAnalyzer {
             Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
             if (sym != null && sym.getKind() != SymbolKind.BUILTIN_FUNCTION
                     && sym.getKind() != SymbolKind.BUILTIN_CONSTANT) {
+                if (sym.getKind() == SymbolKind.IMPORT) {
+                    ProjectIndex.SymbolEntry target = resolveWorkspaceTarget(uri, word, line, character, cached);
+                    Symbol workspaceSymbol = workspaceReferenceIndex.findSymbol(target);
+                    if (workspaceSymbol != null) {
+                        return createHover(buildWorkspaceSymbolHover(target, workspaceSymbol));
+                    }
+                }
+
                 // 变量无类型或类型为 Any 时，用文本推断补充更精确的类型
                 if ((sym.getKind() == SymbolKind.VARIABLE || sym.getKind() == SymbolKind.PROPERTY)
                         && (sym.getTypeName() == null || "Any".equals(sym.getTypeName()))) {
@@ -566,6 +607,12 @@ public class NovaAnalyzer {
             }
         }
 
+        ProjectIndex.SymbolEntry target = resolveWorkspaceTarget(uri, word, line, character, cached);
+        Symbol workspaceSymbol = workspaceReferenceIndex.findSymbol(target);
+        if (workspaceSymbol != null) {
+            return createHover(buildWorkspaceSymbolHover(target, workspaceSymbol));
+        }
+
         return null;
     }
 
@@ -583,6 +630,20 @@ public class NovaAnalyzer {
         if (cached != null) {
             Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
             if (sym != null && sym.getLocation() != null) {
+                if (sym.getKind() == SymbolKind.IMPORT) {
+                    ProjectIndex.SymbolEntry importedTarget = resolveWorkspaceTarget(uri, word, line, character, cached);
+                    if (importedTarget != null) {
+                        JsonObject result = new JsonObject();
+                        result.addProperty("uri", importedTarget.uri);
+                        result.add("range", createRange(
+                                importedTarget.line,
+                                importedTarget.character,
+                                importedTarget.endLine,
+                                importedTarget.endCharacter));
+                        return result;
+                    }
+                }
+
                 JsonObject result = new JsonObject();
                 result.addProperty("uri", uri);
                 int defLine = sym.getLocation().getLine() - 1;
@@ -595,12 +656,135 @@ public class NovaAnalyzer {
         }
 
         // 2. 文本搜索回退
+        JsonObject workspaceDefinition = findWorkspaceDefinition(uri, content, word, line, character, cached);
+        if (workspaceDefinition != null) {
+            return workspaceDefinition;
+        }
+
         return findLocalVarDefinition(uri, content, line, word);
     }
 
     /**
      * 获取文档符号
      */
+    private JsonObject findWorkspaceDefinition(String currentUri,
+                                               String content,
+                                               String word,
+                                               int line,
+                                               int character,
+                                               DocumentManager.CachedAnalysis cached) {
+        ProjectIndex.SymbolEntry resolved = workspaceReferenceIndex.resolveReference(
+                currentUri, content, cached, word, line, character);
+        if (resolved != null) {
+            JsonObject result = new JsonObject();
+            result.addProperty("uri", resolved.uri);
+            result.add("range", createRange(resolved.line, resolved.character, resolved.endLine, resolved.endCharacter));
+            return result;
+        }
+
+        List<ProjectIndex.SymbolEntry> entries = new ArrayList<ProjectIndex.SymbolEntry>(projectIndex.findByName(word));
+        if (entries.isEmpty()) {
+            return null;
+        }
+
+        entries.sort((left, right) -> {
+            int sameUri = Boolean.compare(!Objects.equals(left.uri, currentUri), !Objects.equals(right.uri, currentUri));
+            if (sameUri != 0) return sameUri;
+
+            int topLevel = Boolean.compare(left.containerName != null, right.containerName != null);
+            if (topLevel != 0) return topLevel;
+
+            int sameDirectory = Boolean.compare(!isSameDirectory(left.uri, currentUri), !isSameDirectory(right.uri, currentUri));
+            if (sameDirectory != 0) return sameDirectory;
+
+            return left.uri.compareTo(right.uri);
+        });
+
+        ProjectIndex.SymbolEntry entry = entries.get(0);
+        JsonObject result = new JsonObject();
+        result.addProperty("uri", entry.uri);
+        result.add("range", createRange(entry.line, entry.character, entry.endLine, entry.endCharacter));
+        return result;
+    }
+
+    private boolean isSameDirectory(String leftUri, String rightUri) {
+        java.nio.file.Path left = LspUriUtils.toPath(leftUri);
+        java.nio.file.Path right = LspUriUtils.toPath(rightUri);
+        if (left == null || right == null || left.getParent() == null || right.getParent() == null) {
+            return false;
+        }
+        return left.getParent().equals(right.getParent());
+    }
+
+    private ProjectIndex.SymbolEntry resolveWorkspaceTarget(String uri,
+                                                            String word,
+                                                            int line,
+                                                            int character,
+                                                            DocumentManager.CachedAnalysis cached) {
+        String currentContent = documentManager.getContent(uri);
+        ProjectIndex.SymbolEntry resolved = workspaceReferenceIndex.resolveReference(uri, currentContent, cached, word, line, character);
+        if (resolved != null) {
+            return resolved;
+        }
+
+        if (cached != null && cached.analysisResult != null) {
+            Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
+            if (sym != null) {
+                ProjectIndex.SymbolEntry exact = findProjectSymbolEntry(uri, word, sym);
+                if (exact != null) {
+                    return exact;
+                }
+                if (sym.getKind() != SymbolKind.IMPORT
+                        && sym.getKind() != SymbolKind.BUILTIN_FUNCTION
+                        && sym.getKind() != SymbolKind.BUILTIN_CONSTANT) {
+                    return null;
+                }
+            }
+        }
+
+        List<ProjectIndex.SymbolEntry> entries = new ArrayList<ProjectIndex.SymbolEntry>(projectIndex.findByName(word));
+        if (entries.isEmpty()) {
+            return null;
+        }
+        entries.sort((left, right) -> {
+            int topLevel = Boolean.compare(left.containerName != null, right.containerName != null);
+            if (topLevel != 0) return topLevel;
+
+            int sameUri = Boolean.compare(!Objects.equals(left.uri, uri), !Objects.equals(right.uri, uri));
+            if (sameUri != 0) return sameUri;
+
+            int sameDirectory = Boolean.compare(!isSameDirectory(left.uri, uri), !isSameDirectory(right.uri, uri));
+            if (sameDirectory != 0) return sameDirectory;
+
+            return left.uri.compareTo(right.uri);
+        });
+        return entries.get(0).containerName == null ? entries.get(0) : null;
+    }
+
+    private ProjectIndex.SymbolEntry findProjectSymbolEntry(String uri, String word, Symbol sym) {
+        if (sym == null || sym.getLocation() == null) {
+            return null;
+        }
+
+        int line = sym.getLocation().getLine() - 1;
+        int character = sym.getLocation().getColumn() - 1;
+        for (ProjectIndex.SymbolEntry entry : projectIndex.findByName(word)) {
+            if (Objects.equals(entry.uri, uri)
+                    && entry.kind == sym.getKind()
+                    && entry.line == line
+                    && entry.character == character) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private void mergeEdit(JsonObject changes, String targetUri, JsonObject edit) {
+        JsonArray fileEdits = changes.has(targetUri) ? changes.getAsJsonArray(targetUri) : new JsonArray();
+        fileEdits.add(edit);
+        changes.add(targetUri, fileEdits);
+    }
+
     public JsonArray documentSymbols(String uri, String content) {
         JsonArray symbols = new JsonArray();
         if (content == null) return symbols;
@@ -742,6 +926,171 @@ public class NovaAnalyzer {
         return item;
     }
 
+    private boolean recordCompletionKey(Set<String> addedKeys, JsonObject item) {
+        String label = item.has("label") ? item.get("label").getAsString() : "";
+        String detail = item.has("detail") ? item.get("detail").getAsString() : "";
+        return addedKeys.add(label + "|" + detail);
+    }
+
+    private void addWorkspaceCompletionItems(JsonArray items,
+                                             Set<String> addedKeys,
+                                             String uri,
+                                             String content,
+                                             String prefix,
+                                             DocumentManager.CachedAnalysis cached) {
+        String currentPackage = NovaAnalysisSupport.packageName(cached);
+        Set<String> importedQualifiedNames = new HashSet<String>();
+        Set<String> wildcardImports = new HashSet<String>();
+        collectImports(cached, importedQualifiedNames, wildcardImports);
+
+        for (ProjectIndex.SymbolEntry entry : projectIndex.search(prefix.isEmpty() ? "" : prefix)) {
+            if (entry.containerName != null) continue;
+            if (!prefix.isEmpty() && (entry.name == null || !entry.name.startsWith(prefix))) continue;
+            if (uri.equals(entry.uri)) continue;
+
+            JsonObject item = workspaceSymbolToCompletionItem(
+                    uri, content, currentPackage, importedQualifiedNames, wildcardImports, entry);
+            if (item != null && recordCompletionKey(addedKeys, item)) {
+                items.add(item);
+            }
+        }
+    }
+
+    private void collectImports(DocumentManager.CachedAnalysis cached,
+                                Set<String> importedQualifiedNames,
+                                Set<String> wildcardImports) {
+        if (cached == null || cached.parseResult == null || cached.parseResult.getProgram() == null) {
+            return;
+        }
+
+        Program program = cached.parseResult.getProgram();
+        if (program.getImports() == null) {
+            return;
+        }
+
+        for (ImportDecl importDecl : program.getImports()) {
+            if (importDecl == null || importDecl.isJava() || importDecl.isStatic() || importDecl.getName() == null) {
+                continue;
+            }
+
+            String qualifiedName = importDecl.getName().getFullName();
+            if (importDecl.isWildcard()) {
+                wildcardImports.add(qualifiedName);
+            } else {
+                importedQualifiedNames.add(qualifiedName);
+            }
+        }
+    }
+
+    private JsonObject workspaceSymbolToCompletionItem(String currentUri,
+                                                       String content,
+                                                       String currentPackage,
+                                                       Set<String> importedQualifiedNames,
+                                                       Set<String> wildcardImports,
+                                                       ProjectIndex.SymbolEntry entry) {
+        JsonObject item = new JsonObject();
+        Symbol workspaceSymbol = workspaceReferenceIndex.findSymbol(entry);
+
+        switch (entry.kind) {
+            case FUNCTION:
+                item.addProperty("label", workspaceSymbol != null ? buildFunCompletionLabel(workspaceSymbol) : entry.name + "()");
+                item.addProperty("filterText", entry.name);
+                item.addProperty("insertTextFormat", INSERT_TEXT_SNIPPET);
+                item.addProperty("insertText", entry.name + "($1)$0");
+                item.addProperty("kind", COMPLETION_FUNCTION);
+                break;
+            case CLASS:
+            case OBJECT:
+                item.addProperty("label", entry.name);
+                item.addProperty("kind", COMPLETION_CLASS);
+                break;
+            case INTERFACE:
+                item.addProperty("label", entry.name);
+                item.addProperty("kind", COMPLETION_INTERFACE);
+                break;
+            case ENUM:
+                item.addProperty("label", entry.name);
+                item.addProperty("kind", COMPLETION_ENUM);
+                break;
+            case TYPE_ALIAS:
+                item.addProperty("label", entry.name);
+                item.addProperty("kind", COMPLETION_CLASS);
+                break;
+            default:
+                return null;
+        }
+
+        String qualifiedName = entry.qualifiedName != null ? entry.qualifiedName : entry.name;
+        if (workspaceSymbol != null && workspaceSymbol.getKind() == SymbolKind.FUNCTION) {
+            item.addProperty("detail", buildFunSymbolSignature(workspaceSymbol) + " • " + qualifiedName);
+        } else if (workspaceSymbol != null) {
+            item.addProperty("detail", buildWorkspaceSymbolHover(entry, workspaceSymbol).replace("\n", " "));
+        } else {
+            item.addProperty("detail", "workspace • " + qualifiedName);
+        }
+        item.addProperty("sortText", "2_" + qualifiedName);
+
+        if (needsImport(currentUri, currentPackage, importedQualifiedNames, wildcardImports, entry)) {
+            JsonArray edits = buildAutoImportEdits(content, currentPackage, cachedProgram(cachedFromUri(currentUri)), entry);
+            if (edits != null && edits.size() > 0) {
+                item.add("additionalTextEdits", edits);
+            }
+        }
+
+        return item;
+    }
+
+    private DocumentManager.CachedAnalysis cachedFromUri(String uri) {
+        return documentManager.getAnalysis(uri);
+    }
+
+    private Program cachedProgram(DocumentManager.CachedAnalysis cached) {
+        return cached != null && cached.parseResult != null ? cached.parseResult.getProgram() : null;
+    }
+
+    private boolean needsImport(String currentUri,
+                                String currentPackage,
+                                Set<String> importedQualifiedNames,
+                                Set<String> wildcardImports,
+                                ProjectIndex.SymbolEntry entry) {
+        if (entry == null || entry.qualifiedName == null) return false;
+        if (currentUri.equals(entry.uri)) return false;
+        if (entry.packageName == null || entry.packageName.isEmpty()) return false;
+        if (Objects.equals(currentPackage, entry.packageName)) return false;
+        if (importedQualifiedNames.contains(entry.qualifiedName)) return false;
+        if (wildcardImports.contains(entry.packageName)) return false;
+        return true;
+    }
+
+    private JsonArray buildAutoImportEdits(String content,
+                                           String currentPackage,
+                                           Program program,
+                                           ProjectIndex.SymbolEntry entry) {
+        if (entry == null || entry.qualifiedName == null || Objects.equals(currentPackage, entry.packageName)) {
+            return null;
+        }
+
+        int insertLine = 0;
+        if (program != null) {
+            if (program.getImports() != null && !program.getImports().isEmpty()) {
+                ImportDecl lastImport = program.getImports().get(program.getImports().size() - 1);
+                if (lastImport != null && lastImport.getLocation() != null) {
+                    insertLine = lastImport.getLocation().getLine();
+                }
+            } else if (program.getPackageDecl() != null && program.getPackageDecl().getLocation() != null) {
+                insertLine = program.getPackageDecl().getLocation().getLine();
+            }
+        }
+
+        JsonObject edit = new JsonObject();
+        edit.add("range", createRange(insertLine, 0, insertLine, 0));
+        edit.addProperty("newText", "import " + entry.qualifiedName + "\n");
+
+        JsonArray edits = new JsonArray();
+        edits.add(edit);
+        return edits;
+    }
+
     /** 构建符号 hover 信息 */
     private String buildSymbolHover(Symbol sym) {
         StringBuilder sb = new StringBuilder();
@@ -798,6 +1147,28 @@ public class NovaAnalyzer {
                 sb.append("`").append(sym.getName()).append("`");
         }
         return sb.toString();
+    }
+
+    private String buildWorkspaceSymbolHover(ProjectIndex.SymbolEntry entry, Symbol sym) {
+        String base = buildSymbolHover(sym);
+        String qualifiedName = entry != null ? entry.qualifiedName : null;
+        if (qualifiedName == null || qualifiedName.isEmpty()) {
+            return base;
+        }
+
+        return base + "\n\n来源: `" + qualifiedName + "`";
+    }
+
+    private String buildFunCompletionLabel(Symbol sym) {
+        StringBuilder label = new StringBuilder(sym.getName()).append("(");
+        if (sym.getParameters() != null) {
+            for (int i = 0; i < sym.getParameters().size(); i++) {
+                if (i > 0) label.append(", ");
+                label.append(sym.getParameters().get(i).getName());
+            }
+        }
+        label.append(")");
+        return label.toString();
     }
 
     /** 构建函数符号签名 */
@@ -2795,6 +3166,26 @@ public class NovaAnalyzer {
             }
         }
 
+        if (signatureLabel == null) {
+            ProjectIndex.SymbolEntry target = resolveWorkspaceTarget(uri, funcName, line, character, cached);
+            Symbol workspaceSymbol = workspaceReferenceIndex.findSymbol(target);
+            if (workspaceSymbol != null && workspaceSymbol.getParameters() != null) {
+                StringBuilder sig = new StringBuilder(workspaceSymbol.getName() + "(");
+                for (int i = 0; i < workspaceSymbol.getParameters().size(); i++) {
+                    Symbol p = workspaceSymbol.getParameters().get(i);
+                    String label = p.getName() + (p.getTypeName() != null ? ": " + p.getTypeName() : "");
+                    paramLabels.add(label);
+                    if (i > 0) sig.append(", ");
+                    sig.append(label);
+                }
+                sig.append(")");
+                if (workspaceSymbol.getTypeName() != null) {
+                    sig.append(": ").append(workspaceSymbol.getTypeName());
+                }
+                signatureLabel = sig.toString();
+            }
+        }
+
         // 内置函数 fallback
         if (signatureLabel == null) {
             for (NovaTypeRegistry.FunctionInfo f : NovaTypeRegistry.getBuiltinFunctions()) {
@@ -2878,14 +3269,22 @@ public class NovaAnalyzer {
             result.add(ref);
         }
 
-        // 跨文件引用（从 ProjectIndex 查询）
-        List<ProjectIndex.SymbolEntry> crossFileEntries = projectIndex.findByName(word);
-        for (ProjectIndex.SymbolEntry entry : crossFileEntries) {
-            if (uri.equals(entry.uri)) continue; // 当前文件已处理
-            JsonObject ref = new JsonObject();
-            ref.addProperty("uri", entry.uri);
-            ref.add("range", createRange(entry.line, entry.character, entry.endLine, entry.endCharacter));
-            result.add(ref);
+        ProjectIndex.SymbolEntry target = resolveWorkspaceTarget(uri, word, line, character, cached);
+        if (target != null) {
+            for (WorkspaceReferenceIndex.ReferenceEntry refEntry : workspaceReferenceIndex.findReferences(target, includeDeclaration)) {
+                if (uri.equals(refEntry.uri)) {
+                    continue;
+                }
+
+                JsonObject ref = new JsonObject();
+                ref.addProperty("uri", refEntry.uri);
+                ref.add("range", createRange(
+                        refEntry.line,
+                        refEntry.character,
+                        refEntry.endLine,
+                        refEntry.endCharacter));
+                result.add(ref);
+            }
         }
 
         return result;
@@ -3182,16 +3581,22 @@ public class NovaAnalyzer {
         JsonObject changes = new JsonObject();
         changes.add(uri, edits);
 
-        // 跨文件重命名
-        List<ProjectIndex.SymbolEntry> crossFileEntries = projectIndex.findByName(word);
-        for (ProjectIndex.SymbolEntry entry : crossFileEntries) {
-            if (uri.equals(entry.uri)) continue;
-            JsonArray fileEdits = new JsonArray();
-            JsonObject edit = new JsonObject();
-            edit.add("range", createRange(entry.line, entry.character, entry.endLine, entry.endCharacter));
-            edit.addProperty("newText", newName);
-            fileEdits.add(edit);
-            changes.add(entry.uri, fileEdits);
+        ProjectIndex.SymbolEntry target = resolveWorkspaceTarget(uri, word, line, character, cached);
+        if (target != null) {
+            for (WorkspaceReferenceIndex.ReferenceEntry refEntry : workspaceReferenceIndex.findReferences(target, true)) {
+                if (uri.equals(refEntry.uri) || !refEntry.renameAllowed) {
+                    continue;
+                }
+
+                JsonObject edit = new JsonObject();
+                edit.add("range", createRange(
+                        refEntry.line,
+                        refEntry.character,
+                        refEntry.endLine,
+                        refEntry.endCharacter));
+                edit.addProperty("newText", newName);
+                mergeEdit(changes, refEntry.uri, edit);
+            }
         }
 
         workspaceEdit.add("changes", changes);
@@ -3203,10 +3608,17 @@ public class NovaAnalyzer {
      */
     public JsonArray codeActions(String uri, String content, JsonObject range, JsonObject context) {
         JsonArray actions = new JsonArray();
-        if (content == null || context == null) return actions;
+        if (content == null) return actions;
 
-        JsonArray diagnostics = context.has("diagnostics") ? context.getAsJsonArray("diagnostics") : null;
-        if (diagnostics == null) return actions;
+        DocumentManager.CachedAnalysis cached = ensureParsed(uri, content);
+        JsonObject organizeImports = createOrganizeImportsAction(uri, content, cached);
+        if (organizeImports != null) {
+            actions.add(organizeImports);
+        }
+
+        JsonArray diagnostics = context != null && context.has("diagnostics")
+                ? context.getAsJsonArray("diagnostics") : null;
+        if (context == null || diagnostics == null) return actions;
 
         for (int i = 0; i < diagnostics.size(); i++) {
             JsonObject diag = diagnostics.get(i).getAsJsonObject();
@@ -3226,6 +3638,95 @@ public class NovaAnalyzer {
         }
 
         return actions;
+    }
+
+    private JsonObject createOrganizeImportsAction(String uri,
+                                                   String content,
+                                                   DocumentManager.CachedAnalysis cached) {
+        if (cached == null || cached.parseResult == null || cached.parseResult.getProgram() == null) {
+            return null;
+        }
+
+        Program program = cached.parseResult.getProgram();
+        List<ImportDecl> imports = program.getImports();
+        if (imports == null || imports.isEmpty()) {
+            return null;
+        }
+
+        int startLine = Integer.MAX_VALUE;
+        int endLine = -1;
+        for (ImportDecl importDecl : imports) {
+            if (importDecl != null && importDecl.getLocation() != null) {
+                startLine = Math.min(startLine, importDecl.getLocation().getLine() - 1);
+                endLine = Math.max(endLine, importDecl.getLocation().getLine() - 1);
+            }
+        }
+        if (startLine == Integer.MAX_VALUE || endLine < startLine) {
+            return null;
+        }
+
+        String[] lines = content.split("\n", -1);
+        StringBuilder currentBlock = new StringBuilder();
+        for (int line = startLine; line <= endLine && line < lines.length; line++) {
+            currentBlock.append(lines[line]);
+            if (line < endLine) currentBlock.append("\n");
+        }
+
+        LinkedHashSet<String> normalizedImports = new LinkedHashSet<String>();
+        for (ImportDecl importDecl : imports) {
+            String line = formatImport(importDecl);
+            if (line != null && !line.isEmpty()) {
+                normalizedImports.add(line);
+            }
+        }
+
+        List<String> sortedImports = new ArrayList<String>(normalizedImports);
+        Collections.sort(sortedImports);
+        String newBlock = String.join("\n", sortedImports);
+        if (currentBlock.toString().equals(newBlock)) {
+            return null;
+        }
+
+        JsonObject textEdit = new JsonObject();
+        textEdit.add("range", createRange(startLine, 0, endLine, lines[endLine].length()));
+        textEdit.addProperty("newText", newBlock);
+
+        JsonArray edits = new JsonArray();
+        edits.add(textEdit);
+
+        JsonObject changes = new JsonObject();
+        changes.add(uri, edits);
+
+        JsonObject edit = new JsonObject();
+        edit.add("changes", changes);
+
+        JsonObject action = new JsonObject();
+        action.addProperty("title", "Organize Imports");
+        action.addProperty("kind", "source.organizeImports");
+        action.add("edit", edit);
+        return action;
+    }
+
+    private String formatImport(ImportDecl importDecl) {
+        if (importDecl == null || importDecl.getName() == null) {
+            return null;
+        }
+
+        StringBuilder builder = new StringBuilder("import ");
+        if (importDecl.isJava()) {
+            builder.append("java ");
+        }
+        if (importDecl.isStatic()) {
+            builder.append("static ");
+        }
+        builder.append(importDecl.getName().getFullName());
+        if (importDecl.isWildcard()) {
+            builder.append(".*");
+        }
+        if (importDecl.hasAlias()) {
+            builder.append(" as ").append(importDecl.getAlias());
+        }
+        return builder.toString();
     }
 
     private JsonObject createQuickFix(String title, String uri, String content,
@@ -3406,6 +3907,12 @@ public class NovaAnalyzer {
      * 语义令牌（完整文档）
      */
     public JsonObject semanticTokensFull(String uri, String content) {
+        if (!semanticTokensEnabled) {
+            JsonObject result = new JsonObject();
+            result.add("data", new JsonArray());
+            return result;
+        }
+
         if (content == null) return null;
 
         DocumentManager.CachedAnalysis cached = ensureParsed(uri, content);
@@ -3427,6 +3934,7 @@ public class NovaAnalyzer {
     public JsonArray inlayHints(String uri, String content, int startLine, int endLine) {
         JsonArray result = new JsonArray();
         if (content == null) return result;
+        if (!typeInlayHintsEnabled && !parameterInlayHintsEnabled) return result;
 
         DocumentManager.CachedAnalysis cached = ensureParsed(uri, content);
         if (cached == null) return result;
@@ -3446,7 +3954,7 @@ public class NovaAnalyzer {
                 collectInlayHints(d, cached, content, startLine, endLine, result);
         } else if (node instanceof PropertyDecl) {
             PropertyDecl prop = (PropertyDecl) node;
-            if (prop.getType() == null && prop.getInitializer() != null && prop.getLocation() != null) {
+            if (typeInlayHintsEnabled && prop.getType() == null && prop.getInitializer() != null && prop.getLocation() != null) {
                 SourceLocation propNameLoc = declNameLoc(prop);
                 int line = propNameLoc.getLine() - 1;
                 if (line >= startLine && line <= endLine) {
@@ -3495,7 +4003,7 @@ public class NovaAnalyzer {
         } else if (node instanceof FunDecl) {
             FunDecl fun = (FunDecl) node;
             // 无返回类型注解的函数
-            if (fun.getReturnType() == null && fun.getBody() instanceof Expression && fun.getLocation() != null) {
+            if (typeInlayHintsEnabled && fun.getReturnType() == null && fun.getBody() instanceof Expression && fun.getLocation() != null) {
                 int line = fun.getLocation().getLine() - 1;
                 if (line >= startLine && line <= endLine) {
                     String returnType = null;
@@ -3548,7 +4056,7 @@ public class NovaAnalyzer {
             CallExpr call = (CallExpr) node;
             if (call.getLocation() != null) {
                 int line = call.getLocation().getLine() - 1;
-                if (line >= startLine && line <= endLine && call.getArgs().size() > 0) {
+                if (parameterInlayHintsEnabled && line >= startLine && line <= endLine && call.getArgs().size() > 0) {
                     addParamNameHints(call, cached, result);
                 }
             }
@@ -3684,7 +4192,11 @@ public class NovaAnalyzer {
         if (cached != null && cached.analysisResult != null) {
             List<Symbol> topLevel = new ArrayList<>(
                     cached.analysisResult.getSymbolTable().getGlobalScope().getSymbols().values());
-            projectIndex.updateFile(uri, topLevel);
+            projectIndex.updateFile(uri, NovaAnalysisSupport.packageName(cached), topLevel);
+            String content = documentManager.getContent(uri);
+            if (content != null) {
+                workspaceReferenceIndex.updateFile(uri, content, cached);
+            }
         }
     }
 

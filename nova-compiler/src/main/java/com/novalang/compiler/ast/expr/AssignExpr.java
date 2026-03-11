@@ -47,7 +47,13 @@ public class AssignExpr extends Expression {
         MOD_ASSIGN("%="),
         NULL_COALESCE("??="),
         OR_ASSIGN("||="),
-        AND_ASSIGN("&&=");
+        AND_ASSIGN("&&="),
+        BAND_ASSIGN("&="),
+        BOR_ASSIGN("|="),
+        BXOR_ASSIGN("^="),
+        SHL_ASSIGN("<<="),
+        SHR_ASSIGN(">>="),
+        USHR_ASSIGN(">>>=");
 
         private final String source;
 

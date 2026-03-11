@@ -16,6 +16,7 @@ final class VirtualMethodDispatcher {
     // ===== JVM 类名 =====
     private static final String JAVA_LINKED_HASH_SET = "java/util/LinkedHashSet";
     private static final String MARKER_SUPER = "$super$";
+    private static final String MARKER_LAMBDA = "$Lambda$";
 
     private final Interpreter interp;
     private final MemberResolver resolver;
@@ -35,6 +36,10 @@ final class VirtualMethodDispatcher {
         if (receiver instanceof MirCallable) {
             if (dispatcher.scopeReceiver != null) {
                 receiver = dispatcher.scopeReceiver;
+                // ScalarizedNovaObject → materialize 以便走 NovaObject 快速路径
+                if (receiver instanceof ScalarizedNovaObject) {
+                    receiver = ((ScalarizedNovaObject) receiver).materialize();
+                }
             } else if (!"invoke".equals(methodName)) {
                 NovaValue envVal = interp.getEnvironment().tryGet(methodName);
                 if (envVal instanceof NovaCallable) return ((NovaCallable) envVal).call(interp, args);
@@ -47,6 +52,14 @@ final class VirtualMethodDispatcher {
             if ("getClass".equals(methodName)) return obj.getNovaClass();
             if (owner != null && owner.startsWith(MARKER_SUPER)) {
                 return invokeSuper(obj, methodName, args);
+            }
+            // Lambda class: method not on lambda → redirect to scopeReceiver
+            if (obj.getNovaClass().getName().contains(MARKER_LAMBDA) && obj.getMethod(methodName) == null) {
+                if (dispatcher.scopeReceiver != null) {
+                    return invokeVirtualMethod(dispatcher.scopeReceiver, methodName, owner, args);
+                }
+                NovaValue envVal = interp.getEnvironment().tryGet(methodName);
+                if (envVal instanceof NovaCallable) return ((NovaCallable) envVal).call(interp, args);
             }
             NovaValue r = tryInvokeOnObject(obj, methodName, owner, args);
             if (r != null) return r;
@@ -106,10 +119,13 @@ final class VirtualMethodDispatcher {
     /** NovaExternalObject: 安全策略检查 + PrintStream/Iterator/Java 反射 */
     private NovaValue invokeOnExternal(NovaExternalObject receiver, String methodName, List<NovaValue> args) {
         Object javaObj = receiver.toJavaValue();
-        if (javaObj != null) {
-            String className = javaObj.getClass().getName();
-            if (!interp.getSecurityPolicy().isMethodAllowed(className, methodName)) {
-                throw NovaSecurityPolicy.denied("Cannot call method '" + methodName + "' on " + className);
+        // Iterator/PrintStream 是语言基础设施，在安全策略检查之前放行
+        if (javaObj instanceof java.util.Iterator) {
+            java.util.Iterator<?> it = (java.util.Iterator<?>) javaObj;
+            if ("hasNext".equals(methodName)) return NovaBoolean.of(it.hasNext());
+            if ("next".equals(methodName)) {
+                Object val = it.next();
+                return val instanceof NovaValue ? (NovaValue) val : AbstractNovaValue.fromJava(val);
             }
         }
         if (javaObj instanceof java.io.PrintStream) {
@@ -130,12 +146,11 @@ final class VirtualMethodDispatcher {
                 return NovaNull.UNIT;
             }
         }
-        if (javaObj instanceof java.util.Iterator) {
-            java.util.Iterator<?> it = (java.util.Iterator<?>) javaObj;
-            if ("hasNext".equals(methodName)) return NovaBoolean.of(it.hasNext());
-            if ("next".equals(methodName)) {
-                Object val = it.next();
-                return val instanceof NovaValue ? (NovaValue) val : AbstractNovaValue.fromJava(val);
+        // 安全策略检查（对非基础设施的 Java 方法调用）
+        if (javaObj != null) {
+            String className = javaObj.getClass().getName();
+            if (!interp.getSecurityPolicy().isMethodAllowed(className, methodName)) {
+                throw NovaSecurityPolicy.denied("Cannot call method '" + methodName + "' on " + className);
             }
         }
         NovaValue extMember = resolver.resolveMemberOnExternal(receiver, methodName, null);

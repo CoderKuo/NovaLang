@@ -1,0 +1,38 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.gradleup.shadow' version '8.3.9'
+}
+
+description = 'NovaLang Online Playground'
+
+application {
+    mainClass = 'nova.playground.PlaygroundServer'
+}
+
+dependencies {
+    implementation project(':nova-runtime')
+
+    // Javalin 4.6.7 — 最后支持 Java 8 的稳定版
+    implementation 'io.javalin:javalin:4.6.7'
+
+    // JSON 序列化（Javalin 4.x 默认 JSON mapper）
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
+
+    // 日志（Javalin 要求 SLF4J 实现）
+    implementation 'org.slf4j:slf4j-simple:1.7.36'
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    mergeServiceFiles()
+    relocate 'com.github.benmanes.caffeine', 'nova.deps.caffeine'
+    relocate 'org.checkerframework', 'nova.deps.checkerframework'
+}
+
+jar.enabled = false
+tasks.build.dependsOn shadowJar
+
+tasks.distTar.dependsOn shadowJar
+tasks.distZip.dependsOn shadowJar
+tasks.startScripts.dependsOn shadowJar

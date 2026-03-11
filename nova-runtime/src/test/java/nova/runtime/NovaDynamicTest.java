@@ -31,6 +31,26 @@ class NovaDynamicTest {
         public int add(int a, int b) {
             return a + b;
         }
+
+        public String ping() {
+            return "pong";
+        }
+
+        public String concat3(String a, String b, String c) {
+            return a + b + c;
+        }
+
+        public int add4(int a, int b, int c, int d) {
+            return a + b + c + d;
+        }
+
+        public int add5(int a, int b, int c, int d, int e) {
+            return a + b + c + d + e;
+        }
+
+        public int add6(int a, int b, int c, int d, int e, int f) {
+            return a + b + c + d + e + f;
+        }
     }
 
     public static class GetterOnlyBean {
@@ -72,6 +92,14 @@ class NovaDynamicTest {
         public String accept(Object o) { return "Object:" + o; }
         public String compute(int a) { return "int:" + a; }
         public String compute(long a) { return "long:" + a; }
+    }
+
+    public static class StaticBean {
+        public static final String NAME = "nova";
+
+        public static int twice(int value) {
+            return value * 2;
+        }
     }
 
     @Test
@@ -140,6 +168,99 @@ class NovaDynamicTest {
         TestBean bean = new TestBean();
         Object result = NovaDynamic.invokeMethod(bean, "add", 3, 4);
         assertEquals(7, result);
+    }
+
+    @Test
+    @DisplayName("invoke0 ?????????")
+    void testInvoke0() {
+        TestBean bean = new TestBean();
+        assertEquals("pong", NovaDynamic.invoke0(bean, "ping"));
+    }
+
+    @Test
+    @DisplayName("invoke1 ?????????")
+    void testInvoke1() {
+        TestBean bean = new TestBean();
+        assertEquals("Hello, World!", NovaDynamic.invoke1(bean, "greet", "World"));
+    }
+
+    @Test
+    @DisplayName("invoke2 ?????????")
+    void testInvoke2() {
+        TestBean bean = new TestBean();
+        assertEquals(7, NovaDynamic.invoke2(bean, "add", 3, 4));
+    }
+
+    @Test
+    @DisplayName("invoke3 ?????????")
+    void testInvoke3() {
+        TestBean bean = new TestBean();
+        assertEquals("abc", NovaDynamic.invoke3(bean, "concat3", "a", "b", "c"));
+    }
+
+    @Test
+    @DisplayName("invokeMethod ????????")
+    void testInvokeMethod4() {
+        TestBean bean = new TestBean();
+        assertEquals(10, NovaDynamic.invokeMethod(bean, "add4", 1, 2, 3, 4));
+    }
+
+    @Test
+    @DisplayName("invokeMethod ????????")
+    void testInvokeMethod5() {
+        TestBean bean = new TestBean();
+        assertEquals(15, NovaDynamic.invokeMethod(bean, "add5", 1, 2, 3, 4, 5));
+    }
+
+    @Test
+    @DisplayName("invokeMethod ????????")
+    void testInvokeMethod6() {
+        TestBean bean = new TestBean();
+        assertEquals(21, NovaDynamic.invokeMethod(bean, "add6", 1, 2, 3, 4, 5, 6));
+    }
+
+    @Test
+    @DisplayName("invoke5 ?????????")
+    void testInvoke5() {
+        TestBean bean = new TestBean();
+        assertEquals(15, NovaDynamic.invoke5(bean, "add5", 1, 2, 3, 4, 5));
+    }
+
+    @Test
+    @DisplayName("invoke6 ?????????")
+    void testInvoke6() {
+        TestBean bean = new TestBean();
+        assertEquals(21, NovaDynamic.invoke6(bean, "add6", 1, 2, 3, 4, 5, 6));
+    }
+
+    @Test
+    @DisplayName("???? 0 ???")
+    void testInvokeStringExtensionZeroArg() {
+        assertEquals(3, NovaDynamic.invoke0("abc", "count"));
+    }
+
+    @Test
+    @DisplayName("???? 1 ???")
+    void testInvokeStringExtensionOneArg() {
+        assertEquals("abc", NovaDynamic.invoke1("abcdef", "take", 3));
+    }
+
+    @Test
+    @DisplayName("???? List 0 ???")
+    void testInvokeListExtensionZeroArg() {
+        assertEquals(6, NovaDynamic.invoke0(java.util.Arrays.asList(1, 2, 3), "sum"));
+    }
+
+    @Test
+    @DisplayName("getMember ??????")
+    void testGetStaticField() {
+        assertEquals("nova", NovaDynamic.getMember(StaticBean.class, "NAME"));
+    }
+
+    @Test
+    @DisplayName("invokeMethod ??????")
+    void testInvokeStaticMethod() {
+        assertEquals(8, NovaDynamic.invokeMethod(StaticBean.class, "twice", 4));
     }
 
     @Test

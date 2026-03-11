@@ -67,6 +67,14 @@ public class BinaryExpr extends Expression {
         AND("&&"),
         OR("||"),
 
+        // 位运算
+        BAND("&"),
+        BOR("|"),
+        BXOR("^"),
+        SHL("<<"),
+        SHR(">>"),
+        USHR(">>>"),
+
         // 范围
         RANGE_INCLUSIVE(".."),
         RANGE_EXCLUSIVE("..<"),

@@ -279,6 +279,26 @@ public interface NovaValue {
         return asBoolean();
     }
 
+    /**
+     * 将 NovaValue 类型安全地转换为指定的 Java 类型。
+     *
+     * <p>支持基本类型（int/long/double/float/boolean/String）、容器类型（List/Map）
+     * 及 NovaValue 自身。转换失败时抛出 {@link NovaException}。</p>
+     *
+     * <pre>
+     * int x = value.toJava(int.class);
+     * String s = value.toJava(String.class);
+     * List&lt;?&gt; list = value.toJava(List.class);
+     * </pre>
+     *
+     * @param type 目标 Java 类型
+     * @return 转换后的值
+     * @throws NovaException 如果无法转换
+     */
+    default <T> T toJava(Class<T> type) {
+        return NovaValueConversions.convertArg(this, type);
+    }
+
     // ============ 相等性比较方法 ============
 
     /**

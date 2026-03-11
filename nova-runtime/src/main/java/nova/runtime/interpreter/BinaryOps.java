@@ -199,4 +199,76 @@ public final class BinaryOps {
         }
         return null;
     }
+
+    // ============ 位运算操作 ============
+
+    public static NovaValue bitwiseAnd(NovaValue left, NovaValue right) {
+        if (left instanceof NovaInt && right instanceof NovaInt) {
+            return NovaInt.of(((NovaInt) left).getValue() & ((NovaInt) right).getValue());
+        }
+        if (left instanceof NovaLong || right instanceof NovaLong) {
+            return NovaLong.of(left.asLong() & right.asLong());
+        }
+        throw new NovaRuntimeException("Cannot bitwise AND " + left.getTypeName() + " and " + right.getTypeName());
+    }
+
+    public static NovaValue bitwiseOr(NovaValue left, NovaValue right) {
+        if (left instanceof NovaInt && right instanceof NovaInt) {
+            return NovaInt.of(((NovaInt) left).getValue() | ((NovaInt) right).getValue());
+        }
+        if (left instanceof NovaLong || right instanceof NovaLong) {
+            return NovaLong.of(left.asLong() | right.asLong());
+        }
+        throw new NovaRuntimeException("Cannot bitwise OR " + left.getTypeName() + " and " + right.getTypeName());
+    }
+
+    public static NovaValue bitwiseXor(NovaValue left, NovaValue right) {
+        if (left instanceof NovaInt && right instanceof NovaInt) {
+            return NovaInt.of(((NovaInt) left).getValue() ^ ((NovaInt) right).getValue());
+        }
+        if (left instanceof NovaLong || right instanceof NovaLong) {
+            return NovaLong.of(left.asLong() ^ right.asLong());
+        }
+        throw new NovaRuntimeException("Cannot bitwise XOR " + left.getTypeName() + " and " + right.getTypeName());
+    }
+
+    public static NovaValue shiftLeft(NovaValue left, NovaValue right) {
+        if (left instanceof NovaInt && right instanceof NovaInt) {
+            return NovaInt.of(((NovaInt) left).getValue() << ((NovaInt) right).getValue());
+        }
+        if (left instanceof NovaLong) {
+            return NovaLong.of(left.asLong() << right.asInt());
+        }
+        throw new NovaRuntimeException("Cannot shift left " + left.getTypeName());
+    }
+
+    public static NovaValue shiftRight(NovaValue left, NovaValue right) {
+        if (left instanceof NovaInt && right instanceof NovaInt) {
+            return NovaInt.of(((NovaInt) left).getValue() >> ((NovaInt) right).getValue());
+        }
+        if (left instanceof NovaLong) {
+            return NovaLong.of(left.asLong() >> right.asInt());
+        }
+        throw new NovaRuntimeException("Cannot shift right " + left.getTypeName());
+    }
+
+    public static NovaValue unsignedShiftRight(NovaValue left, NovaValue right) {
+        if (left instanceof NovaInt && right instanceof NovaInt) {
+            return NovaInt.of(((NovaInt) left).getValue() >>> ((NovaInt) right).getValue());
+        }
+        if (left instanceof NovaLong) {
+            return NovaLong.of(left.asLong() >>> right.asInt());
+        }
+        throw new NovaRuntimeException("Cannot unsigned shift right " + left.getTypeName());
+    }
+
+    public static NovaValue bitwiseNot(NovaValue operand) {
+        if (operand instanceof NovaInt) {
+            return NovaInt.of(~((NovaInt) operand).getValue());
+        }
+        if (operand instanceof NovaLong) {
+            return NovaLong.of(~((NovaLong) operand).getValue());
+        }
+        throw new NovaRuntimeException("Cannot bitwise NOT " + operand.getTypeName());
+    }
 }

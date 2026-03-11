@@ -193,12 +193,7 @@ final class FunctionExecutor {
 
     // ============ Instantiation ============
 
-    /**
-     * Instantiate a class.
-     */
-    NovaValue instantiate(NovaClass novaClass, List<NovaValue> args,
-                           Map<String, NovaValue> namedArgs) {
-        // First instantiation validation is cached; subsequent calls skip all checks
+    private void validateInstantiation(NovaClass novaClass) {
         if (!novaClass.isInstantiationValidated()) {
             if (novaClass.isAnnotation()) {
                 throw new NovaRuntimeException("Cannot instantiate annotation class: " + novaClass.getName());
@@ -213,6 +208,46 @@ final class FunctionExecutor {
             }
             novaClass.markInstantiationValidated();
         }
+    }
+
+    NovaValue instantiateMirFast(NovaClass novaClass, MirCallable ctor, MirFrame frame, int[] ops) {
+        validateInstantiation(novaClass);
+        if (novaClass.hasJavaSuperTypes()) {
+            NovaValue[] ctorArgs = new NovaValue[ops.length];
+            for (int i = 0; i < ops.length; i++) ctorArgs[i] = frame.get(ops[i]);
+            return instantiate(novaClass, Arrays.asList(ctorArgs), null);
+        }
+        NovaObject instance = new NovaObject(novaClass);
+        initializeInstanceFields(instance, novaClass);
+        if (ctor != null) {
+            switch (ops.length) {
+                case 0:
+                    ctor.callBoundDirect0(interp, instance);
+                    break;
+                case 1:
+                    ctor.callBoundDirect1(interp, instance, frame.get(ops[0]));
+                    break;
+                case 2:
+                    ctor.callBoundDirect2(interp, instance, frame.get(ops[0]), frame.get(ops[1]));
+                    break;
+                default:
+                    NovaValue[] allArgs = new NovaValue[ops.length + 1];
+                    allArgs[0] = instance;
+                    for (int i = 0; i < ops.length; i++) allArgs[i + 1] = frame.get(ops[i]);
+                    ctor.callDirect(interp, allArgs);
+                    break;
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * Instantiate a class.
+     */
+    NovaValue instantiate(NovaClass novaClass, List<NovaValue> args,
+                           Map<String, NovaValue> namedArgs) {
+        // First instantiation validation is cached; subsequent calls skip all checks
+        validateInstantiation(novaClass);
 
         NovaObject instance = new NovaObject(novaClass);
         initializeInstanceFields(instance, novaClass);
@@ -426,6 +461,14 @@ final class FunctionExecutor {
 
     NovaValue executeHirFunction(HirFunctionValue function, List<NovaValue> args,
                                   Map<String, NovaValue> namedArgs) {
+        MemoKey memoKey = null;
+        if (function.isMemoized() && (namedArgs == null || namedArgs.isEmpty())) {
+            memoKey = MemoKey.ofList(args);
+            NovaValue cached = function.getMemoCache().get(memoKey);
+            if (cached != null) {
+                return cached;
+            }
+        }
         int maxDepth = interp.getSecurityPolicy().getMaxRecursionDepth();
         if (maxDepth > 0 && interp.callDepth >= maxDepth) {
             throw NovaSecurityPolicy.denied("Maximum recursion depth exceeded (" + maxDepth + ")");
@@ -433,7 +476,11 @@ final class FunctionExecutor {
         interp.callStack.push(NovaCallFrame.fromHirFunction(function, args));
         interp.callDepth++;
         try {
-            return executeHirFunctionBody(function, args, namedArgs);
+            NovaValue result = executeHirFunctionBody(function, args, namedArgs);
+            if (memoKey != null && result != null) {
+                function.getMemoCache().put(memoKey, result);
+            }
+            return result;
         } finally {
             interp.callDepth--;
             interp.callStack.pop();

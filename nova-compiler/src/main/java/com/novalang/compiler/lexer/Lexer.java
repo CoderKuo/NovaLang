@@ -276,18 +276,32 @@ public class Lexer {
                 break;
 
             case '<':
-                addToken(match('=') ? TokenType.LE : TokenType.LT);
+                if (match('<')) {
+                    addToken(match('=') ? TokenType.SHL_ASSIGN : TokenType.SHL);
+                } else {
+                    addToken(match('=') ? TokenType.LE : TokenType.LT);
+                }
                 break;
 
             case '>':
-                addToken(match('=') ? TokenType.GE : TokenType.GT);
+                if (match('>')) {
+                    if (match('>')) {
+                        addToken(match('=') ? TokenType.USHR_ASSIGN : TokenType.USHR);
+                    } else {
+                        addToken(match('=') ? TokenType.SHR_ASSIGN : TokenType.SHR);
+                    }
+                } else {
+                    addToken(match('=') ? TokenType.GE : TokenType.GT);
+                }
                 break;
 
             case '&':
                 if (match('&')) {
                     addToken(match('=') ? TokenType.AND_ASSIGN : TokenType.AND);
+                } else if (match('=')) {
+                    addToken(TokenType.BAND_ASSIGN);
                 } else {
-                    error("Unexpected character '&'. Did you mean '&&'?");
+                    addToken(TokenType.BAND);
                 }
                 break;
 
@@ -296,9 +310,19 @@ public class Lexer {
                     addToken(match('=') ? TokenType.OR_ASSIGN : TokenType.OR);
                 } else if (match('>')) {
                     addToken(TokenType.PIPELINE);
+                } else if (match('=')) {
+                    addToken(TokenType.BOR_ASSIGN);
                 } else {
-                    error("Unexpected character '|'. Did you mean '||' or '|>'?");
+                    addToken(TokenType.BOR);
                 }
+                break;
+
+            case '^':
+                addToken(match('=') ? TokenType.BXOR_ASSIGN : TokenType.BXOR);
+                break;
+
+            case '~':
+                addToken(TokenType.BNOT);
                 break;
 
             case '?':

@@ -336,6 +336,8 @@ public final class Builtins {
             NovaValue arg = args.get(0);
             if (arg instanceof NovaClass) {
                 return NovaClassInfo.fromNovaClass((NovaClass) arg);
+            } else if (arg instanceof ScalarizedNovaObject) {
+                return NovaClassInfo.fromNovaClass(((ScalarizedNovaObject) arg).getNovaClass());
             } else if (arg instanceof NovaObject) {
                 return NovaClassInfo.fromNovaClass(((NovaObject) arg).getNovaClass());
             }

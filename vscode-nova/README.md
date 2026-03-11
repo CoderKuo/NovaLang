@@ -243,3 +243,46 @@ vscode-nova/
 ```
 
 然后在输出面板查看完整的 JSON-RPC 消息。
+
+---
+
+## YAML 内嵌 Nova 脚本
+
+扩展现在支持在 YAML 文本块中嵌入 Nova 脚本。
+
+支持的标记格式：
+
+`yaml
+# nova
+script: |-
+  log("hello")
+
+# nova=reward
+action: |-
+  giveItem("diamond", 3)
+
+script: |- # nova=ui
+  showToast("done")
+`
+
+### 命名空间绑定
+
+扩展会扫描工作区根目录下的 .nova/*.json 文件，并按 # nova=<namespace> 选择对应的宿主绑定。
+
+当前已支持：
+
+- completion
+- hover
+- signature help
+- diagnostics
+- definition
+- references
+- rename
+- document highlight
+
+当 namespace 不存在时，YAML 标记行会出现 warning；当 .nova/*.json 结构错误时，对应 JSON 文件会出现诊断提示。
+
+更多说明请参考：
+
+- ../docs/宿主绑定配置规范.md
+- ../examples/embedded-yaml/README.md

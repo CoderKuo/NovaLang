@@ -135,13 +135,17 @@ final class MirCallable extends AbstractNovaValue implements nova.runtime.NovaCa
                 throw new NovaRuntimeException("Maximum recursion depth exceeded (" + maxDepth + ")");
             }
             String displayName = "invoke".equals(funcName) ? "<lambda>" : funcName;
-            interpreter.callStack.push(NovaCallFrame.fromMirCallable(displayName,
-                    java.util.Arrays.asList(args)));
+            interpreter.callStack.push(targetMirInterp.getEmptyMirCallFrame(displayName));
             interpreter.callDepth++;
             try {
                 return targetMirInterp.executeFunction(function, allArgs);
             } catch (NovaRuntimeException e) {
-                e.setNovaStackTrace(interpreter.captureStackTraceString());
+                if (e.getNovaStackTrace() == null) {
+                    interpreter.callStack.pop();
+                    interpreter.callStack.push(NovaCallFrame.fromMirCallable(displayName,
+                            java.util.Arrays.asList(args)));
+                    e.setNovaStackTrace(interpreter.captureStackTraceString());
+                }
                 throw e;
             } finally {
                 interpreter.callDepth--;
@@ -152,8 +156,94 @@ final class MirCallable extends AbstractNovaValue implements nova.runtime.NovaCa
     }
 
     /** 获取捕获变量（供 GET_FIELD 使用） */
+    NovaValue callBoundDirect0(Interpreter interpreter, NovaValue receiver) {
+        MirInterpreter targetMirInterp = interpreter.mirInterpreter != null
+                ? interpreter.mirInterpreter : mirInterp;
+        return callBoundDirect(interpreter, targetMirInterp, receiver, null, null, 0);
+    }
+
+    NovaValue callBoundDirect1(Interpreter interpreter, NovaValue receiver, NovaValue a0) {
+        MirInterpreter targetMirInterp = interpreter.mirInterpreter != null
+                ? interpreter.mirInterpreter : mirInterp;
+        return callBoundDirect(interpreter, targetMirInterp, receiver, a0, null, 1);
+    }
+
+    NovaValue callBoundDirect2(Interpreter interpreter, NovaValue receiver, NovaValue a0, NovaValue a1) {
+        MirInterpreter targetMirInterp = interpreter.mirInterpreter != null
+                ? interpreter.mirInterpreter : mirInterp;
+        return callBoundDirect(interpreter, targetMirInterp, receiver, a0, a1, 2);
+    }
+
+    private NovaValue callBoundDirect(Interpreter interpreter, MirInterpreter targetMirInterp,
+                                      NovaValue receiver, NovaValue a0, NovaValue a1, int argCount) {
+        String funcName = function.getName();
+        if ("<init>".equals(funcName) || function.hasDelegation() || function.hasSuperInitArgs()) {
+            NovaValue[] allArgs = argCount == 0
+                    ? new NovaValue[]{receiver}
+                    : argCount == 1
+                    ? new NovaValue[]{receiver, a0}
+                    : new NovaValue[]{receiver, a0, a1};
+            return targetMirInterp.executeFunction(function, allArgs);
+        }
+        if (!"<clinit>".equals(funcName)) {
+            int maxDepth = interpreter.getSecurityPolicy().getMaxRecursionDepth();
+            if (maxDepth > 0 && interpreter.callDepth >= maxDepth) {
+                throw new NovaRuntimeException("Maximum recursion depth exceeded (" + maxDepth + ")");
+            }
+            String displayName = "invoke".equals(funcName) ? "<lambda>" : funcName;
+            interpreter.callStack.push(targetMirInterp.getEmptyMirCallFrame(displayName));
+            interpreter.callDepth++;
+            try {
+                switch (argCount) {
+                    case 0:
+                        return targetMirInterp.executeFunction1(function, receiver);
+                    case 1:
+                        return targetMirInterp.executeFunction2(function, receiver, a0);
+                    case 2:
+                        return targetMirInterp.executeFunction3(function, receiver, a0, a1);
+                    default:
+                        throw new IllegalArgumentException("Unsupported argCount: " + argCount);
+                }
+            } catch (NovaRuntimeException e) {
+                if (e.getNovaStackTrace() == null) {
+                    interpreter.callStack.pop();
+                    if (argCount == 0) {
+                        interpreter.callStack.push(NovaCallFrame.fromMirCallable(displayName,
+                                java.util.Collections.emptyList()));
+                    } else if (argCount == 1) {
+                        interpreter.callStack.push(NovaCallFrame.fromMirCallable(displayName,
+                                java.util.Collections.singletonList(a0)));
+                    } else {
+                        interpreter.callStack.push(NovaCallFrame.fromMirCallable(displayName,
+                                java.util.Arrays.asList(a0, a1)));
+                    }
+                    e.setNovaStackTrace(interpreter.captureStackTraceString());
+                }
+                throw e;
+            } finally {
+                interpreter.callDepth--;
+                interpreter.callStack.pop();
+            }
+        }
+        switch (argCount) {
+            case 0:
+                return targetMirInterp.executeFunction1(function, receiver);
+            case 1:
+                return targetMirInterp.executeFunction2(function, receiver, a0);
+            case 2:
+                return targetMirInterp.executeFunction3(function, receiver, a0, a1);
+            default:
+                throw new IllegalArgumentException("Unsupported argCount: " + argCount);
+        }
+    }
+
     NovaValue getCaptureField(String name) {
         return captureFields.get(name);
+    }
+
+    /** 检查是否存在捕获字段（值可能为 null） */
+    boolean hasCaptureField(String name) {
+        return captureFields.containsKey(name);
     }
 
     /** 设置捕获变量（供 SET_FIELD 使用，用于可变捕获） */

@@ -8,57 +8,39 @@ import java.util.*;
  * <p>供 HirToMirLowering（nova-ir 模块）在编译模式下识别内置模块导入，
  * 将命名空间符号映射为 Java 类（INVOKESTATIC），将顶层函数映射为静态方法。</p>
  *
- * <p>运行时实现在 nova-runtime 的 StdlibXxxCompiled 类中。</p>
+ * <p>运行时实现在 nova-runtime 的 StdlibXxxCompiled 类中。
+ * 顶层函数通过 {@link #getModuleClass(String)} 获取类名后，由 HirToMirLowering 反射自动发现，
+ * 无需逐个注册。</p>
  */
 public final class BuiltinModuleExports {
 
-    /** 模块函数导出信息 */
-    public static final class FunctionExport {
-        public final String name;
-        public final String jvmOwner;
-        public final String jvmMethodName;
-        public final String jvmDescriptor;
-        public final int arity;
-
-        public FunctionExport(String name, String jvmOwner, String jvmMethodName,
-                              String jvmDescriptor, int arity) {
-            this.name = name;
-            this.jvmOwner = jvmOwner;
-            this.jvmMethodName = jvmMethodName;
-            this.jvmDescriptor = jvmDescriptor;
-            this.arity = arity;
-        }
-    }
-
-    // moduleName → (symbolName → JVM internal class name)
+    // moduleName → (symbolName → JVM internal class name)  — 命名空间（内部类）
     private static final Map<String, Map<String, String>> namespaceExports = new HashMap<>();
-    // moduleName → list of FunctionExport
-    private static final Map<String, List<FunctionExport>> functionExports = new HashMap<>();
-
-    private static final String TIME_OWNER = "nova/runtime/interpreter/stdlib/StdlibTimeCompiled";
-    private static final String TIME_DT = TIME_OWNER + "$DateTime";
-    private static final String TIME_DUR = TIME_OWNER + "$DurationNs";
+    // moduleName → JVM internal class name  — 顶层函数所在的编译类（反射自动发现）
+    private static final Map<String, String> moduleClasses = new HashMap<>();
 
     static {
-        // nova.time
+        // nova.time — 命名空间
         Map<String, String> timeNs = new HashMap<>();
-        timeNs.put("DateTime", TIME_DT);
-        timeNs.put("Duration", TIME_DUR);
+        timeNs.put("DateTime", "nova/runtime/interpreter/stdlib/StdlibTimeCompiled$DateTime");
+        timeNs.put("Duration", "nova/runtime/interpreter/stdlib/StdlibTimeCompiled$DurationNs");
         namespaceExports.put("nova.time", timeNs);
 
-        List<FunctionExport> timeFns = new ArrayList<>();
-        timeFns.add(new FunctionExport("now", TIME_OWNER, "now", "()Ljava/lang/Object;", 0));
-        timeFns.add(new FunctionExport("nowNanos", TIME_OWNER, "nowNanos", "()Ljava/lang/Object;", 0));
-        timeFns.add(new FunctionExport("sleep", TIME_OWNER, "sleep",
-                "(Ljava/lang/Object;)Ljava/lang/Object;", 1));
-        functionExports.put("nova.time", timeFns);
+        // 模块 → 编译类映射（顶层函数由 HirToMirLowering 反射发现）
+        moduleClasses.put("nova.time", "nova/runtime/interpreter/stdlib/StdlibTimeCompiled");
+        moduleClasses.put("nova.io", "nova/runtime/interpreter/stdlib/StdlibIOCompiled");
+        moduleClasses.put("nova.system", "nova/runtime/interpreter/stdlib/StdlibSystemCompiled");
+        moduleClasses.put("nova.json", "nova/runtime/interpreter/stdlib/StdlibJsonCompiled");
+        moduleClasses.put("nova.text", "nova/runtime/interpreter/stdlib/StdlibRegexCompiled");
+        moduleClasses.put("nova.http", "nova/runtime/interpreter/stdlib/StdlibHttpCompiled");
+        moduleClasses.put("nova.test", "nova/runtime/interpreter/stdlib/StdlibTestCompiled");
     }
 
     private BuiltinModuleExports() {}
 
     /** 检查是否为已注册的内置模块 */
     public static boolean has(String moduleName) {
-        return namespaceExports.containsKey(moduleName) || functionExports.containsKey(moduleName);
+        return namespaceExports.containsKey(moduleName) || moduleClasses.containsKey(moduleName);
     }
 
     /** 获取模块的命名空间导出：symbolName → JVM internal class name */
@@ -67,10 +49,9 @@ public final class BuiltinModuleExports {
         return ns != null ? ns : Collections.emptyMap();
     }
 
-    /** 获取模块的函数导出 */
-    public static List<FunctionExport> getFunctions(String moduleName) {
-        List<FunctionExport> fns = functionExports.get(moduleName);
-        return fns != null ? fns : Collections.emptyList();
+    /** 获取模块顶层函数所在的 JVM 类（内部名格式），未注册返回 null */
+    public static String getModuleClass(String moduleName) {
+        return moduleClasses.get(moduleName);
     }
 
     /**
@@ -81,7 +62,6 @@ public final class BuiltinModuleExports {
      */
     public static String resolveModuleName(String qualifiedName) {
         if (qualifiedName == null || !qualifiedName.startsWith("nova.")) return null;
-        // 尝试最长前缀匹配（从 qualifiedName 本身到 nova.xxx）
         String candidate = qualifiedName;
         while (candidate.contains(".")) {
             if (has(candidate)) return candidate;

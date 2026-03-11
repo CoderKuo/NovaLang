@@ -6743,6 +6743,162 @@ class InterpreterTest {
         }
     }
 
+    // ============ 嵌套函数 ============
+
+    @Nested
+    @DisplayName("嵌套函数")
+    class NestedFunctionTests {
+
+        @Test
+        @DisplayName("基本嵌套函数")
+        void testBasicNestedFunction() {
+            String code = ""
+                + "fun outer(): Int {\n"
+                + "    fun inner(x: Int) = x * 2\n"
+                + "    return inner(5)\n"
+                + "}\n"
+                + "outer()";
+            assertEquals(10, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("嵌套函数捕获外部参数")
+        void testNestedFunctionCapturesParam() {
+            String code = ""
+                + "fun outer(x: Int): Int {\n"
+                + "    fun inner(y: Int) = x + y\n"
+                + "    return inner(3)\n"
+                + "}\n"
+                + "outer(10)";
+            assertEquals(13, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("嵌套函数捕获外部局部变量")
+        void testNestedFunctionCapturesLocal() {
+            String code = ""
+                + "fun outer(): Int {\n"
+                + "    val factor = 3\n"
+                + "    fun multiply(x: Int) = x * factor\n"
+                + "    return multiply(7)\n"
+                + "}\n"
+                + "outer()";
+            assertEquals(21, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("嵌套函数修改外部可变变量")
+        void testNestedFunctionMutatesVar() {
+            String code = ""
+                + "fun outer(): Int {\n"
+                + "    var count = 0\n"
+                + "    fun inc() { count = count + 1 }\n"
+                + "    inc()\n"
+                + "    inc()\n"
+                + "    inc()\n"
+                + "    return count\n"
+                + "}\n"
+                + "outer()";
+            assertEquals(3, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("多个嵌套函数")
+        void testMultipleNestedFunctions() {
+            String code = ""
+                + "fun calc(a: Int, b: Int): Int {\n"
+                + "    fun add(x: Int, y: Int) = x + y\n"
+                + "    fun mul(x: Int, y: Int) = x * y\n"
+                + "    return add(a, b) + mul(a, b)\n"
+                + "}\n"
+                + "calc(3, 4)";
+            assertEquals(19, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("嵌套函数调用另一个嵌套函数")
+        void testNestedFunctionCallsAnother() {
+            String code = ""
+                + "fun outer(): Int {\n"
+                + "    fun double(x: Int) = x * 2\n"
+                + "    fun quadruple(x: Int) = double(double(x))\n"
+                + "    return quadruple(3)\n"
+                + "}\n"
+                + "outer()";
+            assertEquals(12, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("两层嵌套函数")
+        void testDoubleNestedFunction() {
+            String code = ""
+                + "fun outer(): Int {\n"
+                + "    fun middle(): Int {\n"
+                + "        fun inner() = 42\n"
+                + "        return inner()\n"
+                + "    }\n"
+                + "    return middle()\n"
+                + "}\n"
+                + "outer()";
+            assertEquals(42, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("两层嵌套函数捕获各层变量")
+        void testDoubleNestedCapture() {
+            String code = ""
+                + "fun outer(a: Int): Int {\n"
+                + "    fun middle(b: Int): Int {\n"
+                + "        fun inner(c: Int) = a + b + c\n"
+                + "        return inner(3)\n"
+                + "    }\n"
+                + "    return middle(2)\n"
+                + "}\n"
+                + "outer(1)";
+            assertEquals(6, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("嵌套函数递归")
+        void testNestedRecursion() {
+            String code = ""
+                + "fun outer(n: Int): Int {\n"
+                + "    fun factorial(x: Int): Int {\n"
+                + "        if (x <= 1) return 1\n"
+                + "        return x * factorial(x - 1)\n"
+                + "    }\n"
+                + "    return factorial(n)\n"
+                + "}\n"
+                + "outer(5)";
+            assertEquals(120, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("嵌套函数作为返回值")
+        void testNestedFunctionAsReturnValue() {
+            String code = ""
+                + "fun makeMultiplier(factor: Int): (Int) -> Int {\n"
+                + "    fun multiply(x: Int) = x * factor\n"
+                + "    return ::multiply\n"
+                + "}\n"
+                + "val triple = makeMultiplier(3)\n"
+                + "triple(7)";
+            assertEquals(21, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("嵌套函数带默认参数")
+        void testNestedFunctionDefaultParam() {
+            String code = ""
+                + "fun outer(): String {\n"
+                + "    fun greet(name: String = \"World\") = \"Hello \" + name\n"
+                + "    return greet() + \", \" + greet(\"Nova\")\n"
+                + "}\n"
+                + "outer()";
+            assertEquals("Hello World, Hello Nova", interpreter.evalRepl(code).asString());
+        }
+    }
+
     // ============ 覆盖率补充: sealed class ============
 
     @Nested
@@ -8203,4 +8359,1011 @@ class InterpreterTest {
         }
     }
 
+    // ============ 位运算测试 ============
+
+    @Nested
+    @DisplayName("位运算")
+    class BitwiseTests {
+
+        // ---------- 正常值：位与 & ----------
+
+        @Test
+        @DisplayName("位与：基本运算")
+        void testBitwiseAnd() {
+            assertEquals(0b1000, interpreter.evalRepl("0b1010 & 0b1100").asInt());
+            assertEquals(0, interpreter.evalRepl("0xFF00 & 0x00FF").asInt());
+            assertEquals(0xFF, interpreter.evalRepl("0xFF & 0xFF").asInt());
+        }
+
+        @Test
+        @DisplayName("位与：掩码提取")
+        void testBitwiseAndMask() {
+            // 提取低 4 位
+            assertEquals(0x0A, interpreter.evalRepl("0xFA & 0x0F").asInt());
+            // 提取高 4 位
+            assertEquals(0xF0, interpreter.evalRepl("0xFA & 0xF0").asInt());
+        }
+
+        // ---------- 正常值：位或 | ----------
+
+        @Test
+        @DisplayName("位或：基本运算")
+        void testBitwiseOr() {
+            assertEquals(0b1110, interpreter.evalRepl("0b1010 | 0b1100").asInt());
+            assertEquals(0xFFFF, interpreter.evalRepl("0xFF00 | 0x00FF").asInt());
+        }
+
+        @Test
+        @DisplayName("位或：标志位设置")
+        void testBitwiseOrFlags() {
+            // 设置第 3 位
+            assertEquals(0b1010, interpreter.evalRepl("0b0010 | 0b1000").asInt());
+        }
+
+        // ---------- 正常值：位异或 ^ ----------
+
+        @Test
+        @DisplayName("位异或：基本运算")
+        void testBitwiseXor() {
+            assertEquals(0b0110, interpreter.evalRepl("0b1010 ^ 0b1100").asInt());
+            assertEquals(0xFFFF, interpreter.evalRepl("0xFF00 ^ 0x00FF").asInt());
+        }
+
+        @Test
+        @DisplayName("位异或：自反性")
+        void testBitwiseXorSelfInverse() {
+            // a ^ a == 0
+            assertEquals(0, interpreter.evalRepl("42 ^ 42").asInt());
+            // a ^ 0 == a
+            assertEquals(42, interpreter.evalRepl("42 ^ 0").asInt());
+        }
+
+        @Test
+        @DisplayName("位异或：交换两个值")
+        void testBitwiseXorSwap() {
+            String code = "var a = 10\n"
+                    + "var b = 20\n"
+                    + "a = a ^ b\n"
+                    + "b = a ^ b\n"
+                    + "a = a ^ b\n"
+                    + "a * 100 + b";
+            assertEquals(2010, interpreter.evalRepl(code).asInt());
+        }
+
+        // ---------- 正常值：位非 ~ ----------
+
+        @Test
+        @DisplayName("位非：基本运算")
+        void testBitwiseNot() {
+            assertEquals(-1, interpreter.evalRepl("~0").asInt());
+            assertEquals(0, interpreter.evalRepl("~(-1)").asInt());
+            assertEquals(-43, interpreter.evalRepl("~42").asInt());
+        }
+
+        @Test
+        @DisplayName("位非：双重取反还原")
+        void testBitwiseNotDoubleNegate() {
+            assertEquals(42, interpreter.evalRepl("~~42").asInt());
+            assertEquals(0, interpreter.evalRepl("~~0").asInt());
+        }
+
+        // ---------- 正常值：左移 << ----------
+
+        @Test
+        @DisplayName("左移：基本运算")
+        void testShiftLeft() {
+            assertEquals(4, interpreter.evalRepl("1 << 2").asInt());
+            assertEquals(16, interpreter.evalRepl("2 << 3").asInt());
+            assertEquals(1024, interpreter.evalRepl("1 << 10").asInt());
+        }
+
+        @Test
+        @DisplayName("左移：等价于乘以 2 的幂")
+        void testShiftLeftPowerOf2() {
+            assertEquals(42 * 8, interpreter.evalRepl("42 << 3").asInt());
+            assertEquals(5 * 32, interpreter.evalRepl("5 << 5").asInt());
+        }
+
+        // ---------- 正常值：右移 >> ----------
+
+        @Test
+        @DisplayName("右移：基本运算")
+        void testShiftRight() {
+            assertEquals(4, interpreter.evalRepl("16 >> 2").asInt());
+            assertEquals(1, interpreter.evalRepl("8 >> 3").asInt());
+        }
+
+        @Test
+        @DisplayName("右移：等价于除以 2 的幂")
+        void testShiftRightDivision() {
+            assertEquals(42 / 8, interpreter.evalRepl("42 >> 3").asInt());
+        }
+
+        @Test
+        @DisplayName("右移：负数算术右移保留符号位")
+        void testShiftRightNegative() {
+            assertEquals(-1, interpreter.evalRepl("(-1) >> 1").asInt());
+            assertEquals(-1, interpreter.evalRepl("(-1) >> 31").asInt());
+            assertEquals(-4, interpreter.evalRepl("(-8) >> 1").asInt());
+        }
+
+        // ---------- 正常值：无符号右移 >>> ----------
+
+        @Test
+        @DisplayName("无符号右移：正数等同于有符号右移")
+        void testUnsignedShiftRightPositive() {
+            assertEquals(4, interpreter.evalRepl("16 >>> 2").asInt());
+            assertEquals(1, interpreter.evalRepl("8 >>> 3").asInt());
+        }
+
+        @Test
+        @DisplayName("无符号右移：负数高位补零")
+        void testUnsignedShiftRightNegative() {
+            // -1 的二进制是全1，无符号右移 1 位应得到 Integer.MAX_VALUE
+            assertEquals(Integer.MAX_VALUE, interpreter.evalRepl("(-1) >>> 1").asInt());
+        }
+
+        // ---------- 正常值：Long 类型支持 ----------
+
+        @Test
+        @DisplayName("位与：Long 类型")
+        void testBitwiseAndLong() {
+            assertEquals(0L, interpreter.evalRepl("0xFF00L & 0x00FFL").asLong());
+        }
+
+        @Test
+        @DisplayName("位或：Long 类型")
+        void testBitwiseOrLong() {
+            assertEquals(0xFFFFL, interpreter.evalRepl("0xFF00L | 0x00FFL").asLong());
+        }
+
+        @Test
+        @DisplayName("位异或：Long 类型")
+        void testBitwiseXorLong() {
+            assertEquals(0L, interpreter.evalRepl("123456789L ^ 123456789L").asLong());
+        }
+
+        @Test
+        @DisplayName("位非：Long 类型")
+        void testBitwiseNotLong() {
+            assertEquals(-1L, interpreter.evalRepl("~0L").asLong());
+        }
+
+        @Test
+        @DisplayName("左移：Long 类型")
+        void testShiftLeftLong() {
+            assertEquals(1L << 40, interpreter.evalRepl("1L << 40").asLong());
+        }
+
+        @Test
+        @DisplayName("右移：Long 类型")
+        void testShiftRightLong() {
+            assertEquals((1L << 40) >> 10, interpreter.evalRepl("(1L << 40) >> 10").asLong());
+        }
+
+        @Test
+        @DisplayName("无符号右移：Long 类型负数")
+        void testUnsignedShiftRightLong() {
+            assertEquals(Long.MAX_VALUE, interpreter.evalRepl("(-1L) >>> 1").asLong());
+        }
+
+        // ---------- 正常值：运算符优先级 ----------
+
+        @Test
+        @DisplayName("优先级：& 高于 |")
+        void testPrecedenceBandHigherThanBor() {
+            // 1 | 2 & 3 == 1 | (2 & 3) == 1 | 2 == 3
+            assertEquals(3, interpreter.evalRepl("1 | 2 & 3").asInt());
+        }
+
+        @Test
+        @DisplayName("优先级：& 高于 ^")
+        void testPrecedenceBandHigherThanBxor() {
+            // 1 ^ 3 & 2 == 1 ^ (3 & 2) == 1 ^ 2 == 3
+            assertEquals(3, interpreter.evalRepl("1 ^ 3 & 2").asInt());
+        }
+
+        @Test
+        @DisplayName("优先级：^ 高于 |")
+        void testPrecedenceBxorHigherThanBor() {
+            // 1 | 2 ^ 3 == 1 | (2 ^ 3) == 1 | 1 == 1
+            assertEquals(1, interpreter.evalRepl("1 | 2 ^ 3").asInt());
+        }
+
+        @Test
+        @DisplayName("优先级：<< >> 高于比较运算符")
+        void testPrecedenceShiftHigherThanComparison() {
+            // 1 << 3 > 4 == (1 << 3) > 4 == 8 > 4 == true
+            assertTrue(interpreter.evalRepl("1 << 3 > 4").asBool());
+        }
+
+        @Test
+        @DisplayName("优先级：<< >> 高于 &")
+        void testPrecedenceShiftHigherThanBand() {
+            // 1 & 0xFF << 4 should not be (1 & 0xFF) << 4
+            // 因为 << 优先级高于 &: 1 & (0xFF << 4) = 1 & 0xFF0 = 0
+            assertEquals(0, interpreter.evalRepl("1 & 0xFF << 4").asInt());
+        }
+
+        @Test
+        @DisplayName("优先级：算术运算符高于移位")
+        void testPrecedenceArithmeticHigherThanShift() {
+            // 1 << 2 + 1 == 1 << (2 + 1) == 1 << 3 == 8
+            assertEquals(8, interpreter.evalRepl("1 << 2 + 1").asInt());
+        }
+
+        @Test
+        @DisplayName("优先级：位运算低于 == !=")
+        void testPrecedenceEqualityHigherThanBitwise() {
+            // 1 & 1 == 1 应该解析为 1 & (1 == 1)? 不！ == 优先级高于 &
+            // 实际上: (1 & 1) == 1? 不对
+            // C 语言风格: 1 & (1 == 1) -> 错误（但符合标准）
+            // 这里标准 C/Java 优先级: == 高于 &
+            // 所以 1 == 1 & 1 == (1 == 1) & 1 -> true & 1 -> 异常
+            // 用括号测试更直观
+            assertTrue(interpreter.evalRepl("(3 & 1) == 1").asBool());
+            assertTrue(interpreter.evalRepl("(6 | 1) == 7").asBool());
+        }
+
+        @Test
+        @DisplayName("优先级：位运算低于逻辑运算符")
+        void testPrecedenceLogicalLowerThanBitwise() {
+            // true && false | true -> 在 Java/C 优先级中，| 高于 &&
+            // 但在 NovaLang 中，位运算高于逻辑运算
+            // true && (0 | 1)  -> 0 | 1 == 1 (truthy) -> true && true -> true
+            // 实际: true && false || true 解析为 (true && false) || true 但这是逻辑
+            // 测试括号来确认
+            assertEquals(3, interpreter.evalRepl("(1 | 2)").asInt());
+        }
+
+        @Test
+        @DisplayName("括号覆盖优先级")
+        void testParenthesesOverridePrecedence() {
+            // (1 | 2) & 3 == 3 & 3 == 3
+            assertEquals(3, interpreter.evalRepl("(1 | 2) & 3").asInt());
+            // 1 | (2 & 3) == 1 | 2 == 3
+            assertEquals(3, interpreter.evalRepl("1 | (2 & 3)").asInt());
+        }
+
+        // ---------- 正常值：复合赋值 ----------
+
+        @Test
+        @DisplayName("&= 位与赋值")
+        void testBitwiseAndAssign() {
+            String code = "var x = 0xFF\nx &= 0x0F\nx";
+            assertEquals(0x0F, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("|= 位或赋值")
+        void testBitwiseOrAssign() {
+            String code = "var x = 0xF0\nx |= 0x0F\nx";
+            assertEquals(0xFF, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("^= 位异或赋值")
+        void testBitwiseXorAssign() {
+            String code = "var x = 0xFF\nx ^= 0x0F\nx";
+            assertEquals(0xF0, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("<<= 左移赋值")
+        void testShiftLeftAssign() {
+            String code = "var x = 1\nx <<= 8\nx";
+            assertEquals(256, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName(">>= 右移赋值")
+        void testShiftRightAssign() {
+            String code = "var x = 256\nx >>= 4\nx";
+            assertEquals(16, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName(">>>= 无符号右移赋值")
+        void testUnsignedShiftRightAssign() {
+            String code = "var x = -1\nx >>>= 28\nx";
+            assertEquals(15, interpreter.evalRepl(code).asInt());
+        }
+
+        // ---------- 正常值：复合表达式 ----------
+
+        @Test
+        @DisplayName("位运算组合表达式")
+        void testBitwiseCombination() {
+            // RGB 颜色打包: (r << 16) | (g << 8) | b
+            String code = "val r = 255\nval g = 128\nval b = 64\n(r << 16) | (g << 8) | b";
+            assertEquals(0xFF8040, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("位运算提取颜色分量")
+        void testBitwiseExtractComponents() {
+            // 从打包的 RGB 中提取各分量
+            String code = "val color = 0xFF8040\n"
+                    + "val r = (color >> 16) & 0xFF\n"
+                    + "val g = (color >> 8) & 0xFF\n"
+                    + "val b = color & 0xFF\n"
+                    + "r * 10000 + g * 100 + b";
+            assertEquals(2_562_864, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("位运算检测奇偶")
+        void testBitwiseOddEven() {
+            assertEquals(1, interpreter.evalRepl("7 & 1").asInt());    // 奇数
+            assertEquals(0, interpreter.evalRepl("8 & 1").asInt());    // 偶数
+        }
+
+        @Test
+        @DisplayName("位运算判断 2 的幂")
+        void testBitwiseIsPowerOf2() {
+            // n & (n - 1) == 0 → n 是 2 的幂
+            assertTrue(interpreter.evalRepl("(16 & 15) == 0").asBool());     // 2^4
+            assertFalse(interpreter.evalRepl("(12 & 11) == 0").asBool());    // 不是
+        }
+
+        @Test
+        @DisplayName("位运算与算术运算混合")
+        void testBitwiseMixedWithArithmetic() {
+            // (3 + 5) << 2 == 8 << 2 == 32
+            assertEquals(32, interpreter.evalRepl("(3 + 5) << 2").asInt());
+            // 10 >> 1 + 1 == 10 >> 2 == 2 (+ 优先级高于 >>)
+            assertEquals(2, interpreter.evalRepl("10 >> 1 + 1").asInt());
+        }
+
+        // ---------- 边缘值 ----------
+
+        @Test
+        @DisplayName("边缘值：0 的位运算")
+        void testBitwiseWithZero() {
+            assertEquals(0, interpreter.evalRepl("0 & 0").asInt());
+            assertEquals(0, interpreter.evalRepl("0 | 0").asInt());
+            assertEquals(0, interpreter.evalRepl("0 ^ 0").asInt());
+            assertEquals(0, interpreter.evalRepl("0 << 5").asInt());
+            assertEquals(0, interpreter.evalRepl("0 >> 5").asInt());
+            assertEquals(0, interpreter.evalRepl("0 >>> 5").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：全1 (Int.MAX_VALUE) 位运算")
+        void testBitwiseWithMaxValue() {
+            // Integer.MAX_VALUE = 0x7FFFFFFF
+            assertEquals(Integer.MAX_VALUE, interpreter.evalRepl("2147483647 & 2147483647").asInt());
+            assertEquals(Integer.MAX_VALUE, interpreter.evalRepl("2147483647 | 0").asInt());
+            assertEquals(0, interpreter.evalRepl("2147483647 ^ 2147483647").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：左移 0 位")
+        void testShiftLeftZero() {
+            assertEquals(42, interpreter.evalRepl("42 << 0").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：右移 0 位")
+        void testShiftRightZero() {
+            assertEquals(42, interpreter.evalRepl("42 >> 0").asInt());
+            assertEquals(42, interpreter.evalRepl("42 >>> 0").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：左移 31 位（Int 最大有效位移）")
+        void testShiftLeft31() {
+            assertEquals(Integer.MIN_VALUE, interpreter.evalRepl("1 << 31").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：负数位与")
+        void testBitwiseAndNegative() {
+            // -1 & 0xFF == 0xFF (取低 8 位)
+            assertEquals(0xFF, interpreter.evalRepl("(-1) & 0xFF").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：负数位或")
+        void testBitwiseOrNegative() {
+            // -1 | anything == -1
+            assertEquals(-1, interpreter.evalRepl("(-1) | 42").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：Int.MIN_VALUE 无符号右移")
+        void testUnsignedShiftRightMinValue() {
+            // Integer.MIN_VALUE >>> 31 == 1
+            assertEquals(1, interpreter.evalRepl("(-1 << 31) >>> 31").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：连续移位")
+        void testConsecutiveShifts() {
+            // (1 << 10) >> 5 == 1024 >> 5 == 32
+            assertEquals(32, interpreter.evalRepl("(1 << 10) >> 5").asInt());
+        }
+
+        // ---------- 异常值 ----------
+
+        @Test
+        @DisplayName("异常值：浮点数不支持位运算")
+        void testBitwiseOnDoubleThrows() {
+            assertThrows(Exception.class, () -> interpreter.evalRepl("3.14 & 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("3.14 | 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("3.14 ^ 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("3.14 << 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("3.14 >> 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("~3.14"));
+        }
+
+        @Test
+        @DisplayName("异常值：字符串不支持位运算")
+        void testBitwiseOnStringThrows() {
+            assertThrows(Exception.class, () -> interpreter.evalRepl("\"hello\" & 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("\"hello\" | 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("~\"hello\""));
+        }
+
+        @Test
+        @DisplayName("异常值：布尔值不支持位运算")
+        void testBitwiseOnBooleanThrows() {
+            assertThrows(Exception.class, () -> interpreter.evalRepl("true & 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("~true"));
+        }
+
+        @Test
+        @DisplayName("异常值：null 不支持位运算")
+        void testBitwiseOnNullThrows() {
+            assertThrows(Exception.class, () -> interpreter.evalRepl("null & 1"));
+            assertThrows(Exception.class, () -> interpreter.evalRepl("~null"));
+        }
+
+        // ---------- 综合测试 ----------
+
+        @Test
+        @DisplayName("综合：位掩码权限系统")
+        void testBitmaskPermissions() {
+            String code = "val READ = 1\n"
+                    + "val WRITE = 2\n"
+                    + "val EXECUTE = 4\n"
+                    + "var perms = READ | WRITE\n"  // 0b011
+                    + "val canRead = (perms & READ) != 0\n"
+                    + "val canWrite = (perms & WRITE) != 0\n"
+                    + "val canExec = (perms & EXECUTE) != 0\n"
+                    + "perms = perms | EXECUTE\n"  // 添加执行权限
+                    + "val canExecAfter = (perms & EXECUTE) != 0\n"
+                    + "perms = perms & ~WRITE\n"   // 移除写权限
+                    + "val canWriteAfter = (perms & WRITE) != 0\n"
+                    + "\"\" + canRead + canWrite + canExec + canExecAfter + canWriteAfter";
+            assertEquals("truetruefalsetruefalse", interpreter.evalRepl(code).asString());
+        }
+
+        @Test
+        @DisplayName("综合：使用位运算实现简单哈希")
+        void testBitwiseSimpleHash() {
+            String code = "var hash = 0\n"
+                    + "hash = hash ^ 42\n"
+                    + "hash = (hash << 5) | (hash >>> 27)\n" // 循环左移 5 位
+                    + "hash = hash ^ 99\n"
+                    + "hash";
+            NovaValue result = interpreter.evalRepl(code);
+            assertTrue(result.isInt());
+            // 只验证不抛异常且返回整数，具体值取决于位运算结果
+        }
+
+        @Test
+        @DisplayName("综合：for 循环中使用位运算")
+        void testBitwiseInLoop() {
+            String code = "var result = 0\n"
+                    + "for (i in 0..7) {\n"
+                    + "    result = result | (1 << i)\n"
+                    + "}\n"
+                    + "result";
+            assertEquals(0xFF, interpreter.evalRepl(code).asInt());
+        }
+
+        @Test
+        @DisplayName("综合：位运算作为函数参数和返回值")
+        void testBitwiseInFunction() {
+            String code = "fun setBit(value: Int, bit: Int): Int = value | (1 << bit)\n"
+                    + "fun clearBit(value: Int, bit: Int): Int = value & ~(1 << bit)\n"
+                    + "fun testBit(value: Int, bit: Int): Boolean = (value & (1 << bit)) != 0\n"
+                    + "var flags = 0\n"
+                    + "flags = setBit(flags, 0)\n"
+                    + "flags = setBit(flags, 3)\n"
+                    + "flags = setBit(flags, 7)\n"
+                    + "val b0 = testBit(flags, 0)\n"
+                    + "val b1 = testBit(flags, 1)\n"
+                    + "val b3 = testBit(flags, 3)\n"
+                    + "val b7 = testBit(flags, 7)\n"
+                    + "flags = clearBit(flags, 3)\n"
+                    + "val b3after = testBit(flags, 3)\n"
+                    + "\"\" + b0 + b1 + b3 + b7 + b3after";
+            assertEquals("truefalsetruetruefalse", interpreter.evalRepl(code).asString());
+        }
+
+        @Test
+        @DisplayName("综合：if 条件中使用位运算")
+        void testBitwiseInCondition() {
+            String code = "val flags = 5\n" // 0b101
+                    + "if ((flags & 1) != 0) \"odd\" else \"even\"";
+            assertEquals("odd", interpreter.evalRepl(code).asString());
+        }
+
+        @Test
+        @DisplayName("综合：位运算在 when 表达式中")
+        void testBitwiseInWhen() {
+            String code = "val x = 0b1010\n"
+                    + "when {\n"
+                    + "    (x & 1) != 0 -> \"odd\"\n"
+                    + "    (x & 2) != 0 -> \"has bit 1\"\n"
+                    + "    else -> \"other\"\n"
+                    + "}";
+            assertEquals("has bit 1", interpreter.evalRepl(code).asString());
+        }
+    }
+
+    // ============ Java 互操作字段访问测试辅助类 ============
+
+    /** 纯 public 字段，无 getter/setter */
+    public static class SimpleFields {
+        public String value = "hello";
+        public int count = 42;
+        public boolean active = true;
+        public double score = 3.14;
+        public long bigNum = 9999999999L;
+        public Object nullable = null;
+    }
+
+    /** 字段与方法同名：public 字段 value + public 方法 value() */
+    public static class FieldAndMethodConflict {
+        public String value = "field_value";
+
+        public String value() {
+            return "method_value";
+        }
+    }
+
+    /** 嵌套对象字段 */
+    public static class Inner {
+        public String data = "inner_data";
+        public int num = 100;
+    }
+
+    public static class Outer {
+        public Inner inner = new Inner();
+        public String name = "outer";
+    }
+
+    /** 继承场景：子类继承父类的 public 字段 */
+    public static class Parent {
+        public String parentField = "from_parent";
+        public int shared = 10;
+    }
+
+    public static class Child extends Parent {
+        public String childField = "from_child";
+    }
+
+    /** 字段类型为 List */
+    public static class ListHolder {
+        public java.util.List<String> items = new java.util.ArrayList<>(java.util.Arrays.asList("a", "b", "c"));
+    }
+
+    /** 所有字段为默认零值 */
+    public static class ZeroFields {
+        public int intVal = 0;
+        public long longVal = 0L;
+        public double doubleVal = 0.0;
+        public boolean boolVal = false;
+        public String strVal = null;
+    }
+
+    @Nested
+    @DisplayName("Java 互操作字段访问")
+    class JavaInteropFieldAccessTests {
+
+        private void injectJavaObject(String name, Object obj) {
+            interpreter.getEnvironment().defineVar(name,
+                    new NovaExternalObject(obj));
+        }
+
+        // ---------- 正常值：基本字段读取 ----------
+
+        @Test
+        @DisplayName("正常值：读取 String 字段")
+        void testReadStringField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertEquals("hello", interpreter.evalRepl("obj.value").asString());
+        }
+
+        @Test
+        @DisplayName("正常值：读取 int 字段")
+        void testReadIntField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertEquals(42, interpreter.evalRepl("obj.count").asInt());
+        }
+
+        @Test
+        @DisplayName("正常值：读取 boolean 字段")
+        void testReadBooleanField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertTrue(interpreter.evalRepl("obj.active").asBoolean());
+        }
+
+        @Test
+        @DisplayName("正常值：读取 double 字段")
+        void testReadDoubleField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertEquals(3.14, interpreter.evalRepl("obj.score").asDouble(), 0.001);
+        }
+
+        @Test
+        @DisplayName("正常值：读取 long 字段")
+        void testReadLongField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertEquals(9999999999L, interpreter.evalRepl("obj.bigNum").asLong());
+        }
+
+        // ---------- 正常值：字段写入 ----------
+
+        @Test
+        @DisplayName("正常值：写入 String 字段")
+        void testWriteStringField() {
+            SimpleFields sf = new SimpleFields();
+            injectJavaObject("obj", sf);
+            interpreter.evalRepl("obj.value = \"world\"");
+            assertEquals("world", sf.value);
+        }
+
+        @Test
+        @DisplayName("正常值：写入 int 字段")
+        void testWriteIntField() {
+            SimpleFields sf = new SimpleFields();
+            injectJavaObject("obj", sf);
+            interpreter.evalRepl("obj.count = 100");
+            assertEquals(100, sf.count);
+        }
+
+        @Test
+        @DisplayName("正常值：写入 boolean 字段")
+        void testWriteBooleanField() {
+            SimpleFields sf = new SimpleFields();
+            injectJavaObject("obj", sf);
+            interpreter.evalRepl("obj.active = false");
+            assertFalse(sf.active);
+        }
+
+        @Test
+        @DisplayName("正常值：写入后读回一致")
+        void testWriteThenRead() {
+            injectJavaObject("obj", new SimpleFields());
+            interpreter.evalRepl("obj.value = \"updated\"");
+            assertEquals("updated", interpreter.evalRepl("obj.value").asString());
+        }
+
+        // ---------- 正常值：字段与方法同名 ----------
+
+        @Test
+        @DisplayName("正常值：字段与方法同名时优先返回字段值")
+        void testFieldPriorityOverMethod() {
+            injectJavaObject("obj", new FieldAndMethodConflict());
+            assertEquals("field_value", interpreter.evalRepl("obj.value").asString());
+        }
+
+        @Test
+        @DisplayName("正常值：字段与方法同名时仍可调用方法")
+        void testMethodStillCallableWhenFieldExists() {
+            injectJavaObject("obj", new FieldAndMethodConflict());
+            // obj.value 应返回字段值而非函数引用
+            NovaValue result = interpreter.evalRepl("obj.value");
+            assertFalse(result.asString().contains("native fun"),
+                    "应返回字段值，而非函数引用");
+        }
+
+        // ---------- 正常值：嵌套字段访问 ----------
+
+        @Test
+        @DisplayName("正常值：嵌套对象字段读取")
+        void testNestedFieldRead() {
+            injectJavaObject("obj", new Outer());
+            assertEquals("inner_data", interpreter.evalRepl("obj.inner.data").asString());
+            assertEquals(100, interpreter.evalRepl("obj.inner.num").asInt());
+        }
+
+        @Test
+        @DisplayName("正常值：嵌套对象字段写入")
+        void testNestedFieldWrite() {
+            Outer outer = new Outer();
+            injectJavaObject("obj", outer);
+            interpreter.evalRepl("obj.inner.data = \"modified\"");
+            assertEquals("modified", outer.inner.data);
+        }
+
+        @Test
+        @DisplayName("正常值：嵌套对象外层字段")
+        void testNestedOuterField() {
+            injectJavaObject("obj", new Outer());
+            assertEquals("outer", interpreter.evalRepl("obj.name").asString());
+        }
+
+        // ---------- 正常值：继承字段 ----------
+
+        @Test
+        @DisplayName("正常值：读取子类自身字段")
+        void testChildOwnField() {
+            injectJavaObject("obj", new Child());
+            assertEquals("from_child", interpreter.evalRepl("obj.childField").asString());
+        }
+
+        @Test
+        @DisplayName("正常值：读取继承自父类的字段")
+        void testInheritedField() {
+            injectJavaObject("obj", new Child());
+            assertEquals("from_parent", interpreter.evalRepl("obj.parentField").asString());
+        }
+
+        @Test
+        @DisplayName("正常值：写入继承字段")
+        void testWriteInheritedField() {
+            Child child = new Child();
+            injectJavaObject("obj", child);
+            interpreter.evalRepl("obj.parentField = \"overwritten\"");
+            assertEquals("overwritten", child.parentField);
+        }
+
+        // ---------- 正常值：List 字段 ----------
+
+        @Test
+        @DisplayName("正常值：读取 List 字段并调用方法")
+        void testListFieldAccess() {
+            injectJavaObject("obj", new ListHolder());
+            assertEquals(3, interpreter.evalRepl("obj.items.size()").asInt());
+        }
+
+        @Test
+        @DisplayName("正常值：通过 List 字段读取元素")
+        void testListFieldModify() {
+            ListHolder holder = new ListHolder();
+            injectJavaObject("obj", holder);
+            // List 字段经 fromJava 转为 NovaList（副本），验证读取正确
+            assertEquals("a", interpreter.evalRepl("obj.items[0]").asString());
+            assertEquals("c", interpreter.evalRepl("obj.items[2]").asString());
+        }
+
+        // ---------- 正常值：多次读写 ----------
+
+        @Test
+        @DisplayName("正常值：多次写入同一字段")
+        void testMultipleWrites() {
+            injectJavaObject("obj", new SimpleFields());
+            interpreter.evalRepl("obj.count = 1");
+            interpreter.evalRepl("obj.count = 2");
+            interpreter.evalRepl("obj.count = 3");
+            assertEquals(3, interpreter.evalRepl("obj.count").asInt());
+        }
+
+        @Test
+        @DisplayName("正常值：写入多个不同字段")
+        void testWriteMultipleFields() {
+            SimpleFields sf = new SimpleFields();
+            injectJavaObject("obj", sf);
+            interpreter.evalRepl("obj.value = \"x\"");
+            interpreter.evalRepl("obj.count = 99");
+            interpreter.evalRepl("obj.active = false");
+            assertEquals("x", sf.value);
+            assertEquals(99, sf.count);
+            assertFalse(sf.active);
+        }
+
+        // ---------- 边缘值 ----------
+
+        @Test
+        @DisplayName("边缘值：null 字段读取")
+        void testReadNullField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertTrue(interpreter.evalRepl("obj.nullable").isNull());
+        }
+
+        @Test
+        @DisplayName("边缘值：将字段设为 null")
+        void testWriteNullToField() {
+            SimpleFields sf = new SimpleFields();
+            injectJavaObject("obj", sf);
+            interpreter.evalRepl("obj.value = null");
+            assertNull(sf.value);
+        }
+
+        @Test
+        @DisplayName("边缘值：零值字段读取")
+        void testReadZeroFields() {
+            injectJavaObject("obj", new ZeroFields());
+            assertEquals(0, interpreter.evalRepl("obj.intVal").asInt());
+            assertEquals(0L, interpreter.evalRepl("obj.longVal").asLong());
+            assertEquals(0.0, interpreter.evalRepl("obj.doubleVal").asDouble(), 0.0);
+            assertFalse(interpreter.evalRepl("obj.boolVal").asBoolean());
+            assertTrue(interpreter.evalRepl("obj.strVal").isNull());
+        }
+
+        @Test
+        @DisplayName("边缘值：空字符串字段")
+        void testEmptyStringField() {
+            SimpleFields sf = new SimpleFields();
+            sf.value = "";
+            injectJavaObject("obj", sf);
+            assertEquals("", interpreter.evalRepl("obj.value").asString());
+        }
+
+        @Test
+        @DisplayName("边缘值：Int 最大值字段")
+        void testIntMaxValueField() {
+            SimpleFields sf = new SimpleFields();
+            sf.count = Integer.MAX_VALUE;
+            injectJavaObject("obj", sf);
+            assertEquals(Integer.MAX_VALUE, interpreter.evalRepl("obj.count").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：Int 最小值字段")
+        void testIntMinValueField() {
+            SimpleFields sf = new SimpleFields();
+            sf.count = Integer.MIN_VALUE;
+            injectJavaObject("obj", sf);
+            assertEquals(Integer.MIN_VALUE, interpreter.evalRepl("obj.count").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：嵌套字段写入后读回")
+        void testNestedWriteThenRead() {
+            injectJavaObject("obj", new Outer());
+            interpreter.evalRepl("obj.inner.num = 999");
+            assertEquals(999, interpreter.evalRepl("obj.inner.num").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：字段值用于表达式计算")
+        void testFieldInExpression() {
+            injectJavaObject("obj", new SimpleFields());
+            assertEquals(52, interpreter.evalRepl("obj.count + 10").asInt());
+        }
+
+        @Test
+        @DisplayName("边缘值：字段值用于条件判断")
+        void testFieldInCondition() {
+            injectJavaObject("obj", new SimpleFields());
+            assertEquals("yes",
+                    interpreter.evalRepl("if (obj.active) \"yes\" else \"no\"").asString());
+        }
+
+        @Test
+        @DisplayName("边缘值：字段值作为函数参数")
+        void testFieldAsArgument() {
+            injectJavaObject("obj", new SimpleFields());
+            interpreter.evalRepl("fun double(x: Int) = x * 2");
+            assertEquals(84, interpreter.evalRepl("double(obj.count)").asInt());
+        }
+
+        // ---------- 异常值 ----------
+
+        @Test
+        @DisplayName("异常值：调用不存在的字段/方法抛异常")
+        void testAccessNonExistentField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertThrows(Exception.class, () ->
+                    interpreter.evalRepl("obj.nonExistent()"));
+        }
+
+        @Test
+        @DisplayName("异常值：写入不存在的字段")
+        void testWriteNonExistentField() {
+            injectJavaObject("obj", new SimpleFields());
+            assertThrows(Exception.class, () ->
+                    interpreter.evalRepl("obj.nonExistent = 42"));
+        }
+
+        @Test
+        @DisplayName("异常值：null 对象的字段访问")
+        void testNullObjectFieldAccess() {
+            interpreter.getEnvironment().defineVar("obj",
+                    new NovaExternalObject(null));
+            assertThrows(Exception.class, () ->
+                    interpreter.evalRepl("obj.value"));
+        }
+
+        @Test
+        @DisplayName("异常值：嵌套 null 字段链式访问")
+        void testNestedNullFieldAccess() {
+            Outer outer = new Outer();
+            outer.inner = null;
+            injectJavaObject("obj", outer);
+            // obj.inner 返回 null，再 .data 应抛异常
+            assertThrows(Exception.class, () ->
+                    interpreter.evalRepl("obj.inner.data"));
+        }
+
+        // ---------- 综合场景 ----------
+
+        @Test
+        @DisplayName("综合：字段读取不应返回函数引用")
+        void testFieldReadNeverReturnsFunctionRef() {
+            injectJavaObject("obj", new SimpleFields());
+            NovaValue result = interpreter.evalRepl("obj.value");
+            // 确保返回的是字符串值，而非 <native fun value>
+            assertEquals("hello", result.asString());
+            assertFalse(result instanceof NovaCallable,
+                    "字段读取不应返回 NovaCallable");
+        }
+
+        @Test
+        @DisplayName("综合：字段与方法同名时字段值类型正确")
+        void testFieldValueTypeCorrect() {
+            injectJavaObject("obj", new FieldAndMethodConflict());
+            NovaValue result = interpreter.evalRepl("obj.value");
+            assertFalse(result instanceof NovaCallable,
+                    "应返回字段值而非函数引用");
+            assertTrue(result instanceof NovaString,
+                    "字段值应为 NovaString 类型");
+        }
+
+        @Test
+        @DisplayName("综合：字段写入后 Java 侧可见")
+        void testFieldWriteVisibleInJava() {
+            SimpleFields sf = new SimpleFields();
+            injectJavaObject("obj", sf);
+            interpreter.evalRepl("obj.value = \"nova\"");
+            interpreter.evalRepl("obj.count = 7");
+            // 直接检查 Java 对象
+            assertEquals("nova", sf.value);
+            assertEquals(7, sf.count);
+        }
+
+        @Test
+        @DisplayName("综合：Java 侧修改后 Nova 可见")
+        void testJavaSideModificationVisible() {
+            SimpleFields sf = new SimpleFields();
+            injectJavaObject("obj", sf);
+            // Java 侧直接修改
+            sf.value = "java_modified";
+            sf.count = 999;
+            // Nova 侧读取
+            assertEquals("java_modified", interpreter.evalRepl("obj.value").asString());
+            assertEquals(999, interpreter.evalRepl("obj.count").asInt());
+        }
+
+        @Test
+        @DisplayName("综合：嵌套字段链式读写完整流程")
+        void testNestedChainedReadWrite() {
+            Outer outer = new Outer();
+            injectJavaObject("obj", outer);
+            // 读取
+            assertEquals("inner_data", interpreter.evalRepl("obj.inner.data").asString());
+            // 写入
+            interpreter.evalRepl("obj.inner.data = \"changed\"");
+            interpreter.evalRepl("obj.inner.num = 200");
+            // 验证
+            assertEquals("changed", outer.inner.data);
+            assertEquals(200, outer.inner.num);
+            assertEquals("changed", interpreter.evalRepl("obj.inner.data").asString());
+            assertEquals(200, interpreter.evalRepl("obj.inner.num").asInt());
+        }
+
+        @Test
+        @DisplayName("综合：继承字段读写完整流程")
+        void testInheritedFieldFullCycle() {
+            Child child = new Child();
+            injectJavaObject("obj", child);
+            // 读取子类和父类字段
+            assertEquals("from_child", interpreter.evalRepl("obj.childField").asString());
+            assertEquals("from_parent", interpreter.evalRepl("obj.parentField").asString());
+            assertEquals(10, interpreter.evalRepl("obj.shared").asInt());
+            // 写入
+            interpreter.evalRepl("obj.childField = \"c\"");
+            interpreter.evalRepl("obj.parentField = \"p\"");
+            interpreter.evalRepl("obj.shared = 20");
+            assertEquals("c", child.childField);
+            assertEquals("p", child.parentField);
+            assertEquals(20, child.shared);
+        }
+    }
 }

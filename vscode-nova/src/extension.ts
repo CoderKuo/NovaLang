@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+﻿import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
@@ -6,39 +6,54 @@ import {
     LanguageClientOptions,
     ServerOptions,
 } from 'vscode-languageclient/node';
+import { EmbeddedNovaController } from './embeddedNova';
 
 let client: LanguageClient | undefined;
 let runTerminal: vscode.Terminal | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
+let embeddedNovaController: EmbeddedNovaController | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
     tryStartLsp(context);
 
-    // 监听配置变更，自动重启 LSP
+    // 鐩戝惉閰嶇疆鍙樻洿锛岃嚜鍔ㄩ噸鍚?LSP
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('nova.lsp')) {
-                vscode.window.showInformationMessage('NovaLang: LSP 配置已变更，正在重启...');
+            if (e.affectsConfiguration('nova')) {
+                vscode.window.showInformationMessage('NovaLang: LSP 閰嶇疆宸插彉鏇达紝姝ｅ湪閲嶅惎...');
                 restartLsp(context);
             }
         })
     );
 
-    // 注册运行命令
+    // 娉ㄥ唽杩愯鍛戒护
+    context.subscriptions.push(
+        vscode.commands.registerCommand('nova.restartLanguageServer', async () => {
+            await restartLsp(context);
+            vscode.window.showInformationMessage('NovaLang: Language Server restarted');
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('nova.organizeImports', async () => {
+            await vscode.commands.executeCommand('editor.action.organizeImports');
+        })
+    );
+
     context.subscriptions.push(
         vscode.commands.registerCommand('nova.runFile', () => {
             runNovaFile();
         })
     );
 
-    // 注册编译运行命令
+    // 娉ㄥ唽缂栬瘧杩愯鍛戒护
     context.subscriptions.push(
         vscode.commands.registerCommand('nova.compileAndRun', () => {
             compileAndRunNovaFile();
         })
     );
 
-    // 注册构建项目命令
+    // 娉ㄥ唽鏋勫缓椤圭洰鍛戒护
     context.subscriptions.push(
         vscode.commands.registerCommand('nova.buildProject', () => {
             buildNovaProject();
@@ -51,18 +66,18 @@ function tryStartLsp(context: vscode.ExtensionContext) {
     let lspPath = config.get<string>('lsp.path', '');
     const javaPath = config.get<string>('lsp.javaPath', 'java');
 
-    // 如果未配置 lsp.path，尝试自动查找
+    // 自动查找 lsp.path
     if (!lspPath) {
         lspPath = findJar('nova-lsp');
     }
 
     if (!lspPath) {
         vscode.window.showWarningMessage(
-            'NovaLang: 未找到 nova-lsp JAR，请在设置中配置 nova.lsp.path'
+            'NovaLang: 鏈壘鍒?nova-lsp JAR锛岃鍦ㄨ缃腑閰嶇疆 nova.lsp.path'
         );
     } else if (!fs.existsSync(lspPath)) {
         vscode.window.showErrorMessage(
-            `NovaLang: LSP JAR 不存在: ${lspPath}`
+            `NovaLang: LSP JAR 涓嶅瓨鍦? ${lspPath}`
         );
     } else {
         startLspClient(context, lspPath, javaPath, config);
@@ -78,7 +93,7 @@ async function restartLsp(context: vscode.ExtensionContext) {
 }
 
 /**
- * 获取当前活动文件所属的工作区文件夹，回退到第一个工作区
+ * 鑾峰彇褰撳墠娲诲姩鏂囦欢鎵€灞炵殑宸ヤ綔鍖烘枃浠跺す锛屽洖閫€鍒扮涓€涓伐浣滃尯
  */
 function getActiveWorkspaceFolder(): string | undefined {
     const editor = vscode.window.activeTextEditor;
@@ -95,7 +110,12 @@ function startLspClient(
     javaPath: string,
     config: vscode.WorkspaceConfiguration
 ) {
-    // 服务器选项：通过 Java 启动 nova-lsp
+    if (!outputChannel) {
+        outputChannel = vscode.window.createOutputChannel('NovaLang LSP');
+        context.subscriptions.push(outputChannel);
+    }
+
+    // 鏈嶅姟鍣ㄩ€夐」锛氶€氳繃 Java 鍚姩 nova-lsp
     const serverOptions: ServerOptions = {
         command: javaPath,
         args: ['-jar', lspPath],
@@ -104,7 +124,7 @@ function startLspClient(
         },
     };
 
-    // 读取 classpath 配置
+    // 璇诲彇 classpath 閰嶇疆
     const classpath = config.get<string[]>('lsp.classpath', []);
 
     // 读取功能开关配置
@@ -112,9 +132,11 @@ function startLspClient(
     const enableParamHints = config.get<boolean>('inlayHints.parameterHints', true);
     const enableSemanticHighlighting = config.get<boolean>('semanticHighlighting', true);
 
-    // 客户端选项
+    // 瀹㈡埛绔€夐」
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'nova' }],
+        outputChannel: outputChannel,
+        traceOutputChannel: outputChannel,
         initializationOptions: {
             classpath: classpath,
             inlayHints: {
@@ -128,7 +150,7 @@ function startLspClient(
         },
     };
 
-    // 创建并启动客户端
+    // 鍒涘缓骞跺惎鍔ㄥ鎴风
     client = new LanguageClient(
         'novaLanguageServer',
         'NovaLang Language Server',
@@ -137,32 +159,30 @@ function startLspClient(
     );
 
     client.start();
-
-    if (!outputChannel) {
-        outputChannel = vscode.window.createOutputChannel('NovaLang LSP');
-        context.subscriptions.push(outputChannel);
-    }
     outputChannel.appendLine(`LSP JAR: ${lspPath}`);
     outputChannel.appendLine(`Java: ${javaPath}`);
+    embeddedNovaController?.dispose();
+    embeddedNovaController = new EmbeddedNovaController(client);
+    context.subscriptions.push(embeddedNovaController);
 }
 
 /**
- * 运行当前打开的 Nova 脚本文件
+ * 杩愯褰撳墠鎵撳紑鐨?Nova 鑴氭湰鏂囦欢
  */
 async function runNovaFile() {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
-        vscode.window.showWarningMessage('没有打开的文件');
+        vscode.window.showWarningMessage('No file is currently open.');
         return;
     }
 
     const document = editor.document;
     if (document.languageId !== 'nova') {
-        vscode.window.showWarningMessage('当前文件不是 Nova 脚本');
+        vscode.window.showWarningMessage('褰撳墠鏂囦欢涓嶆槸 Nova 鑴氭湰');
         return;
     }
 
-    // 保存文件
+    // 淇濆瓨鏂囦欢
     if (document.isDirty) {
         await document.save();
     }
@@ -171,7 +191,7 @@ async function runNovaFile() {
     const filePath = document.uri.fsPath;
     const javaPath = config.get<string>('lsp.javaPath', 'java');
 
-    // 查找 nova-cli JAR
+    // 鏌ユ壘 nova-cli JAR
     let cliPath = config.get<string>('cli.path', '');
     if (!cliPath) {
         cliPath = findJar('nova-cli');
@@ -179,7 +199,7 @@ async function runNovaFile() {
 
     if (!cliPath || !fs.existsSync(cliPath)) {
         vscode.window.showErrorMessage(
-            'NovaLang: 未找到 nova-cli JAR，请在设置中配置 nova.cli.path 或先执行 gradlew build'
+            'NovaLang: 鏈壘鍒?nova-cli JAR锛岃鍦ㄨ缃腑閰嶇疆 nova.cli.path 鎴栧厛鎵ц gradlew build'
         );
         return;
     }
@@ -192,7 +212,7 @@ async function runNovaFile() {
         runTerminal.show();
     }
 
-    // 发送运行命令（Windows PowerShell 需要 & 调用操作符）
+    // 鍙戦€佽繍琛屽懡浠わ紙Windows PowerShell 闇€瑕?& 璋冪敤鎿嶄綔绗︼級
     const cmd = process.platform === 'win32'
         ? `& "${javaPath}" -jar "${cliPath}" "${filePath}"`
         : `"${javaPath}" -jar "${cliPath}" "${filePath}"`;
@@ -200,18 +220,17 @@ async function runNovaFile() {
 }
 
 /**
- * 编译并直接运行当前 Nova 文件（不输出 .class 文件）
- */
+ * 缂栬瘧骞剁洿鎺ヨ繍琛屽綋鍓?Nova 鏂囦欢锛堜笉杈撳嚭 .class 鏂囦欢锛? */
 async function compileAndRunNovaFile() {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
-        vscode.window.showWarningMessage('没有打开的文件');
+        vscode.window.showWarningMessage('No file is currently open.');
         return;
     }
 
     const document = editor.document;
     if (document.languageId !== 'nova') {
-        vscode.window.showWarningMessage('当前文件不是 Nova 脚本');
+        vscode.window.showWarningMessage('褰撳墠鏂囦欢涓嶆槸 Nova 鑴氭湰');
         return;
     }
 
@@ -230,7 +249,7 @@ async function compileAndRunNovaFile() {
 
     if (!cliPath || !fs.existsSync(cliPath)) {
         vscode.window.showErrorMessage(
-            'NovaLang: 未找到 nova-cli JAR，请在设置中配置 nova.cli.path 或先执行 gradlew build'
+            'NovaLang: 鏈壘鍒?nova-cli JAR锛岃鍦ㄨ缃腑閰嶇疆 nova.cli.path 鎴栧厛鎵ц gradlew build'
         );
         return;
     }
@@ -249,12 +268,11 @@ async function compileAndRunNovaFile() {
 }
 
 /**
- * 构建 Nova 项目（编译当前工作区所有 .nova 文件，可选生成 JAR）
- */
+ * 鏋勫缓 Nova 椤圭洰锛堢紪璇戝綋鍓嶅伐浣滃尯鎵€鏈?.nova 鏂囦欢锛屽彲閫夌敓鎴?JAR锛? */
 async function buildNovaProject() {
     const workspaceRoot = getActiveWorkspaceFolder();
     if (!workspaceRoot) {
-        vscode.window.showWarningMessage('没有打开的工作区');
+        vscode.window.showWarningMessage('娌℃湁鎵撳紑鐨勫伐浣滃尯');
         return;
     }
 
@@ -268,18 +286,18 @@ async function buildNovaProject() {
 
     if (!cliPath || !fs.existsSync(cliPath)) {
         vscode.window.showErrorMessage(
-            'NovaLang: 未找到 nova-cli JAR，请在设置中配置 nova.cli.path 或先执行 gradlew build'
+            'NovaLang: 鏈壘鍒?nova-cli JAR锛岃鍦ㄨ缃腑閰嶇疆 nova.cli.path 鎴栧厛鎵ц gradlew build'
         );
         return;
     }
 
-    // 让用户选择是否生成 JAR
+    // 璁╃敤鎴烽€夋嫨鏄惁鐢熸垚 JAR
     const buildOption = await vscode.window.showQuickPick(
         [
-            { label: '编译到 class 文件', description: 'build/classes', value: 'classes' },
-            { label: '编译并打包 JAR', description: 'build/output.jar', value: 'jar' },
+            { label: '缂栬瘧鍒?class 鏂囦欢', description: 'build/classes', value: 'classes' },
+            { label: '缂栬瘧骞舵墦鍖?JAR', description: 'build/output.jar', value: 'jar' },
         ],
-        { placeHolder: '选择构建方式' }
+        { placeHolder: '閫夋嫨鏋勫缓鏂瑰紡' }
     );
 
     if (!buildOption) {
@@ -307,9 +325,8 @@ async function buildNovaProject() {
 }
 
 /**
- * 自动查找指定模块的 JAR 文件（在工作区的 build/libs 目录下）
- * 排除 -sources/-javadoc JAR，优先选择最新版本。
- */
+ * 鑷姩鏌ユ壘鎸囧畾妯″潡鐨?JAR 鏂囦欢锛堝湪宸ヤ綔鍖虹殑 build/libs 鐩綍涓嬶級
+ * 鎺掗櫎 -sources/-javadoc JAR锛屼紭鍏堥€夋嫨鏈€鏂扮増鏈€? */
 function findJar(moduleName: string): string {
     const candidates = [
         `${moduleName}/build/libs`,
@@ -338,8 +355,14 @@ function findJar(moduleName: string): string {
 }
 
 export function deactivate(): Thenable<void> | undefined {
+    embeddedNovaController?.dispose();
+    embeddedNovaController = undefined;
     if (!client) {
         return undefined;
     }
     return client.stop();
 }
+
+
+
+

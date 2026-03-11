@@ -83,6 +83,10 @@ public final class NovaCallFrame {
     }
 
     /** MIR 函数调用帧（惰性参数摘要 — 仅异常时计算） */
+    public static NovaCallFrame emptyMirCallable(String funcName) {
+        return new NovaCallFrame(funcName, "<mir>", 0, 0, "");
+    }
+
     public static NovaCallFrame fromMirCallable(String funcName, List<NovaValue> args) {
         NovaCallFrame frame = new NovaCallFrame(funcName, "<mir>", 0, 0, null);
         frame.lazyArgs = args;

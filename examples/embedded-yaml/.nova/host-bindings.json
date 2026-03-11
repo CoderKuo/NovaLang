@@ -1,0 +1,89 @@
+﻿{
+  "version": 1,
+  "globals": [
+    {
+      "name": "log",
+      "kind": "function",
+      "parameters": [
+        { "name": "message", "type": "String" }
+      ],
+      "returnType": "Unit",
+      "documentation": "杈撳嚭鏃ュ織"
+    }
+  ],
+  "namespaces": {
+    "default": {
+      "globals": [
+        {
+          "name": "player",
+          "kind": "object",
+          "documentation": "褰撳墠鐜╁瀵硅薄",
+          "members": [
+            { "name": "name", "kind": "property", "type": "String" },
+            { "name": "level", "kind": "property", "type": "Int" },
+            {
+              "name": "hasPermission",
+              "kind": "function",
+              "parameters": [
+                { "name": "permission", "type": "String" }
+              ],
+              "returnType": "Boolean"
+            }
+          ]
+        }
+      ]
+    },
+    "condition": {
+      "extends": ["default"],
+      "globals": [
+        {
+          "name": "env",
+          "kind": "object",
+          "documentation": "条件上下文",
+          "members": [
+            { "name": "region", "kind": "property", "type": "String" },
+            { "name": "timeOfDay", "kind": "property", "type": "String" }
+          ]
+        }
+      ]
+    },
+    "reward": {
+      "extends": ["default"],
+      "globals": [
+        {
+          "name": "giveItem",
+          "kind": "function",
+          "parameters": [
+            { "name": "itemId", "type": "String" },
+            { "name": "count", "type": "Int" }
+          ],
+          "returnType": "Unit",
+          "documentation": "鍙戞斁濂栧姳"
+        },
+        {
+          "name": "giveMoney",
+          "kind": "function",
+          "parameters": [
+            { "name": "amount", "type": "Int" }
+          ],
+          "returnType": "Unit",
+          "documentation": "鍙戞斁璐у竵"
+        }
+      ]
+    },
+    "ui": {
+      "extends": ["default"],
+      "globals": [
+        {
+          "name": "showToast",
+          "kind": "function",
+          "parameters": [
+            { "name": "message", "type": "String" }
+          ],
+          "returnType": "Unit",
+          "documentation": "鏄剧ず鎻愮ず娑堟伅"
+        }
+      ]
+    }
+  }
+}

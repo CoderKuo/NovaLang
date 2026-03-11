@@ -30,7 +30,7 @@ class CallableBridge extends AbstractNovaValue implements Function1<Object, Obje
     @Override
     public Object invoke(Object arg1) {
         NovaValue result = original.call(interp, Collections.singletonList(AbstractNovaValue.fromJava(arg1)));
-        return toJava(result);
+        return CallableBridge.toJava(result);
     }
 
     // ---- NovaCallable (供 HirEvaluator 直接调用) ----
@@ -96,7 +96,7 @@ class CallableBridge extends AbstractNovaValue implements Function1<Object, Obje
             List<NovaValue> args = new ArrayList<>();
             args.add(AbstractNovaValue.fromJava(arg1));
             args.add(AbstractNovaValue.fromJava(arg2));
-            return toJava(original.call(interp, args));
+            return CallableBridge.toJava(original.call(interp, args));
         }
 
         @Override public String getName() { return original.getName(); }

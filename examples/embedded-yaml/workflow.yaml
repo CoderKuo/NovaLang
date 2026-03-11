@@ -1,0 +1,14 @@
+# nova=condition
+check: |-
+  player.level >= 10 && player.hasPermission("reward.claim")
+
+# nova=reward
+action: |-
+  log("issuing reward to ${player.name}")
+  giveItem("diamond", 3)
+  giveMoney(100)
+
+# nova=ui
+toast: |-
+  showToast("Reward granted for ${player.name}")
+

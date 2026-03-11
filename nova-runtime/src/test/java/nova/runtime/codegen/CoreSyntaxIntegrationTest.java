@@ -641,6 +641,51 @@ class CoreSyntaxIntegrationTest {
             String logic = "fun outer(): Int {\n  fun inner(x: Int) = x * 2\n  return inner(5)\n}\nouter()";
             dual(logic, "fun outer(): Int {\n  fun inner(x: Int) = x * 2\n  return inner(5)\n}\n" + wrap("return outer()"), 10);
         }
+
+        @Test void testNestedFunctionCapturesParam() throws Exception {
+            String logic = "fun outer(x: Int): Int {\n  fun inner(y: Int) = x + y\n  return inner(3)\n}\nouter(10)";
+            dual(logic, "fun outer(x: Int): Int {\n  fun inner(y: Int) = x + y\n  return inner(3)\n}\n" + wrap("return outer(10)"), 13);
+        }
+
+        @Test void testNestedFunctionCapturesLocal() throws Exception {
+            String logic = "fun outer(): Int {\n  val factor = 3\n  fun multiply(x: Int) = x * factor\n  return multiply(7)\n}\nouter()";
+            dual(logic, "fun outer(): Int {\n  val factor = 3\n  fun multiply(x: Int) = x * factor\n  return multiply(7)\n}\n" + wrap("return outer()"), 21);
+        }
+
+        @Test void testNestedFunctionMutatesVar() throws Exception {
+            String logic = "fun outer(): Int {\n  var count = 0\n  fun inc() { count = count + 1 }\n  inc()\n  inc()\n  inc()\n  return count\n}\nouter()";
+            dual(logic, "fun outer(): Int {\n  var count = 0\n  fun inc() { count = count + 1 }\n  inc()\n  inc()\n  inc()\n  return count\n}\n" + wrap("return outer()"), 3);
+        }
+
+        @Test void testMultipleNestedFunctions() throws Exception {
+            String logic = "fun calc(a: Int, b: Int): Int {\n  fun add(x: Int, y: Int) = x + y\n  fun mul(x: Int, y: Int) = x * y\n  return add(a, b) + mul(a, b)\n}\ncalc(3, 4)";
+            dual(logic, "fun calc(a: Int, b: Int): Int {\n  fun add(x: Int, y: Int) = x + y\n  fun mul(x: Int, y: Int) = x * y\n  return add(a, b) + mul(a, b)\n}\n" + wrap("return calc(3, 4)"), 19);
+        }
+
+        @Test void testNestedFunctionCallsAnother() throws Exception {
+            String logic = "fun outer(): Int {\n  fun double(x: Int) = x * 2\n  fun quadruple(x: Int) = double(double(x))\n  return quadruple(3)\n}\nouter()";
+            dual(logic, "fun outer(): Int {\n  fun double(x: Int) = x * 2\n  fun quadruple(x: Int) = double(double(x))\n  return quadruple(3)\n}\n" + wrap("return outer()"), 12);
+        }
+
+        @Test void testDoubleNestedFunction() throws Exception {
+            String logic = "fun outer(): Int {\n  fun middle(): Int {\n    fun inner() = 42\n    return inner()\n  }\n  return middle()\n}\nouter()";
+            dual(logic, "fun outer(): Int {\n  fun middle(): Int {\n    fun inner() = 42\n    return inner()\n  }\n  return middle()\n}\n" + wrap("return outer()"), 42);
+        }
+
+        @Test void testDoubleNestedCapture() throws Exception {
+            String logic = "fun outer(a: Int): Int {\n  fun middle(b: Int): Int {\n    fun inner(c: Int) = a + b + c\n    return inner(3)\n  }\n  return middle(2)\n}\nouter(1)";
+            dual(logic, "fun outer(a: Int): Int {\n  fun middle(b: Int): Int {\n    fun inner(c: Int) = a + b + c\n    return inner(3)\n  }\n  return middle(2)\n}\n" + wrap("return outer(1)"), 6);
+        }
+
+        @Test void testNestedRecursion() throws Exception {
+            String logic = "fun outer(n: Int): Int {\n  fun factorial(x: Int): Int {\n    if (x <= 1) return 1\n    return x * factorial(x - 1)\n  }\n  return factorial(n)\n}\nouter(5)";
+            dual(logic, "fun outer(n: Int): Int {\n  fun factorial(x: Int): Int {\n    if (x <= 1) return 1\n    return x * factorial(x - 1)\n  }\n  return factorial(n)\n}\n" + wrap("return outer(5)"), 120);
+        }
+
+        @Test void testNestedFunctionDefaultParam() throws Exception {
+            String logic = "fun outer(): String {\n  fun greet(name: String = \"World\") = \"Hello \" + name\n  return greet() + \", \" + greet(\"Nova\")\n}\nouter()";
+            dual(logic, "fun outer(): String {\n  fun greet(name: String = \"World\") = \"Hello \" + name\n  return greet() + \", \" + greet(\"Nova\")\n}\n" + wrap("return outer()"), "Hello World, Hello Nova");
+        }
     }
 
     // ============ Lambda ============

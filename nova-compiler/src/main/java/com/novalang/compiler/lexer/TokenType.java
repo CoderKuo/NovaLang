@@ -70,6 +70,15 @@ public enum TokenType {
     OR,             // ||
     NOT,            // !
 
+    // === 操作符 - 位运算 ===
+    BAND,           // &
+    BOR,            // |
+    BXOR,           // ^
+    BNOT,           // ~
+    SHL,            // <<
+    SHR,            // >>
+    USHR,           // >>>
+
     // === 操作符 - 赋值 ===
     ASSIGN,                 // =
     PLUS_ASSIGN,            // +=
@@ -80,6 +89,12 @@ public enum TokenType {
     NULL_COALESCE_ASSIGN,   // ??=
     OR_ASSIGN,              // ||=
     AND_ASSIGN,             // &&=
+    BAND_ASSIGN,            // &=
+    BOR_ASSIGN,             // |=
+    BXOR_ASSIGN,            // ^=
+    SHL_ASSIGN,             // <<=
+    SHR_ASSIGN,             // >>=
+    USHR_ASSIGN,            // >>>=
 
     // === 操作符 - 空安全 ===
     QUESTION,           // ?
@@ -140,6 +155,12 @@ public enum TokenType {
             case NULL_COALESCE_ASSIGN:
             case OR_ASSIGN:
             case AND_ASSIGN:
+            case BAND_ASSIGN:
+            case BOR_ASSIGN:
+            case BXOR_ASSIGN:
+            case SHL_ASSIGN:
+            case SHR_ASSIGN:
+            case USHR_ASSIGN:
                 return true;
             default:
                 return false;

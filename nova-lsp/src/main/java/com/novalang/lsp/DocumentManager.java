@@ -1,10 +1,7 @@
 package com.novalang.lsp;
 
 import com.novalang.compiler.analysis.AnalysisResult;
-import com.novalang.compiler.analysis.SemanticAnalyzer;
-import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.ParseResult;
-import com.novalang.compiler.parser.Parser;
 
 import java.util.Map;
 import java.util.concurrent.*;
@@ -223,16 +220,12 @@ public class DocumentManager {
      */
     private void reanalyze(String uri, String content) {
         try {
-            String fileName = getFileName(uri);
-            Lexer lexer = new Lexer(content, fileName);
-            Parser parser = new Parser(lexer, fileName);
-            ParseResult parseResult = parser.parseTolerant();
-
-            SemanticAnalyzer analyzer = new SemanticAnalyzer();
-            AnalysisResult analysisResult = analyzer.analyze(
-                    parseResult.getProgram(), parseResult.getTopLevelStatements());
-
-            analysisCache.put(uri, new CachedAnalysis(parseResult, analysisResult));
+            CachedAnalysis cached = NovaAnalysisSupport.analyze(uri, content);
+            if (cached != null) {
+                analysisCache.put(uri, cached);
+            } else {
+                analysisCache.remove(uri);
+            }
         } catch (Exception e) {
             LOG.log(Level.WARNING, "分析文档失败: " + uri, e);
             analysisCache.remove(uri);

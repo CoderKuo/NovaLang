@@ -68,6 +68,7 @@ public class NovaCollections {
      */
     public static Object getIndex(Object target, int index) {
         if (target instanceof List) return ((List<?>) target).get(index);
+        if (target instanceof NovaList) return ((NovaList) target).get(index);
         if (target instanceof String) return String.valueOf(((String) target).charAt(index));
         if (target != null && target.getClass().isArray()) return java.lang.reflect.Array.get(target, index);
         throw new RuntimeException("Cannot index: " + (target == null ? "null" : target.getClass().getName()));
@@ -80,6 +81,7 @@ public class NovaCollections {
     @SuppressWarnings("unchecked")
     public static Object getIndex(Object target, Object index) {
         if (target instanceof Map) return ((Map<Object, Object>) target).get(index);
+        if (target instanceof NovaList && index instanceof Number) return ((NovaList) target).get(((Number) index).intValue());
         if (index instanceof Number) return getIndex(target, ((Number) index).intValue());
         throw new RuntimeException("Cannot index " + (target == null ? "null" : target.getClass().getName())
                 + " with " + (index == null ? "null" : index.getClass().getName()));

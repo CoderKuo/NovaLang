@@ -2,6 +2,9 @@ package nova.runtime.interpreter;
 
 import nova.runtime.*;
 import com.novalang.ir.NovaIrCompiler;
+import com.novalang.ir.mir.MirClass;
+import com.novalang.ir.mir.MirFunction;
+import com.novalang.ir.mir.MirModule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +42,8 @@ class PerformanceBenchmarkTest {
 
     private static final int WARMUP = 30;
     private static final int RUNS = 30;
+    private static final int[] RECURSIVE_FIB_INPUTS = {18, 19, 20, 21, 22};
+    private static final int[] TAIL_SUM_INPUTS = {4000, 4250, 4500, 4750, 5000};
 
     // ============ 结果容器 ============
 
@@ -90,6 +95,17 @@ class PerformanceBenchmarkTest {
         try { Thread.sleep(50); } catch (InterruptedException ignored) {}
     }
 
+    private static void clearMemoCaches(MirModule mir) {
+        for (MirFunction fn : mir.getTopLevelFunctions()) {
+            fn.clearMemoCaches();
+        }
+        for (MirClass cls : mir.getClasses()) {
+            for (MirFunction fn : cls.getMethods()) {
+                fn.clearMemoCaches();
+            }
+        }
+    }
+
     /** 测量 Nova 全流程执行时间（解析+lowering+执行），返回 [截尾均值ms, 最终结果, CV%] */
     private Object[] measureNova(String code) {
         for (int i = 0; i < WARMUP; i++) {
@@ -109,21 +125,21 @@ class PerformanceBenchmarkTest {
 
     /** 测量 Nova MIR 纯执行时间（不含解析和 lowering），返回 [截尾均值ms, 最终结果, CV%] */
     private Object[] measureNovaExecOnly(String code) {
-        // 预编译一次
         Interpreter compileInterp = new Interpreter();
-        com.novalang.ir.mir.MirModule mir = compileInterp.precompileToMir(code);
-        // warmup
+        MirModule mir = compileInterp.precompileToMir(code);
+        Interpreter interp = new Interpreter();
+        Interpreter.PreparedMirModule prepared = interp.prepareMirForReuse(mir);
         for (int i = 0; i < WARMUP; i++) {
-            new Interpreter().executeMir(mir);
+            clearMemoCaches(mir);
+            interp.executePreparedMir(prepared);
         }
         gcQuiet();
-        // measure
         long[] times = new long[RUNS];
         NovaValue result = null;
         for (int i = 0; i < RUNS; i++) {
-            Interpreter interp = new Interpreter();
+            clearMemoCaches(mir);
             long start = System.nanoTime();
-            result = interp.executeMir(mir);
+            result = interp.executePreparedMir(prepared);
             times[i] = System.nanoTime() - start;
         }
         return new Object[]{trimmedMeanNanos(times) / 1_000_000.0, result, cvPercent(times)};
@@ -926,7 +942,7 @@ class PerformanceBenchmarkTest {
     // ============ 10. 递归 ============
 
     private BenchResult benchRecursion(int idx) {
-        System.out.printf("[%d/30] 递归调用 — fib(20) 递归 x 100 ...%n", idx);
+        System.out.printf("[%d/30] recursive fib(18..22) varying x 100 ...%n", idx);
 
         String novaCode =
             "fun fib(n: Int): Int {\n" +
@@ -935,7 +951,8 @@ class PerformanceBenchmarkTest {
             "}\n" +
             "var sum = 0\n" +
             "for (i in 0..<100) {\n" +
-            "  sum = sum + fib(20)\n" +
+            "  val n = 18 + (i % 5)\n" +
+            "  sum = sum + fib(n)\n" +
             "}\n" +
             "sum";
 
@@ -948,7 +965,8 @@ class PerformanceBenchmarkTest {
             "  fun run(): Int {\n" +
             "    var sum = 0\n" +
             "    for (i in 0..<100) {\n" +
-            "      sum = sum + fib(20)\n" +
+            "      val n = 18 + (i % 5)\n" +
+            "      sum = sum + fib(n)\n" +
             "    }\n" +
             "    return sum\n" +
             "  }\n" +
@@ -968,9 +986,9 @@ class PerformanceBenchmarkTest {
         int novaResult = ((NovaValue) nova[1]).asInt();
         int javaResult = (int) java[1];
 
-        assertEquals(javaResult, novaResult, "递归结果不一致");
+        assertEquals(javaResult, novaResult, "recursive result mismatch");
         printBenchResult(novaMs, execOnlyMs, compiledMs, javaMs, novaCv, execOnlyCv);
-        return new BenchResult("递归调用", "fib(20) 递归 x 100", novaMs, execOnlyMs, compiledMs, javaMs, novaCv, execOnlyCv);
+        return new BenchResult("Recursive Call", "fib(18..22) varying x 100", novaMs, execOnlyMs, compiledMs, javaMs, novaCv, execOnlyCv);
     }
 
     private static int javaFibRecursive(int n) {
@@ -981,33 +999,35 @@ class PerformanceBenchmarkTest {
     private static int javaRecursionBenchmark() {
         int sum = 0;
         for (int i = 0; i < 100; i++) {
-            sum += javaFibRecursive(20);
+            sum += javaFibRecursive(RECURSIVE_FIB_INPUTS[i % RECURSIVE_FIB_INPUTS.length]);
         }
         return sum;
     }
 
+
     // ============ 11. 尾递归 (TCO) ============
 
     private BenchResult benchTailRecursion(int idx) {
-        System.out.printf("[%d/30] 尾递归 (TCO) — tail-fib(20) x 100 ...%n", idx);
+        System.out.printf("[%d/30] tail recursion varying x 100 ...%n", idx);
 
         String novaCode =
-            "fun fib(n: Int, a: Int = 0, b: Int = 1): Int = " +
-            "  if (n == 0) a else fib(n - 1, b, a + b)\n" +
+            "fun sumDown(n: Int, acc: Int): Int = " +
+            "  if (n == 0) acc else sumDown(n - 1, acc + n)\n" +
             "var sum = 0\n" +
             "for (i in 0..<100) {\n" +
-            "  sum = sum + fib(20)\n" +
+            "  val n = 4000 + (i % 5) * 250\n" +
+            "  sum = sum + sumDown(n, 0)\n" +
             "}\n" +
             "sum";
 
-        // 编译模式：不使用默认参数，显式传参
         String compiledCode =
             "object Bench {\n" +
-            "  fun fib(n: Int, a: Int, b: Int): Int = if (n == 0) a else fib(n - 1, b, a + b)\n" +
+            "  fun sumDown(n: Int, acc: Int): Int = if (n == 0) acc else sumDown(n - 1, acc + n)\n" +
             "  fun run(): Int {\n" +
             "    var sum = 0\n" +
             "    for (i in 0..<100) {\n" +
-            "      sum = sum + fib(20, 0, 1)\n" +
+            "      val n = 4000 + (i % 5) * 250\n" +
+            "      sum = sum + sumDown(n, 0)\n" +
             "    }\n" +
             "    return sum\n" +
             "  }\n" +
@@ -1016,7 +1036,7 @@ class PerformanceBenchmarkTest {
         Object[] nova = measureNova(novaCode);
         Object[] execOnly = measureNovaExecOnly(novaCode);
         Object[] compiled = measureCompiled(compiledCode, "Bench", "run");
-        Object[] java = measureJava(PerformanceBenchmarkTest::javaTailFibBenchmark);
+        Object[] java = measureJava(PerformanceBenchmarkTest::javaTailRecursionBenchmark);
 
         double novaMs = (double) nova[0];
         double execOnlyMs = (double) execOnly[0];
@@ -1027,31 +1047,31 @@ class PerformanceBenchmarkTest {
         int novaResult = ((NovaValue) nova[1]).asInt();
         int javaResult = (int) java[1];
 
-        assertEquals(javaResult, novaResult, "尾递归结果不一致");
+        assertEquals(javaResult, novaResult, "tail recursion result mismatch");
         if (compiledMs >= 0 && compiled[1] != null) {
-            assertEquals(javaResult, compiled[1], "尾递归编译结果不一致");
+            assertEquals(javaResult, compiled[1], "compiled tail recursion result mismatch");
         }
         printBenchResult(novaMs, execOnlyMs, compiledMs, javaMs, novaCv, execOnlyCv);
-        return new BenchResult("尾递归 (TCO)", "tail-fib(20) x 100", novaMs, execOnlyMs, compiledMs, javaMs, novaCv, execOnlyCv);
+        return new BenchResult("Tail Recursion (TCO)", "tail-sum(4000..5000) varying x 100", novaMs, execOnlyMs, compiledMs, javaMs, novaCv, execOnlyCv);
     }
 
-    private static int javaTailFib(int n, int a, int b) {
+    private static int javaTailSum(int n) {
+        int acc = 0;
         while (n > 0) {
-            int temp = a + b;
-            a = b;
-            b = temp;
+            acc += n;
             n--;
         }
-        return a;
+        return acc;
     }
 
-    private static int javaTailFibBenchmark() {
+    private static int javaTailRecursionBenchmark() {
         int sum = 0;
         for (int i = 0; i < 100; i++) {
-            sum += javaTailFib(20, 0, 1);
+            sum += javaTailSum(TAIL_SUM_INPUTS[i % TAIL_SUM_INPUTS.length]);
         }
         return sum;
     }
+
 
     // ============ 12. When 表达式 ============
 

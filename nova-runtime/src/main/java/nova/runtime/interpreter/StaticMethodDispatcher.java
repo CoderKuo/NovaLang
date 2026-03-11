@@ -655,6 +655,14 @@ final class StaticMethodDispatcher {
             cls.setCachedClassInfo(info);
             return info;
         }
+        if (arg instanceof ScalarizedNovaObject) {
+            NovaClass cls = ((ScalarizedNovaObject) arg).getNovaClass();
+            Object cached = cls.getCachedClassInfo();
+            if (cached instanceof NovaValue) return (NovaValue) cached;
+            NovaClassInfo info = NovaClassInfo.fromNovaClass(cls);
+            cls.setCachedClassInfo(info);
+            return info;
+        }
         if (arg instanceof NovaObject) {
             NovaClass cls = ((NovaObject) arg).getNovaClass();
             Object cached = cls.getCachedClassInfo();

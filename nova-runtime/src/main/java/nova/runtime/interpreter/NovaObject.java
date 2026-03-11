@@ -133,6 +133,10 @@ public final class NovaObject extends AbstractNovaValue {
         return fieldValues[index];
     }
 
+    public void setFieldByIndex(int index, NovaValue value) {
+        fieldValues[index] = value;
+    }
+
     public void setField(String name, NovaValue value) {
         int idx = novaClass.getFieldIndex(name);
         if (idx >= 0) {

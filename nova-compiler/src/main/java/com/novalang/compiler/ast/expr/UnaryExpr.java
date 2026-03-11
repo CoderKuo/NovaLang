@@ -53,6 +53,7 @@ public class UnaryExpr extends Expression {
         NEG("-"),
         POS("+"),
         NOT("!"),
+        BNOT("~"),
         INC("++"),
         DEC("--");
 

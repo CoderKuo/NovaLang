@@ -2,6 +2,7 @@ package nova.runtime.stdlib;
 
 import nova.runtime.Function1;
 import nova.runtime.Function2;
+import nova.runtime.NovaDynamic;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -61,6 +62,9 @@ public final class CollectionOps {
     }
 
     public static Object find(Object listObj, Object lambda) {
+        if (!(listObj instanceof List)) {
+            return NovaDynamic.invoke1(listObj, "find", lambda);
+        }
         List<?> list = (List<?>) listObj;
         for (Object item : list) {
             if (isTruthy(invokeLambda1(lambda, item))) return item;
@@ -76,6 +80,16 @@ public final class CollectionOps {
             if (mapped != null) result.add(mapped);
         }
         return result;
+    }
+
+    public static Object reduce(Object listObj, Object lambda) {
+        List<?> list = (List<?>) listObj;
+        if (list.isEmpty()) throw new IllegalArgumentException("Cannot reduce an empty list");
+        Object acc = list.get(0);
+        for (int i = 1; i < list.size(); i++) {
+            acc = invokeLambda2(lambda, acc, list.get(i));
+        }
+        return acc;
     }
 
     public static Object reduce(Object listObj, Object initial, Object lambda) {

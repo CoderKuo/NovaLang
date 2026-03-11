@@ -329,7 +329,16 @@ final class MemberResolver {
             }
         }
 
-        // 直接方法匹配优先
+        // 字段优先：如果存在同名字段，直接返回字段值（而非方法引用）
+        if (extObj.hasField(memberName)) {
+            try {
+                return extObj.getField(memberName);
+            } catch (NovaRuntimeException e) {
+                // 字段访问失败，继续尝试方法
+            }
+        }
+
+        // 直接方法匹配
         boolean hasM = extObj.hasMethod(memberName);
         if (hasM) {
             NovaValue bm = extObj.getBoundMethod(memberName);
@@ -363,7 +372,11 @@ final class MemberResolver {
         try {
             return extObj.getField(memberName);
         } catch (NovaRuntimeException e) {
-            return extObj.getBoundMethod(memberName);
+            // 仅在确实有此方法时才返回绑定方法，否则抛出字段访问错误
+            if (extObj.hasMethod(memberName)) {
+                return extObj.getBoundMethod(memberName);
+            }
+            throw e;
         }
     }
 
