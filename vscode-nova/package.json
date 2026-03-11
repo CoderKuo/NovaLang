@@ -2,7 +2,7 @@
     "name": "nova-language",
     "displayName": "NovaLang",
     "description": "NovaLang language support for VS Code",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "publisher": "novalang",
     "engines": {
         "vscode": "^1.75.0"
