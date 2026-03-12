@@ -31,7 +31,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle
-        run: ./gradlew build -x test
+        run: ./gradlew build -x test -PenableBenchmarks=false
 
       - name: Get version from tag
         id: get_version

@@ -5,15 +5,35 @@ plugins {
 
 description = 'Nova vs Nashorn vs GraalJS vs Groovy vs JEXL vs Java performance benchmarks'
 
-// GraalVM Polyglot 24.x requires Java 17 bytecode, so benchmarks cannot
-// inherit the root project's Java 8 compatibility settings.
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
+def benchmarksEnabled = providers.gradleProperty('enableBenchmarks')
+        .map { it.toBoolean() }
+        .orElse(false)
+        .get()
 
-tasks.withType(JavaCompile).configureEach {
-    options.release = 17
+if (benchmarksEnabled) {
+    // GraalVM Polyglot 24.x requires Java 17 bytecode, so benchmarks must opt
+    // into a newer toolchain than the rest of the project.
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 17
+    }
+} else {
+    // Benchmarks are opt-in and should not participate in normal CI/release builds.
+    tasks.withType(JavaCompile).configureEach {
+        enabled = false
+    }
+    tasks.withType(Test).configureEach {
+        enabled = false
+    }
+    tasks.matching { task ->
+        task.name == 'jmh' || task.name.startsWith('jmh')
+    }.configureEach {
+        enabled = false
+    }
 }
 
 def resolveOptionalPath = { String propertyName, String defaultPath ->
