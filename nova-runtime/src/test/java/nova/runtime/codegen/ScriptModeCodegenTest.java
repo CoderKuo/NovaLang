@@ -44,6 +44,11 @@ class ScriptModeCodegenTest {
         }
     }
 
+    /*
+
+        @DisplayName("绑定函数优先于同名 stdlib 函数")
+
+
     /** 从编译结果中提取 int 值（可能是 NovaInt 或 Java Integer） */
     private static int asInt(Object result) {
         if (result instanceof NovaValue) return ((NovaValue) result).asInt();
@@ -133,6 +138,21 @@ class ScriptModeCodegenTest {
                 // 传入 Java Integer → fromJava 转 NovaInt → 函数返回 → unwrap 回 Integer
                 Object result = NovaScriptContext.call("identity", 42);
                 assertEquals(42, result);
+            } finally {
+                NovaScriptContext.clear();
+            }
+        }
+
+        @Test
+        @DisplayName("绑定函数优先于同名 stdlib 函数")
+        void testBindingShadowsStdlibFunction() {
+            Map<String, Object> bindings = new HashMap<>();
+            bindings.put("log", NovaNativeFunction.create("log",
+                    (NovaValue a) -> NovaString.of("user-log:" + a.asString())));
+            NovaScriptContext.init(bindings);
+            try {
+                Object result = NovaScriptContext.call("log", 10);
+                assertEquals("user-log:10", String.valueOf(result));
             } finally {
                 NovaScriptContext.clear();
             }
@@ -279,6 +299,16 @@ class ScriptModeCodegenTest {
                     (NovaValue a) -> NovaString.of(a.asString().toUpperCase())));
             Object result = compileAndRun(code, bindings);
             assertEquals("NOVA_lang", asString(result));
+        }
+        @Test
+        @DisplayName("编译脚本中绑定函数优先于同名 stdlib 函数")
+        void testCompiledBindingShadowsStdlibFunction() throws Exception {
+            String code = "log(10)";
+            Map<String, Object> bindings = new HashMap<>();
+            bindings.put("log", NovaNativeFunction.create("log",
+                    (NovaValue a) -> NovaString.of("user-log:" + a.asString())));
+            Object result = compileAndRun(code, bindings);
+            assertEquals("user-log:10", asString(result));
         }
     }
 }

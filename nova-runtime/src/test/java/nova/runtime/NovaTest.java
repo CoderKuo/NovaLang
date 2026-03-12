@@ -865,6 +865,14 @@ class NovaTest {
         }
 
         @Test
+        @DisplayName("defineFunction 可遮盖同名内建函数")
+        void defineFunctionShadowsBuiltin() {
+            nova.defineFunction("log", (v) -> "user-log:" + v);
+            assertEquals("user-log:10", nova.eval("log(10)"));
+            assertEquals("user-log:10", nova.call("log", 10));
+        }
+
+        @Test
         @DisplayName("大量参数 vararg 压力测试")
         void varargManyArgs() {
             nova.defineFunctionVararg("countArgs", args -> args.length);

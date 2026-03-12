@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.resolution.MethodNameCanonicalizer;
 import nova.runtime.types.*;
 import nova.runtime.stdlib.StructuredConcurrencyHelper;
 import com.novalang.compiler.ast.AstNode;
@@ -618,7 +619,7 @@ public class Interpreter implements ExecutionContext {
         m.put("hashCode", new NovaNativeFunction("hashCode", 1,
             (ctx, args) -> NovaInt.of(args.get(0).hashCode())));
         m.put("equals", new NovaNativeFunction("equals", 2,
-            (ctx, args) -> NovaBoolean.of(args.get(0).equals(args.get(1)))));
+            (ctx, args) -> NovaBoolean.of(anyEquals(args.get(0), args.get(1)))));
         m.put("let", new NovaNativeFunction("let", 2, (ctx, args) -> {
             NovaValue self = args.get(0);
             nova.runtime.NovaCallable block = ctx.asCallable(args.get(1), "Any.method");
@@ -666,6 +667,13 @@ public class Interpreter implements ExecutionContext {
             return result.asBoolean() ? NovaNull.NULL : self;
         }));
         return m;
+    }
+
+    private static boolean anyEquals(NovaValue a, NovaValue b) {
+        if (a == b) return true;
+        if (a == null || a instanceof NovaNull) return b == null || b instanceof NovaNull;
+        if (b == null || b instanceof NovaNull) return false;
+        return a.equals(b) || b.equals(a);
     }
 
     /** 创建默认 MIR 优化管线（主构造器和子构造器共用） */

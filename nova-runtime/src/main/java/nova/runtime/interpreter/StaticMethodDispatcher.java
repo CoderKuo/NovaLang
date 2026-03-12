@@ -2,6 +2,7 @@ package nova.runtime.interpreter;
 
 import com.novalang.ir.mir.*;
 import nova.runtime.*;
+import nova.runtime.resolution.MethodNameCanonicalizer;
 import nova.runtime.types.NovaClass;
 import nova.runtime.interpreter.reflect.NovaClassInfo;
 import nova.runtime.stdlib.StdlibRegistry;
@@ -54,6 +55,7 @@ final class StaticMethodDispatcher {
     private final MirInterpreter mirInterp;
     private final Map<String, MirCallable> mirFunctions;
     private final Map<String, MirInterpreter.MirClassInfo> mirClasses;
+    private final List<StaticDispatchRule> dispatchRules;
 
     StaticMethodDispatcher(Interpreter interp, MemberResolver resolver,
                            MirCallDispatcher dispatcher, VirtualMethodDispatcher virtualDispatcher,
@@ -67,6 +69,16 @@ final class StaticMethodDispatcher {
         this.mirInterp = mirInterp;
         this.mirFunctions = mirFunctions;
         this.mirClasses = mirClasses;
+        this.dispatchRules = Arrays.<StaticDispatchRule>asList(
+                this::tryBindMarkerDispatch,
+                this::tryPipeMarkerDispatch,
+                this::tryRangeMarkerDispatch,
+                this::tryModuleDispatch,
+                this::tryNovaRuntimeDispatchRule,
+                this::tryEnvironmentDispatchRule,
+                this::tryClassStaticDispatchRule,
+                this::tryEnumOrJavaStaticDispatchRule
+        );
     }
 
     // ============ INVOKE_STATIC 入口 ============
@@ -279,25 +291,63 @@ final class StaticMethodDispatcher {
     // ============ 静态方法分派主链 ============
 
     private NovaValue invokeStaticMethod(String owner, String methodName, List<NovaValue> args) {
-        if (MARKER_BIND_METHOD.equals(owner)) return handleBindMethod(methodName, args);
-        if (MARKER_PIPE_CALL.equals(owner))   return handlePipeCall(methodName, args);
-        if (MARKER_RANGE.equals(owner) && "create".equals(methodName) && args.size() == 3) {
-            return new NovaRange(args.get(0).asInt(), args.get(1).asInt(), args.get(2).asBoolean());
+        List<String> candidates = MethodNameCanonicalizer.lookupCandidates(methodName);
+        for (int i = 0; i < candidates.size(); i++) {
+            NovaValue resolved = dispatchStatic(new StaticCall(owner, candidates.get(i), args));
+            if (resolved != null) return resolved;
         }
-        if (owner != null && owner.endsWith(MARKER_MODULE)) {
-            MirCallable func = mirFunctions.get(methodName);
-            if (func != null) return func.call(interp, args);
-        }
-        NovaValue r;
-        if (owner != null && (r = tryNovaRuntimeDispatch(owner, methodName, args)) != null) return r;
-        if ((r = tryEnvironmentLookup(methodName, args)) != null) return r;
-        if (owner != null && (r = tryClassStaticDispatch(owner, methodName, args)) != null) return r;
-        if (owner != null && (r = tryEnumOrJavaStatic(owner, methodName, args)) != null) return r;
         throw new NovaRuntimeException("Static method not found: "
                 + (owner != null ? owner + "." : "") + methodName);
     }
 
     /** $BIND_METHOD — interpreterMode 下实例方法引用 (obj::method) */
+    private NovaValue dispatchStatic(StaticCall call) {
+        for (int i = 0; i < dispatchRules.size(); i++) {
+            NovaValue result = dispatchRules.get(i).tryDispatch(call);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private NovaValue tryBindMarkerDispatch(StaticCall call) {
+        return MARKER_BIND_METHOD.equals(call.owner) ? handleBindMethod(call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryPipeMarkerDispatch(StaticCall call) {
+        return MARKER_PIPE_CALL.equals(call.owner) ? handlePipeCall(call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryRangeMarkerDispatch(StaticCall call) {
+        if (MARKER_RANGE.equals(call.owner) && "create".equals(call.methodName) && call.args.size() == 3) {
+            return new NovaRange(call.args.get(0).asInt(), call.args.get(1).asInt(), call.args.get(2).asBoolean());
+        }
+        return null;
+    }
+
+    private NovaValue tryModuleDispatch(StaticCall call) {
+        if (call.owner != null && call.owner.endsWith(MARKER_MODULE)) {
+            MirCallable func = mirFunctions.get(call.methodName);
+            if (func != null) return func.call(interp, call.args);
+        }
+        return null;
+    }
+
+    private NovaValue tryNovaRuntimeDispatchRule(StaticCall call) {
+        return call.owner != null ? tryNovaRuntimeDispatch(call.owner, call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryEnvironmentDispatchRule(StaticCall call) {
+        return tryEnvironmentLookup(call.methodName, call.args);
+    }
+
+    private NovaValue tryClassStaticDispatchRule(StaticCall call) {
+        return call.owner != null ? tryClassStaticDispatch(call.owner, call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryEnumOrJavaStaticDispatchRule(StaticCall call) {
+        return call.owner != null ? tryEnumOrJavaStatic(call.owner, call.methodName, call.args) : null;
+    }
+
     private NovaValue handleBindMethod(String methodName, List<NovaValue> args) {
         if (!"bind".equals(methodName) || args.size() != 2) {
             throw new NovaRuntimeException("Invalid $BIND_METHOD call");

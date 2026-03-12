@@ -113,6 +113,27 @@ class CoreSyntaxIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("对象方法")
+    class ObjectMethodTests {
+
+        @Test void testEqAliasOnInt() throws Exception {
+            dual("1.eq(1)", wrap("return 1.eq(1)"), true);
+        }
+
+        @Test void testEqAliasOnDataClass() throws Exception {
+            String logic =
+                "@data class Point(val x: Int, val y: Int)\n" +
+                "val a = Point(1, 2)\n" +
+                "val b = Point(1, 2)\n" +
+                "a.eq(b)";
+            String compileCode =
+                "@data class Point(val x: Int, val y: Int)\n" +
+                wrap("val a = Point(1, 2)\n    val b = Point(1, 2)\n    return a.eq(b)");
+            dual(logic, compileCode, true);
+        }
+    }
+
     // ============ 算术运算符 ============
 
     @Nested

@@ -13,6 +13,9 @@ import com.novalang.ir.hir.expr.*;
 import com.novalang.ir.hir.stmt.*;
 import com.novalang.compiler.hirtype.*;
 import com.novalang.ir.mir.*;
+import nova.runtime.resolution.MethodNameCanonicalizer;
+import nova.runtime.resolution.MethodSemantics;
+import nova.runtime.resolution.StdlibMethodResolver;
 import nova.runtime.stdlib.BuiltinModuleExports;
 import nova.runtime.stdlib.StdlibRegistry;
 
@@ -150,11 +153,7 @@ public class HirToMirLowering {
      */
     private String resolveMethodAlias(String methodName) {
         if (interpreterMode) return methodName;
-        switch (methodName) {
-            case "uppercase": return "toUpperCase";
-            case "lowercase": return "toLowerCase";
-            default: return methodName;
-        }
+        return MethodNameCanonicalizer.canonicalName(methodName);
     }
 
     /** 基本类型 → 对应的装箱类型 owner，用于 StdlibRegistry 扩展方法查找 */
@@ -3923,22 +3922,18 @@ public class HirToMirLowering {
         // 标准 Java 方法使用标准签名
         String desc;
         MirType returnType;
-        if ("toString".equals(methodName) && args.length == 0) {
-            desc = "()Ljava/lang/String;";
-            returnType = MirType.ofObject("java/lang/String");
-        } else if ("equals".equals(methodName) && args.length == 1) {
-            desc = "(Ljava/lang/Object;)Z";
-            returnType = MirType.ofBoolean();
-        } else if ("hashCode".equals(methodName) && args.length == 0) {
-            desc = "()I";
-            returnType = MirType.ofInt();
+        MethodSemantics.IntrinsicVirtualMethod intrinsic =
+                MethodSemantics.resolveIntrinsicVirtual(methodName, args.length);
+        if (intrinsic != null) {
+            desc = intrinsic.getDescriptor();
+            returnType = descriptorToMirType(desc.substring(desc.indexOf(')') + 1));
         } else {
             // StdlibRegistry 扩展方法路由（优先于 Java 反射，避免 String.lines 等被 Java 方法截获）
             Class<?> ownerClass = resolveJavaClass(owner);
             {
                 StdlibRegistry.ExtensionMethodInfo stdlibExt = ownerClass != null
-                        ? StdlibRegistry.findExtensionMethod(ownerClass, methodName, args.length)
-                        : StdlibRegistry.getExtensionMethod(owner, methodName, args.length);
+                        ? StdlibMethodResolver.resolveByClass(ownerClass, methodName, args.length)
+                        : StdlibMethodResolver.resolveByOwner(owner, methodName, args.length);
                 if (stdlibExt != null) {
                     return emitStdlibExtensionCall(target, stdlibExt, args, builder, loc);
                 }
@@ -3968,7 +3963,7 @@ public class HirToMirLowering {
             }
             // 作用域函数路由: obj.let/also/run/apply/takeIf/takeUnless → INVOKESTATIC NovaScopeFunctions
             // 仅当方法未在 Nova 类继承链中注册时才路由（避免拦截用户自定义同名方法）
-            if (isScopeFunction(methodName, args.length)
+            if (MethodSemantics.isScopeFunction(methodName, args.length)
                     && lookupNovaMethodDescInherited(owner, methodName) == null) {
                 return emitScopeFunctionCall(target, methodName, args, builder, loc);
             }
@@ -4849,9 +4844,6 @@ public class HirToMirLowering {
     private static final Set<String> COLLECTION_HOF_1 = new HashSet<>(
             Arrays.asList("filter", "map", "forEach", "find", "mapNotNull"));
 
-    private static final Set<String> SCOPE_FUNCTIONS = new HashSet<>(
-            Arrays.asList("let", "also", "run", "apply", "takeIf", "takeUnless"));
-
     private boolean isDataClass(String className) {
         List<HirAnnotation> anns = classAnnotationData.get(className);
         if (anns != null) {
@@ -4866,10 +4858,6 @@ public class HirToMirLowering {
         if (argCount == 1 && COLLECTION_HOF_1.contains(methodName)) return true;
         if (argCount == 2 && "reduce".equals(methodName)) return true;
         return false;
-    }
-
-    private boolean isScopeFunction(String methodName, int argCount) {
-        return argCount == 1 && SCOPE_FUNCTIONS.contains(methodName);
     }
 
     /**

@@ -11,6 +11,8 @@ import com.novalang.ir.hir.*;
 import com.novalang.ir.hir.decl.*;
 import com.novalang.ir.hir.expr.*;
 import com.novalang.compiler.hirtype.*;
+import nova.runtime.resolution.MethodNameCanonicalizer;
+import nova.runtime.resolution.StdlibMethodResolver;
 import nova.runtime.interpreter.reflect.*;
 import nova.runtime.stdlib.StdlibRegistry;
 
@@ -92,6 +94,26 @@ final class MemberResolver {
      * 统一的成员解析，复用 Interpreter 的大量逻辑。
      */
     NovaValue resolveMemberOnValue(NovaValue obj, String memberName, AstNode node) {
+        NovaRuntimeException lastLookupMiss = null;
+        List<String> candidates = MethodNameCanonicalizer.lookupCandidates(memberName);
+        for (int i = 0; i < candidates.size(); i++) {
+            String candidate = candidates.get(i);
+            try {
+                return resolveMemberOnValueExact(obj, candidate, node);
+            } catch (NovaRuntimeException e) {
+                if (!LookupMissDetector.isLookupMiss(e)) {
+                    throw e;
+                }
+                lastLookupMiss = e;
+            }
+        }
+        if (lastLookupMiss != null) {
+            throw lastLookupMiss;
+        }
+        throw interp.hirError("Unknown member '" + memberName + "' on " + obj.getTypeName(), node);
+    }
+
+    private NovaValue resolveMemberOnValueExact(NovaValue obj, String memberName, AstNode node) {
         if (obj instanceof NovaObject) {
             NovaValue r = resolveObjectMember((NovaObject) obj, memberName, node);
             if (r != null) return r;
@@ -442,41 +464,41 @@ final class MemberResolver {
         Class<?> javaClass = getJavaClass(obj);
         if (javaClass != null) {
             StdlibRegistry.ExtensionMethodInfo extMethod =
-                    StdlibRegistry.findExtensionMethod(javaClass, memberName, -1);
+                    StdlibMethodResolver.resolveByClass(javaClass, memberName, -1);
             if (extMethod != null) {
                 // 检查是否有重载：有重载时创建动态分派包装
                 List<StdlibRegistry.ExtensionMethodInfo> overloads =
-                        StdlibRegistry.getExtensionMethodOverloads(extMethod.targetType, memberName);
+                        StdlibRegistry.getExtensionMethodOverloads(extMethod.targetType, extMethod.name);
                 if (overloads.size() > 1 && !extMethod.isProperty) {
-                    return createDynamicDispatcher(obj, javaClass, null, memberName, false);
+                    return createDynamicDispatcher(obj, extMethod, false);
                 }
-                return wrapStdlibExtensionMethod(obj, extMethod, memberName);
+                return wrapStdlibExtensionMethod(obj, extMethod, extMethod.name);
             }
         }
         // 2. Nova 内部类型查找
         String internalType = getInternalTypeName(obj);
         if (internalType != null) {
             StdlibRegistry.ExtensionMethodInfo extMethod =
-                    StdlibRegistry.getExtensionMethod(internalType, memberName, -1);
+                    StdlibMethodResolver.resolveByOwner(internalType, memberName, -1);
             if (extMethod != null) {
                 List<StdlibRegistry.ExtensionMethodInfo> overloads =
-                        StdlibRegistry.getExtensionMethodOverloads(internalType, memberName);
+                        StdlibRegistry.getExtensionMethodOverloads(extMethod.targetType, extMethod.name);
                 if (overloads.size() > 1 && !extMethod.isProperty) {
-                    return createDynamicDispatcher(obj, null, internalType, memberName, true);
+                    return createDynamicDispatcher(obj, extMethod, true);
                 }
-                return wrapInternalExtensionMethod(obj, extMethod, memberName);
+                return wrapInternalExtensionMethod(obj, extMethod, extMethod.name);
             }
         }
         return null;
     }
 
     /** 为存在重载的扩展方法创建动态分派包装（在调用时根据实际参数数量选择正确重载） */
-    private NovaValue createDynamicDispatcher(NovaValue receiver, Class<?> javaClass,
-                                               String internalType, String name, boolean rawReceiver) {
+    private NovaValue createDynamicDispatcher(NovaValue receiver,
+                                               StdlibRegistry.ExtensionMethodInfo baseMethod,
+                                               boolean rawReceiver) {
         // 创建时预解析所有重载，避免调用时重复查找
-        String targetType = javaClass != null
-                ? StdlibRegistry.findExtensionMethod(javaClass, name, -1).targetType
-                : internalType;
+        String name = baseMethod.name;
+        String targetType = baseMethod.targetType;
         List<StdlibRegistry.ExtensionMethodInfo> overloads =
                 StdlibRegistry.getExtensionMethodOverloads(targetType, name);
 
@@ -1078,4 +1100,5 @@ final class MemberResolver {
                 return null;
         }
     }
+
 }

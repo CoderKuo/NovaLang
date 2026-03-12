@@ -1,5 +1,7 @@
 package nova.runtime;
 
+import nova.runtime.resolution.MethodNameCanonicalizer;
+import nova.runtime.resolution.StdlibMethodResolver;
 import nova.runtime.stdlib.StdlibRegistry;
 
 import java.lang.invoke.MethodHandle;
@@ -879,7 +881,7 @@ public final class NovaDynamic {
                                                String methodName, Object[] args, String cacheKey) {
         StdlibRegistry.ExtensionMethodInfo extInfo = cache.genericStdlib.get(cacheKey);
         if (extInfo == null && !cache.genericStdlibMiss.containsKey(cacheKey)) {
-            extInfo = StdlibRegistry.findExtensionMethod(clazz, methodName, args.length);
+            extInfo = StdlibMethodResolver.resolveByClass(clazz, methodName, args.length);
             if (extInfo != null) {
                 cache.genericStdlib.put(cacheKey, extInfo);
             } else {
@@ -1150,7 +1152,7 @@ public final class NovaDynamic {
     }
 
     private static MethodHandle resolveStdlibExtensionHandle(Class<?> clazz, String methodName, int arity, MethodType callSiteType) {
-        StdlibRegistry.ExtensionMethodInfo extInfo = StdlibRegistry.findExtensionMethod(clazz, methodName, arity);
+        StdlibRegistry.ExtensionMethodInfo extInfo = StdlibMethodResolver.resolveByClass(clazz, methodName, arity);
         if (extInfo == null) {
             return null;
         }
@@ -1615,16 +1617,7 @@ public final class NovaDynamic {
     }
 
     private static String resolveMethodAlias(String name) {
-        switch (name) {
-            case "uppercase":
-                return "toUpperCase";
-            case "lowercase":
-                return "toLowerCase";
-            case "contains":
-                return null;
-            default:
-                return null;
-        }
+        return MethodNameCanonicalizer.aliasTarget(name);
     }
 
     private static boolean isArgsCompatible(Method method, Object[] args) {

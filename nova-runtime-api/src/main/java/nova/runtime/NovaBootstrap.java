@@ -229,6 +229,9 @@ public final class NovaBootstrap {
     @SuppressWarnings("unchecked")
     private static Object staticInvokeFallback(MutableCallSite site, String funcName,
                                                 Object[] args) throws Throwable {
+        if (NovaScriptContext.isActive()) {
+            return NovaScriptContext.call(funcName, args);
+        }
         // 1. 尝试 StdlibRegistry（不可变，可永久缓存）
         StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(funcName);
         if (nfInfo != null) {

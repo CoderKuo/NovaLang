@@ -72,6 +72,7 @@ class ShowcaseTest {
             interpreter.evalRepl("val a = User(1, \"Alice\", null)");
             interpreter.evalRepl("val b = User(1, \"Alice\", null)");
             assertTrue(interpreter.evalRepl("a.equals(b)").asBool());
+            assertTrue(interpreter.evalRepl("a.eq(b)").asBool());
 
             interpreter.evalRepl("val c = a.copy(1, \"Bob\", null)");
             assertEquals("Bob", interpreter.evalRepl("c.name").asString());

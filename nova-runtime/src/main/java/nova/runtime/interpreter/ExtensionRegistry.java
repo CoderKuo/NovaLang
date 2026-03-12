@@ -1,6 +1,7 @@
 package nova.runtime.interpreter;
 
 import nova.runtime.*;
+import nova.runtime.resolution.MethodNameCanonicalizer;
 import nova.runtime.types.*;
 import com.novalang.compiler.ast.expr.Expression;
 import com.novalang.ir.hir.HirExpr;
@@ -38,7 +39,13 @@ final class ExtensionRegistry {
      */
     NovaCallable getExtension(Class<?> targetType, String methodName) {
         Map<String, NovaCallable> methods = extensionMethods.get(targetType);
-        return methods != null ? methods.get(methodName) : null;
+        if (methods == null) return null;
+        List<String> candidates = MethodNameCanonicalizer.lookupCandidates(methodName);
+        for (int i = 0; i < candidates.size(); i++) {
+            NovaCallable method = methods.get(candidates.get(i));
+            if (method != null) return method;
+        }
+        return null;
     }
 
     /**
@@ -58,16 +65,22 @@ final class ExtensionRegistry {
         // 2a. 精确类型直接查找
         Map<String, NovaCallable> exact = extensionMethods.get(javaValue.getClass());
         if (exact != null) {
-            NovaCallable method = exact.get(methodName);
-            if (method != null) return method;
+            List<String> candidates = MethodNameCanonicalizer.lookupCandidates(methodName);
+            for (int i = 0; i < candidates.size(); i++) {
+                NovaCallable method = exact.get(candidates.get(i));
+                if (method != null) return method;
+            }
         }
 
         // 2b. 继承/接口 fallback
         for (Map.Entry<Class<?>, Map<String, NovaCallable>> entry : extensionMethods.entrySet()) {
             Class<?> type = entry.getKey();
             if (type != javaValue.getClass() && type.isInstance(javaValue)) {
-                NovaCallable method = entry.getValue().get(methodName);
-                if (method != null) return method;
+                List<String> candidates = MethodNameCanonicalizer.lookupCandidates(methodName);
+                for (int i = 0; i < candidates.size(); i++) {
+                    NovaCallable method = entry.getValue().get(candidates.get(i));
+                    if (method != null) return method;
+                }
             }
         }
         return null;
@@ -87,13 +100,16 @@ final class ExtensionRegistry {
      * 查找 Nova 扩展函数
      */
     NovaCallable findNovaExtension(NovaValue receiver, String methodName) {
+        List<String> candidates = MethodNameCanonicalizer.lookupCandidates(methodName);
         String typeName = receiver.getNovaTypeName();
         if (typeName != null) {
             Map<String, NovaCallable> methods = novaExtensions.get(typeName);
             if (methods != null) {
-                NovaCallable func = methods.get(methodName);
-                if (func != null) {
-                    return func;
+                for (int i = 0; i < candidates.size(); i++) {
+                    NovaCallable func = methods.get(candidates.get(i));
+                    if (func != null) {
+                        return func;
+                    }
                 }
             }
         }
@@ -103,9 +119,11 @@ final class ExtensionRegistry {
             String className = ((NovaObject) receiver).getNovaClass().getName();
             Map<String, NovaCallable> methods = novaExtensions.get(className);
             if (methods != null) {
-                NovaCallable func = methods.get(methodName);
-                if (func != null) {
-                    return func;
+                for (int i = 0; i < candidates.size(); i++) {
+                    NovaCallable func = methods.get(candidates.get(i));
+                    if (func != null) {
+                        return func;
+                    }
                 }
             }
         }
@@ -113,9 +131,11 @@ final class ExtensionRegistry {
         // 检查 Any 类型的扩展（对所有类型生效）
         Map<String, NovaCallable> anyMethods = novaExtensions.get("Any");
         if (anyMethods != null) {
-            NovaCallable func = anyMethods.get(methodName);
-            if (func != null) {
-                return func;
+            for (int i = 0; i < candidates.size(); i++) {
+                NovaCallable func = anyMethods.get(candidates.get(i));
+                if (func != null) {
+                    return func;
+                }
             }
         }
 
