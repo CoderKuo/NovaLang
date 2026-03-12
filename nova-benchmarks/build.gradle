@@ -5,6 +5,17 @@ plugins {
 
 description = 'Nova vs Nashorn vs GraalJS vs Groovy vs JEXL vs Java performance benchmarks'
 
+// GraalVM Polyglot 24.x requires Java 17 bytecode, so benchmarks cannot
+// inherit the root project's Java 8 compatibility settings.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+}
+
 def resolveOptionalPath = { String propertyName, String defaultPath ->
     def value = project.findProperty(propertyName)
     if (!value) {
