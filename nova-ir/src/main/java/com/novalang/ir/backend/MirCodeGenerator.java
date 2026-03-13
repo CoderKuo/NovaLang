@@ -1182,14 +1182,24 @@ public class MirCodeGenerator {
             return;
         }
 
-        // 动态 ADD：操作数类型为 OBJECT（运行时可能是 String 或 Number），委托 NovaOps.add()
-        if (op == BinaryOp.ADD && isUnknownObjectType(func, left, right)) {
-            loadObject(mv, left);
-            loadObject(mv, right);
-            mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaOps", "add",
-                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
-            mv.visitVarInsn(ASTORE, dest);
-            return;
+        // 动态算术：操作数类型为 OBJECT（运行时可能是 String 或 Number），委托 NovaOps
+        if (isUnknownObjectType(func, left, right)) {
+            String method = null;
+            switch (op) {
+                case ADD: method = "add"; break;
+                case SUB: method = "sub"; break;
+                case MUL: method = "mul"; break;
+                case DIV: method = "div"; break;
+                case MOD: method = "mod"; break;
+            }
+            if (method != null) {
+                loadObject(mv, left);
+                loadObject(mv, right);
+                mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaOps", method,
+                        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitVarInsn(ASTORE, dest);
+                return;
+            }
         }
 
         // 比较运算 → 根据类型选择指令
@@ -1956,9 +1966,13 @@ public class MirCodeGenerator {
 
     /** 从局部变量加载并拆箱为 JVM int */
     private void unboxInt(MethodVisitor mv, int local) {
-        mv.visitVarInsn(ALOAD, local);
-        mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
+        if (intLocals.contains(local)) {
+            mv.visitVarInsn(ILOAD, local);
+        } else {
+            mv.visitVarInsn(ALOAD, local);
+            mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
+        }
     }
 
     /** 从局部变量加载并拆箱为 JVM boolean */
@@ -2004,23 +2018,38 @@ public class MirCodeGenerator {
 
     /** 从局部变量加载并拆箱为 JVM long */
     private void unboxLong(MethodVisitor mv, int local) {
-        mv.visitVarInsn(ALOAD, local);
-        mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+        if (intLocals.contains(local)) {
+            mv.visitVarInsn(ILOAD, local);
+            mv.visitInsn(I2L);
+        } else {
+            mv.visitVarInsn(ALOAD, local);
+            mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+        }
     }
 
     /** 从局部变量加载并拆箱为 JVM float */
     private void unboxFloat(MethodVisitor mv, int local) {
-        mv.visitVarInsn(ALOAD, local);
-        mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
+        if (intLocals.contains(local)) {
+            mv.visitVarInsn(ILOAD, local);
+            mv.visitInsn(I2F);
+        } else {
+            mv.visitVarInsn(ALOAD, local);
+            mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
+        }
     }
 
     /** 从局部变量加载并拆箱为 JVM double */
     private void unboxDouble(MethodVisitor mv, int local) {
-        mv.visitVarInsn(ALOAD, local);
-        mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+        if (intLocals.contains(local)) {
+            mv.visitVarInsn(ILOAD, local);
+            mv.visitInsn(I2D);
+        } else {
+            mv.visitVarInsn(ALOAD, local);
+            mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+        }
     }
 
     /** 将栈顶 long 装箱为 Long */

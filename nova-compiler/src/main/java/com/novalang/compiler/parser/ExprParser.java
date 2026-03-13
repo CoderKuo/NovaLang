@@ -1098,11 +1098,44 @@ class ExprParser {
         }
 
         parser.expect(RPAREN, "Expected ')'");
-        Expression thenExpr = parseExpression();
+        Expression thenExpr = parseIfBranch();
+        parser.skipNewlines();
         parser.expect(KW_ELSE, "Expected 'else'");
-        Expression elseExpr = parseExpression();
+        Expression elseExpr = parseIfBranch();
 
         return new IfExpr(loc, condition, bindingName, thenExpr, elseExpr);
+    }
+
+    /**
+     * 解析 if/else 分支表达式。
+     * 如果分支以 { 开头，解析为块表达式（BlockExpr），而非 Lambda。
+     * 否则作为普通表达式解析（支持 else if 链和无大括号的单表达式）。
+     */
+    private Expression parseIfBranch() {
+        if (parser.check(LBRACE)) {
+            return parseBlockAsExpr();
+        }
+        return parseExpression();
+    }
+
+    /**
+     * 将 { statements; lastExpr } 解析为块表达式。
+     * 最后一条表达式语句的值作为块的返回值。
+     */
+    private Expression parseBlockAsExpr() {
+        Block block = parser.parseBlock();
+        List<Statement> stmts = new ArrayList<>(block.getStatements());
+        Expression result;
+        if (!stmts.isEmpty() && stmts.get(stmts.size() - 1) instanceof ExpressionStmt) {
+            ExpressionStmt last = (ExpressionStmt) stmts.remove(stmts.size() - 1);
+            result = last.getExpression();
+        } else {
+            result = new Literal(block.getLocation(), null, Literal.LiteralKind.NULL);
+        }
+        if (stmts.isEmpty()) {
+            return result;
+        }
+        return new BlockExpr(block.getLocation(), stmts, result);
     }
 
     private TryExpr parseTryExpr() {

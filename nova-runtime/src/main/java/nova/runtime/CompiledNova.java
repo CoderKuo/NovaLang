@@ -75,7 +75,11 @@ public final class CompiledNova {
      * 执行预编译的代码，返回最后一个表达式的值。
      */
     public Object run() {
-        if (mainHandle != null) return runBytecode();
+        if (compiledClasses != null) {
+            if (mainHandle != null) return runBytecode();
+            // 纯函数定义的脚本无 main()，run() 无操作，通过 call() 调用函数
+            return null;
+        }
         return runInterpreted();
     }
 
@@ -115,18 +119,24 @@ public final class CompiledNova {
      */
     public Object call(String funcName, Object... args) {
         if (nova != null) return nova.call(funcName, args);
-        // 字节码模式：通过 MethodHandleCache 查找类型兼容的静态方法
-        Class<?> cls = funcClassCache.get(funcName);
-        if (cls == null) {
-            cls = findFuncClass(funcName);
-            funcClassCache.put(funcName, cls);
+        // 字节码模式：初始化脚本上下文（使编译函数能访问注入的全局函数），调用后清理
+        NovaScriptContext.init(bindings);
+        if (extensionRegistry != null) {
+            NovaScriptContext.setExtensionRegistry(extensionRegistry);
         }
         try {
+            Class<?> cls = funcClassCache.get(funcName);
+            if (cls == null) {
+                cls = findFuncClass(funcName);
+                funcClassCache.put(funcName, cls);
+            }
             return MethodHandleCache.getInstance().invokeStatic(cls, funcName, args);
         } catch (NovaRuntimeException e) {
             throw e;
         } catch (Throwable e) {
             throw new RuntimeException(e.getMessage(), e);
+        } finally {
+            NovaScriptContext.clear();
         }
     }
 
@@ -168,7 +178,7 @@ public final class CompiledNova {
      * 是否为字节码模式。
      */
     public boolean isBytecodeMode() {
-        return mainHandle != null;
+        return compiledClasses != null;
     }
 
     /**
@@ -196,6 +206,8 @@ public final class CompiledNova {
             // 回写导出变量
             bindings.putAll(NovaScriptContext.getAll());
             return result;
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Throwable e) {
             throw new RuntimeException(e.getMessage(), e);
         } finally {
@@ -214,7 +226,8 @@ public final class CompiledNova {
                 // 该类没有 main()，继续查找
             }
         }
-        throw new RuntimeException("No main method found in compiled classes");
+        // 纯函数定义的脚本没有 main()，run() 返回 null，仍可通过 call() 调用函数
+        return null;
     }
 
     private void applyBindings(Object[] kvBindings) {

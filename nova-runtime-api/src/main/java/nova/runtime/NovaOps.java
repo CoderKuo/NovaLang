@@ -19,12 +19,68 @@ public final class NovaOps {
         if (a instanceof String || b instanceof String) {
             return String.valueOf(a) + String.valueOf(b);
         }
+        return numericOp(a, b, NumOp.ADD);
+    }
+
+    /**
+     * 运行时动态减法。
+     */
+    public static Object sub(Object a, Object b) {
+        return numericOp(a, b, NumOp.SUB);
+    }
+
+    /**
+     * 运行时动态乘法。
+     */
+    public static Object mul(Object a, Object b) {
+        return numericOp(a, b, NumOp.MUL);
+    }
+
+    /**
+     * 运行时动态除法。
+     */
+    public static Object div(Object a, Object b) {
+        return numericOp(a, b, NumOp.DIV);
+    }
+
+    /**
+     * 运行时动态取模。
+     */
+    public static Object mod(Object a, Object b) {
+        return numericOp(a, b, NumOp.MOD);
+    }
+
+    private enum NumOp { ADD, SUB, MUL, DIV, MOD }
+
+    private static Object numericOp(Object a, Object b, NumOp op) {
         if (a instanceof Double || b instanceof Double) {
-            return ((Number) a).doubleValue() + ((Number) b).doubleValue();
+            double da = ((Number) a).doubleValue(), db = ((Number) b).doubleValue();
+            switch (op) {
+                case ADD: return da + db;
+                case SUB: return da - db;
+                case MUL: return da * db;
+                case DIV: return da / db;
+                case MOD: return da % db;
+            }
         }
         if (a instanceof Long || b instanceof Long) {
-            return ((Number) a).longValue() + ((Number) b).longValue();
+            long la = ((Number) a).longValue(), lb = ((Number) b).longValue();
+            switch (op) {
+                case ADD: return la + lb;
+                case SUB: return la - lb;
+                case MUL: return la * lb;
+                case DIV: return la / lb;
+                case MOD: return la % lb;
+            }
         }
-        return ((Number) a).intValue() + ((Number) b).intValue();
+        int ia = ((Number) a).intValue(), ib = ((Number) b).intValue();
+        switch (op) {
+            case ADD: return ia + ib;
+            case SUB: return ia - ib;
+            case MUL: return ia * ib;
+            case DIV: return ia / ib;
+            case MOD: return ia % ib;
+        }
+        return ia + ib;
     }
 }

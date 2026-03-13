@@ -828,6 +828,16 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
     }
 
     @Override
+    public AstNode visitCStyleForStmt(CStyleForStmt node, LoweringContext ctx) {
+        return new CStyleForStmt(node.getLocation(), node.getLabel(),
+                node.getVarName(), node.isVal(),
+                node.getInit() != null ? lowerExpr(node.getInit(), ctx) : null,
+                node.getCondition() != null ? lowerExpr(node.getCondition(), ctx) : null,
+                node.getUpdate() != null ? lowerExpr(node.getUpdate(), ctx) : null,
+                lowerStmt(node.getBody(), ctx));
+    }
+
+    @Override
     public AstNode visitWhileStmt(WhileStmt node, LoweringContext ctx) {
         return new HirLoop(node.getLocation(), node.getLabel(),
                 lowerExpr(node.getCondition(), ctx),
@@ -1066,6 +1076,17 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
         Expression elseExpr = node.getElseExpr() != null
                 ? lowerExpr(node.getElseExpr(), ctx) : ctx.nullLiteral(loc);
         return new ConditionalExpr(loc,cond, thenExpr, elseExpr);
+    }
+
+    /**
+     * 块表达式：递归 lower 内部语句和结果表达式。
+     * 用于 if-expression 的 { stmts; resultExpr } 分支。
+     */
+    @Override
+    public AstNode visitBlockExpr(BlockExpr node, LoweringContext ctx) {
+        List<Statement> lowered = lowerStmts(node.getStatements(), ctx);
+        Expression loweredResult = lowerExpr(node.getResult(), ctx);
+        return new BlockExpr(node.getLocation(), lowered, loweredResult);
     }
 
     /**

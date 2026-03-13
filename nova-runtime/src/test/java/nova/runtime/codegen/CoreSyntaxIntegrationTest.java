@@ -491,6 +491,117 @@ class CoreSyntaxIntegrationTest {
         }
     }
 
+    // ============ 控制流 - C 风格 for 循环 ============
+
+    @Nested
+    @DisplayName("C 风格 for 循环")
+    class CStyleForTests {
+
+        // ── 正常值 ──
+
+        @Test void testBasicCStyleFor() throws Exception {
+            String logic = "var s = 0\nfor (var i = 0; i < 5; i += 1) { s = s + i }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 5; i += 1) { s = s + i }\n    return s"), 10);
+        }
+
+        @Test void testCStyleForWithBreak() throws Exception {
+            String logic = "var s = 0\nfor (var i = 0; i < 10; i += 1) {\n  if (i > 3) break\n  s = s + i\n}\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 10; i += 1) {\n      if (i > 3) break\n      s = s + i\n    }\n    return s"), 6);
+        }
+
+        @Test void testCStyleForWithContinue() throws Exception {
+            // continue 必须先执行 update 再回条件检查
+            String logic = "var s = 0\nfor (var i = 0; i < 5; i += 1) {\n  if (i == 2) continue\n  s = s + i\n}\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 5; i += 1) {\n      if (i == 2) continue\n      s = s + i\n    }\n    return s"), 8);
+        }
+
+        @Test void testCStyleForNested() throws Exception {
+            String logic = "var s = 0\nfor (var i = 0; i < 3; i += 1) {\n  for (var j = 0; j < 3; j += 1) {\n    s = s + 1\n  }\n}\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 3; i += 1) {\n      for (var j = 0; j < 3; j += 1) {\n        s = s + 1\n      }\n    }\n    return s"), 9);
+        }
+
+        @Test void testCStyleForStepTwo() throws Exception {
+            // 步长为 2
+            String logic = "var s = 0\nfor (var i = 0; i < 10; i += 2) { s = s + i }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 10; i += 2) { s = s + i }\n    return s"), 20);
+        }
+
+        @Test void testCStyleForDecrement() throws Exception {
+            // 递减
+            String logic = "var s = 0\nfor (var i = 5; i > 0; i -= 1) { s = s + i }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 5; i > 0; i -= 1) { s = s + i }\n    return s"), 15);
+        }
+
+        @Test void testCStyleForStringConcat() throws Exception {
+            String logic = "var s = \"\"\nfor (var i = 0; i < 3; i += 1) { s = s + i }\ns";
+            dual(logic, wrap("var s = \"\"\n    for (var i = 0; i < 3; i += 1) { s = s + i }\n    return s"), "012");
+        }
+
+        // ── 边界值 ──
+
+        @Test void testCStyleForZeroIterations() throws Exception {
+            // 条件一开始就不满足，循环体不执行
+            String logic = "var s = 0\nfor (var i = 0; i < 0; i += 1) { s = s + 1 }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 0; i += 1) { s = s + 1 }\n    return s"), 0);
+        }
+
+        @Test void testCStyleForSingleIteration() throws Exception {
+            String logic = "var s = 0\nfor (var i = 0; i < 1; i += 1) { s = s + 10 }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 1; i += 1) { s = s + 10 }\n    return s"), 10);
+        }
+
+        @Test void testCStyleForBreakFirst() throws Exception {
+            // 第一次迭代就 break
+            String logic = "var s = 0\nfor (var i = 0; i < 100; i += 1) { s = 42; break }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 100; i += 1) { s = 42; break }\n    return s"), 42);
+        }
+
+        @Test void testCStyleForContinueAll() throws Exception {
+            // 每次都 continue（通过条件），循环体的 s 累加不执行，但 update 仍然执行
+            String logic = "var s = 0\nfor (var i = 0; i < 5; i += 1) {\n  if (i >= 0) continue\n  s = s + 1\n}\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 5; i += 1) {\n      if (i >= 0) continue\n      s = s + 1\n    }\n    return s"), 0);
+        }
+
+        @Test void testCStyleForNegativeRange() throws Exception {
+            // 负数范围
+            String logic = "var s = 0\nfor (var i = -3; i <= 0; i += 1) { s = s + i }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = -3; i <= 0; i += 1) { s = s + i }\n    return s"), -6);
+        }
+
+        @Test void testCStyleForLargeStep() throws Exception {
+            // 步长大于范围，只执行一次
+            String logic = "var s = 0\nfor (var i = 0; i < 5; i += 100) { s = s + 1 }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 5; i += 100) { s = s + 1 }\n    return s"), 1);
+        }
+
+        // ── 异常值 / 特殊场景 ──
+
+        @Test void testCStyleForVarMutation() throws Exception {
+            // 循环变量在 body 中可修改（var 声明）
+            String logic = "var s = 0\nfor (var i = 0; i < 10; i += 1) {\n  if (i == 3) { i = 7 }\n  s = s + 1\n}\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 10; i += 1) {\n      if (i == 3) { i = 7 }\n      s = s + 1\n    }\n    return s"), 6);
+        }
+
+        @Test void testCStyleForMixedWithKotlinFor() throws Exception {
+            // C 风格和 Kotlin 风格混用: (10+0)+(20+0)+(10+1)+(20+1)+(10+2)+(20+2) = 96
+            String logic = "var s = 0\nfor (var i = 0; i < 3; i += 1) {\n  for (x in [10, 20]) {\n    s = s + x + i\n  }\n}\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 0; i < 3; i += 1) {\n      for (x in [10, 20]) {\n        s = s + x + i\n      }\n    }\n    return s"), 96);
+        }
+
+        @Test void testCStyleForWithReturn() throws Exception {
+            // 循环中 return
+            String code = "fun findFirst(): Int {\n  for (var i = 0; i < 10; i += 1) {\n    if (i == 5) return i\n  }\n  return -1\n}\nfindFirst()";
+            String wrapped = wrap("fun findFirst(): Int {\n      for (var i = 0; i < 10; i += 1) {\n        if (i == 5) return i\n      }\n      return -1\n    }\n    return findFirst()");
+            dual(code, wrapped, 5);
+        }
+
+        @Test void testCStyleForCompoundUpdate() throws Exception {
+            // 乘法更新
+            String logic = "var s = 0\nfor (var i = 1; i < 100; i *= 2) { s = s + 1 }\ns";
+            dual(logic, wrap("var s = 0\n    for (var i = 1; i < 100; i *= 2) { s = s + 1 }\n    return s"), 7);
+        }
+    }
+
     // ============ 控制流 - while / do-while ============
 
     @Nested
@@ -1008,5 +1119,22 @@ class CoreSyntaxIntegrationTest {
                 + "}";
             dual(interpCode, compileCode, 0);
         }
+    }
+
+    @Test
+    @DisplayName("临时")
+    void testFloatMultiply() throws Exception {
+        NovaValue ir = interp("var element = \"雷电\"\n" +
+                "    var level = toNumber(groups.get(1))\n" +
+                "    var attrId = if (element == \"火焰\") { \"fire_damage\" }\n" +
+                "        else if (element == \"冰霜\") { \"ice_damage\" }\n" +
+                "        else if (element == \"雷电\") { \"lightning_damage\" }\n" +
+                "        else { \"poison_damage\" }");
+        Object cr = compile(wrap("var element = \"雷电\"\n" +
+                "    var level = toNumber(groups.get(1))\n" +
+                "    var attrId = if (element == \"火焰\") { \"fire_damage\" }\n" +
+                "        else if (element == \"冰霜\") { \"ice_damage\" }\n" +
+                "        else if (element == \"雷电\") { \"lightning_damage\" }\n" +
+                "        else { \"poison_damage\" }"));
     }
 }

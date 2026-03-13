@@ -281,10 +281,15 @@ class StmtParser {
         return new WhenBranch.ExpressionCondition(loc, expr);
     }
 
-    private ForStmt parseForStmt(String label) {
+    private Statement parseForStmt(String label) {
         SourceLocation loc = parser.location();
         parser.expect(KW_FOR, "Expected 'for'");
         parser.expect(LPAREN, "Expected '('");
+
+        // C 风格检测：var/val 开头 → C 风格 for
+        if (parser.check(KW_VAR) || parser.check(KW_VAL)) {
+            return parseCStyleForStmt(loc, label);
+        }
 
         List<String> variables = new ArrayList<String>();
         if (parser.match(LPAREN)) {
@@ -309,6 +314,36 @@ class StmtParser {
         }
 
         return new ForStmt(loc, label, variables, iterable, body);
+    }
+
+    private CStyleForStmt parseCStyleForStmt(SourceLocation loc, String label) {
+        boolean isVal = parser.match(KW_VAL);
+        if (!isVal) parser.expect(KW_VAR, "Expected 'var'");
+        String varName = parser.expect(IDENTIFIER, "Expected variable name").getLexeme();
+        parser.expect(ASSIGN, "Expected '='");
+        Expression initExpr = parser.parseExpression();
+        parser.expect(SEMICOLON, "Expected ';'");
+
+        Expression condition = null;
+        if (!parser.check(SEMICOLON)) {
+            condition = parser.parseExpression();
+        }
+        parser.expect(SEMICOLON, "Expected ';'");
+
+        Expression update = null;
+        if (!parser.check(RPAREN)) {
+            update = parser.parseExpression();
+        }
+        parser.expect(RPAREN, "Expected ')'");
+
+        Statement body;
+        if (parser.check(LBRACE)) {
+            body = parseBlock();
+        } else {
+            body = parseStatement();
+        }
+
+        return new CStyleForStmt(loc, label, varName, isVal, initExpr, condition, update, body);
     }
 
     private String parseForVariable() {

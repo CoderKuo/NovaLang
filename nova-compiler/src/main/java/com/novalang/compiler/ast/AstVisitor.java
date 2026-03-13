@@ -56,6 +56,8 @@ public interface AstVisitor<R, C> {
 
     default R visitForStmt(ForStmt node, C ctx) { return null; }
 
+    default R visitCStyleForStmt(CStyleForStmt node, C ctx) { return null; }
+
     default R visitWhileStmt(WhileStmt node, C ctx) { return null; }
 
     default R visitDoWhileStmt(DoWhileStmt node, C ctx) { return null; }

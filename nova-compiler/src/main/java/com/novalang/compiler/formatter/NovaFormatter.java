@@ -511,6 +511,32 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
     }
 
     @Override
+    public Void visitCStyleForStmt(CStyleForStmt node, FormatterContext ctx) {
+        if (node.getLabel() != null) {
+            ctx.append(node.getLabel());
+            ctx.append("@ ");
+        }
+        ctx.append("for (");
+        ctx.append(node.isVal() ? "val " : "var ");
+        ctx.append(node.getVarName());
+        ctx.append(" = ");
+        formatExpression(node.getInit(), ctx);
+        ctx.append("; ");
+        if (node.getCondition() != null) formatExpression(node.getCondition(), ctx);
+        ctx.append("; ");
+        if (node.getUpdate() != null) formatExpression(node.getUpdate(), ctx);
+        ctx.append(") ");
+
+        if (node.getBody() instanceof Block) {
+            formatBlock((Block) node.getBody(), ctx);
+        } else {
+            node.getBody().accept(this, ctx);
+        }
+
+        return null;
+    }
+
+    @Override
     public Void visitWhileStmt(WhileStmt node, FormatterContext ctx) {
         if (node.getLabel() != null) {
             ctx.append(node.getLabel());

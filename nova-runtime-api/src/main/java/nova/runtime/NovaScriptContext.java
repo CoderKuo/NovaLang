@@ -138,7 +138,7 @@ public class NovaScriptContext {
         if (nfInfo != null) {
             return nfInfo.impl.apply(args);
         }
-        throw new RuntimeException("Undefined function: " + name);
+        throw new NovaException("Undefined function: " + name);
     }
 
     private static NovaValue safeToNovaValue(Object arg) {

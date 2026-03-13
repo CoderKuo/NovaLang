@@ -1404,6 +1404,7 @@ public class HirToMirLowering {
         if (node instanceof IfStmt) return lowerIf((IfStmt) node, builder);
         if (node instanceof HirLoop) return lowerLoop((HirLoop) node, builder);
         if (node instanceof ForStmt) return lowerFor((ForStmt) node, builder);
+        if (node instanceof CStyleForStmt) return lowerCStyleFor((CStyleForStmt) node, builder);
         if (node instanceof HirTry) return lowerTry((HirTry) node, builder);
         if (node instanceof ReturnStmt) return lowerReturn((ReturnStmt) node, builder);
         if (node instanceof ThrowStmt) return lowerThrow((ThrowStmt) node, builder);
@@ -1912,6 +1913,58 @@ public class HirToMirLowering {
         int one = builder.emitConstInt(1, loc);
         int incremented = builder.emitBinary(BinaryOp.ADD, loopVar, one, MirType.ofInt(), loc);
         builder.emitMoveTo(incremented, loopVar, loc);
+        builder.emitGoto(headerBlock.getId(), loc);
+
+        builder.switchToBlock(exitBlock);
+        return -1;
+    }
+
+    /**
+     * C 风格 for: for (var i = 0; i < n; i += 1) { ... }
+     */
+    private int lowerCStyleFor(CStyleForStmt node, MirBuilder builder) {
+        SourceLocation loc = node.getLocation();
+
+        // init: 声明循环变量并赋初值
+        int initVal = lowerExpr(node.getInit(), builder);
+        int loopVar = builder.newLocal(node.getVarName(), MirType.ofObject("java/lang/Object"));
+        builder.emitMoveTo(initVal, loopVar, loc);
+
+        BasicBlock headerBlock = builder.newBlock();
+        BasicBlock bodyBlock = builder.newBlock();
+        BasicBlock incrBlock = builder.newBlock();
+        BasicBlock exitBlock = builder.newBlock();
+
+        builder.emitGoto(headerBlock.getId(), loc);
+
+        // header: condition check
+        builder.switchToBlock(headerBlock);
+        if (node.getCondition() != null) {
+            int cond = lowerExpr(node.getCondition(), builder);
+            builder.emitBranch(cond, bodyBlock.getId(), exitBlock.getId(), loc);
+        } else {
+            builder.emitGoto(bodyBlock.getId(), loc);
+        }
+
+        // body
+        builder.switchToBlock(bodyBlock);
+        loopStack.push(new LoopContext(node.getLabel(), incrBlock.getId(), exitBlock.getId()));
+        blockScopeDepth++;
+        try {
+            lowerNode(node.getBody(), builder);
+        } finally {
+            blockScopeDepth--;
+            loopStack.pop();
+        }
+        if (!builder.getCurrentBlock().hasTerminator()) {
+            builder.emitGoto(incrBlock.getId(), loc);
+        }
+
+        // incr: update expression
+        builder.switchToBlock(incrBlock);
+        if (node.getUpdate() != null) {
+            lowerExpr(node.getUpdate(), builder);
+        }
         builder.emitGoto(headerBlock.getId(), loc);
 
         builder.switchToBlock(exitBlock);
@@ -4823,6 +4876,12 @@ public class HirToMirLowering {
             collectAssignedVarNames(((HirLoop) node).getBody(), result);
         } else if (node instanceof ForStmt) {
             collectAssignedVarNames(((ForStmt) node).getBody(), result);
+        } else if (node instanceof CStyleForStmt) {
+            CStyleForStmt cfor = (CStyleForStmt) node;
+            collectAssignedVarNames(cfor.getInit(), result);
+            collectAssignedVarNames(cfor.getCondition(), result);
+            collectAssignedVarNames(cfor.getUpdate(), result);
+            collectAssignedVarNames(cfor.getBody(), result);
         } else if (node instanceof HirDeclStmt) {
             HirDecl decl = ((HirDeclStmt) node).getDeclaration();
             if (decl instanceof HirField && ((HirField) decl).hasInitializer()) {

@@ -44,6 +44,14 @@ public final class Nova {
      */
     private final Map<String, Object> valRegistry = new LinkedHashMap<>();
 
+    /**
+     * 命名空间绑定注册表。
+     * 通过 defineVal/defineFunction/set 的带 namespace 重载存入此 Map，
+     * 在 eval/compile/compileToBytecode 时通过 applyNamespaceBindings() 合并到全局环境。
+     * 命名空间中的定义优先于全局同名定义（覆盖语义）。
+     */
+    private final Map<String, Map<String, Object>> namespaceBindings = new HashMap<>();
+
     public Nova() {
         this.interpreter = new Interpreter();
     }
@@ -93,6 +101,15 @@ public final class Nova {
     }
 
     /**
+     * 设置变量到指定命名空间。
+     */
+    public Nova set(String name, Object value, String namespace) {
+        namespaceBindings.computeIfAbsent(namespace, k -> new LinkedHashMap<>())
+                .put(name, value);
+        return this;
+    }
+
+    /**
      * 定义不可变变量（val）。支持 NovaValue（如 NovaNativeFunction）和普通 Java 对象。
      * 同时写入 valRegistry 供字节码模式使用。
      * <pre>
@@ -103,6 +120,16 @@ public final class Nova {
     public Nova defineVal(String name, Object value) {
         interpreter.getGlobals().defineVal(name, AbstractNovaValue.fromJava(value));
         valRegistry.put(name, NativeFunctionAdapter.toBindingValue(value));
+        return this;
+    }
+
+    /**
+     * 定义不可变变量到指定命名空间（不写入全局环境，避免重名冲突）。
+     * 在 eval/compile/compileToBytecode 带 namespace 调用时通过 applyNamespaceBindings 合并。
+     */
+    public Nova defineVal(String name, Object value, String namespace) {
+        namespaceBindings.computeIfAbsent(namespace, k -> new LinkedHashMap<>())
+                .put(name, value);
         return this;
     }
 
@@ -187,6 +214,71 @@ public final class Nova {
             for (int i = 0; i < args.size(); i++) javaArgs[i] = unwrap(args.get(i));
             return wrapReturn(func.invoke(javaArgs));
         }));
+    }
+
+    // ── 注入 Java 函数（命名空间版） ────────────────────────
+
+    /** 注入无参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function0<Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 0, (ctx, args) ->
+                wrapReturn(func.invoke())), namespace);
+    }
+
+    /** 注入单参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function1<Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 1, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0))))), namespace);
+    }
+
+    /** 注入双参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function2<Object, Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 2, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1))))), namespace);
+    }
+
+    /** 注入三参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function3<Object, Object, Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 3, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2))))), namespace);
+    }
+
+    /** 注入四参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function4<Object, Object, Object, Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 4, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3))))), namespace);
+    }
+
+    /** 注入五参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function5<Object, Object, Object, Object, Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 5, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4))))), namespace);
+    }
+
+    /** 注入六参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function6<Object, Object, Object, Object, Object, Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 6, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5))))), namespace);
+    }
+
+    /** 注入七参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function7<Object, Object, Object, Object, Object, Object, Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 7, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6))))), namespace);
+    }
+
+    /** 注入八参 Java 函数到命名空间。 */
+    public Nova defineFunction(String name, Function8<Object, Object, Object, Object, Object, Object, Object, Object, Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, 8, (ctx, args) ->
+                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6)), unwrap(args.get(7))))), namespace);
+    }
+
+    /** 注入可变参数 Java 函数到命名空间。 */
+    public Nova defineFunctionVararg(String name, Function1<Object[], Object> func, String namespace) {
+        return defineVal(name, new NovaNativeFunction(name, -1, (ctx, args) -> {
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) javaArgs[i] = unwrap(args.get(i));
+            return wrapReturn(func.invoke(javaArgs));
+        }), namespace);
     }
 
     // ── 别名 ──────────────────────────────────────────
@@ -442,6 +534,21 @@ public final class Nova {
         return result;
     }
 
+    // ── 命名空间合并 ──────────────────────────────────────
+
+    /**
+     * 将指定命名空间的绑定合并到全局环境。
+     * 通过 set() 实现覆盖语义：已存在的同名变量会被命名空间版本覆盖。
+     */
+    private void applyNamespaceBindings(String namespace) {
+        if (namespace == null) return;
+        Map<String, Object> nsBindings = namespaceBindings.get(namespace);
+        if (nsBindings == null || nsBindings.isEmpty()) return;
+        for (Map.Entry<String, Object> entry : nsBindings.entrySet()) {
+            set(entry.getKey(), entry.getValue());
+        }
+    }
+
     // ── 执行代码 ──────────────────────────────────────────
 
     /**
@@ -450,6 +557,14 @@ public final class Nova {
     public Object eval(String code) {
         NovaValue result = interpreter.evalRepl(code);
         return toJava(result);
+    }
+
+    /**
+     * 执行 Nova 代码，命名空间中的绑定优先覆盖全局同名定义。
+     */
+    public Object eval(String code, String namespace) {
+        applyNamespaceBindings(namespace);
+        return eval(code);
     }
 
     /**
@@ -498,6 +613,14 @@ public final class Nova {
     }
 
     /**
+     * 在当前实例上预编译 Nova 代码，命名空间绑定优先覆盖全局同名定义。
+     */
+    public CompiledNova compile(String code, String fileName, String namespace) {
+        applyNamespaceBindings(namespace);
+        return compile(code, fileName);
+    }
+
+    /**
      * 在当前实例上预编译文件，共享已有环境。
      */
     public CompiledNova compileFile(File file) {
@@ -530,6 +653,14 @@ public final class Nova {
             compiled.set(entry.getKey(), entry.getValue());
         }
         return compiled;
+    }
+
+    /**
+     * 真字节码预编译，命名空间绑定优先覆盖全局同名定义。
+     */
+    public CompiledNova compileToBytecode(String code, String fileName, String namespace) {
+        applyNamespaceBindings(namespace);
+        return compileToBytecode(code, fileName);
     }
 
     /**

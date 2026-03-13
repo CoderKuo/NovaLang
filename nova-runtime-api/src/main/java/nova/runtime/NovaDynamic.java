@@ -913,19 +913,42 @@ public final class NovaDynamic {
             }
         }
 
-        throw noSuchMethod(clazz, methodName, args.length);
+        throw noSuchMethod(clazz, methodName, args.length, args);
     }
 
     private static RuntimeException noSuchMethod(Class<?> clazz, String methodName, int argCount) {
+        return noSuchMethod(clazz, methodName, argCount, null);
+    }
+
+    private static RuntimeException noSuchMethod(Class<?> clazz, String methodName, int argCount, Object[] args) {
         StringBuilder sb = new StringBuilder();
         sb.append("No method '").append(methodName).append("' found on ")
           .append(clazz.getSimpleName()).append(" with ").append(argCount).append(" argument(s)");
 
-        // 同名方法存在但参数数量不同时，提示可用的参数数量
+        // 输出实际参数类型以便调试
+        if (args != null && args.length > 0) {
+            sb.append(". Actual arg types: [");
+            for (int i = 0; i < args.length; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(args[i] != null ? args[i].getClass().getName() : "null");
+            }
+            sb.append("]");
+        }
+
+        // 同名方法存在但参数数量不同时，提示可用的参数数量和签名
         java.util.TreeSet<Integer> arities = new java.util.TreeSet<Integer>();
+        java.util.List<String> signatures = new java.util.ArrayList<>();
         for (Method m : clazz.getMethods()) {
             if (m.getName().equals(methodName)) {
                 arities.add(m.getParameterCount());
+                StringBuilder sig = new StringBuilder(methodName).append("(");
+                Class<?>[] params = m.getParameterTypes();
+                for (int i = 0; i < params.length; i++) {
+                    if (i > 0) sig.append(", ");
+                    sig.append(params[i].getSimpleName());
+                }
+                sig.append(")");
+                signatures.add(sig.toString());
             }
         }
         if (!arities.isEmpty()) {
@@ -936,6 +959,7 @@ public final class NovaDynamic {
                 sb.append(" or ").append(it.next());
             }
             sb.append(" argument(s)");
+            sb.append(". Signatures: ").append(signatures);
         }
 
         return new RuntimeException(sb.toString());
@@ -1397,6 +1421,10 @@ public final class NovaDynamic {
         try {
             return handle.asType(type);
         } catch (Exception e) {
+            // asType 失败：记录详情以便调试
+            System.err.println("[NovaDynamic] resolveMethodHandle: asType failed for " +
+                    clazz.getSimpleName() + "." + methodName +
+                    " handle=" + handle.type() + " target=" + type + " error=" + e);
             return null;
         }
     }
@@ -1425,7 +1453,13 @@ public final class NovaDynamic {
         Method best = matches.size() == 1 ? matches.get(0) : selectMostSpecific(matches);
         try {
             best.setAccessible(true);
-            MethodHandle handle = LOOKUP.unreflect(best);
+        } catch (Exception ignored) {
+        }
+        MethodHandle handle = unreflectWithFallback(best);
+        if (handle == null) {
+            return null;
+        }
+        try {
             if (best.isVarArgs()) {
                 Class<?>[] paramTypes = best.getParameterTypes();
                 handle = handle.asVarargsCollector(paramTypes[paramTypes.length - 1]);
@@ -1535,7 +1569,13 @@ public final class NovaDynamic {
         Method best = matches.size() == 1 ? matches.get(0) : selectMostSpecific(matches);
         try {
             best.setAccessible(true);
-            MethodHandle handle = LOOKUP.unreflect(best);
+        } catch (Exception ignored) {
+        }
+        MethodHandle handle = unreflectWithFallback(best);
+        if (handle == null) {
+            return null;
+        }
+        try {
             if (best.isVarArgs()) {
                 Class<?>[] paramTypes = best.getParameterTypes();
                 handle = handle.asVarargsCollector(paramTypes[paramTypes.length - 1]);
@@ -1543,6 +1583,18 @@ public final class NovaDynamic {
             return handle;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private static MethodHandle unreflectWithFallback(Method method) {
+        try {
+            return LOOKUP.unreflect(method);
+        } catch (IllegalAccessException e) {
+            try {
+                return MethodHandles.publicLookup().unreflect(method);
+            } catch (IllegalAccessException e2) {
+                return null;
+            }
         }
     }
 

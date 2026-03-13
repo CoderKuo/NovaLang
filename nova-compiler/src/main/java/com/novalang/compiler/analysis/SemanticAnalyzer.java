@@ -673,6 +673,22 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     }
 
     @Override
+    public Void visitCStyleForStmt(CStyleForStmt node, Void ctx) {
+        Scope forScope = enterScope(Scope.ScopeType.BLOCK, node);
+        if (node.getInit() != null) node.getInit().accept(this, ctx);
+        if (node.getVarName() != null) {
+            Symbol varSym = new Symbol(node.getVarName(), SymbolKind.VARIABLE, null,
+                    false, node.getLocation(), node, Modifier.PUBLIC);
+            forScope.define(varSym);
+        }
+        if (node.getCondition() != null) node.getCondition().accept(this, ctx);
+        if (node.getUpdate() != null) node.getUpdate().accept(this, ctx);
+        if (node.getBody() != null) node.getBody().accept(this, ctx);
+        exitScope(node);
+        return null;
+    }
+
+    @Override
     public Void visitWhileStmt(WhileStmt node, Void ctx) {
         node.getCondition().accept(this, ctx);
         if (node.getBody() != null) node.getBody().accept(this, ctx);
