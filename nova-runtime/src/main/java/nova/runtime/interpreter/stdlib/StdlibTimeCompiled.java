@@ -30,7 +30,10 @@ public final class StdlibTimeCompiled {
 
     public static Object sleep(Object millis) {
         try {
-            Thread.sleep(((NovaValue) millis).asLong());
+            long ms = millis instanceof Number
+                    ? ((Number) millis).longValue()
+                    : ((NovaValue) millis).asLong();
+            Thread.sleep(ms);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

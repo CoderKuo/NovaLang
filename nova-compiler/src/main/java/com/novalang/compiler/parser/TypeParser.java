@@ -120,10 +120,10 @@ class TypeParser {
         String firstName = parseTypeIdentifier();
         parts.add(firstName);
 
-        // 后续部分：只能是标识符（遇到 .( 停止，可能是带接收者的函数类型）
+        // 后续部分：标识符或内置类型关键字（遇到 .( 停止，可能是带接收者的函数类型）
         while (parser.check(DOT) && !parser.checkAhead(MUL) && !parser.checkAhead(LPAREN)) {
             parser.advance();  // consume '.'
-            parts.add(parser.expect(IDENTIFIER, "Expected identifier").getLexeme());
+            parts.add(parseTypeIdentifier());
         }
 
         return new QualifiedName(loc, parts);

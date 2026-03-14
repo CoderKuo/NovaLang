@@ -23,6 +23,7 @@ public enum Modifier {
     CROSSINLINE,
     REIFIED,
     OPERATOR,
+    INFIX,
     VARARG,
     SUSPEND,
     STATIC;

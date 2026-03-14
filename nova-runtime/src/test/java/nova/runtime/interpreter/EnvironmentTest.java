@@ -54,13 +54,11 @@ class EnvironmentTest {
         }
 
         @Test
-        @DisplayName("重复定义抛出异常")
+        @DisplayName("重复定义静默覆盖")
         void testDuplicateDefinition() {
             env.defineVal("dup", new NovaInt(1));
-
-            assertThrows(NovaException.class, () -> {
-                env.defineVal("dup", new NovaInt(2));
-            });
+            env.defineVal("dup", new NovaInt(2));
+            assertEquals(2, env.get("dup").asInt());
         }
     }
 
@@ -177,15 +175,13 @@ class EnvironmentTest {
         }
 
         @Test
-        @DisplayName("非 REPL 模式不允许重新定义")
+        @DisplayName("非 REPL 模式重复定义静默覆盖")
         void testNonReplRedefine() {
             env.setReplMode(false);
 
             env.defineVal("y", new NovaInt(1));
-
-            assertThrows(NovaException.class, () -> {
-                env.defineVal("y", new NovaInt(2));
-            });
+            env.defineVal("y", new NovaInt(2));
+            assertEquals(2, env.get("y").asInt());
         }
     }
 

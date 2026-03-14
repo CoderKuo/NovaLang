@@ -59,15 +59,24 @@ public final class StdlibRegistry {
         public final String jvmDescriptor;
         /** 解释器直接调用的实现（无反射） */
         public final Function<Object[], Object> impl;
+        /** 解释器中需要走 Builtins 路径（lambda 参数、并发原语等 INVOKESTATIC 不兼容解释器的函数） */
+        public final boolean interpreterBuiltin;
 
         public NativeFunctionInfo(String name, int arity,
                                    String jvmOwner, String jvmMethodName, String jvmDescriptor,
                                    Function<Object[], Object> impl) {
+            this(name, arity, jvmOwner, jvmMethodName, jvmDescriptor, impl, false);
+        }
+
+        public NativeFunctionInfo(String name, int arity,
+                                   String jvmOwner, String jvmMethodName, String jvmDescriptor,
+                                   Function<Object[], Object> impl, boolean interpreterBuiltin) {
             super(name, arity);
             this.jvmOwner = jvmOwner;
             this.jvmMethodName = jvmMethodName;
             this.jvmDescriptor = jvmDescriptor;
             this.impl = impl;
+            this.interpreterBuiltin = interpreterBuiltin;
         }
     }
 
@@ -334,8 +343,9 @@ public final class StdlibRegistry {
         }
         // 2. 变参方法匹配任意 arity
         if (varargsFallback != null) return varargsFallback;
-        // 3. 兜底
-        return overloads.isEmpty() ? null : overloads.get(0);
+        // 3. arity < 0 表示不限参数数量，兜底返回第一个重载
+        if (arity < 0 && !overloads.isEmpty()) return overloads.get(0);
+        return null;
     }
 
     /** NovaDynamic 用：按 Java Class 查找（遍历继承链 + 所有接口，含超接口） */
@@ -379,6 +389,8 @@ public final class StdlibRegistry {
         StdlibRandom.register();
         Concurrency.register();
         StdlibUtils.register();
+        StdlibConversions.register();
+        StdlibCore.register();
         registerExtensionMethods(ListExtensions.class);
         registerExtensionMethods(MapExtensions.class);
         registerExtensionMethods(StringExtensions.class);

@@ -35,6 +35,11 @@ public class Parser {
     private boolean marking;           // 是否处于回溯记录模式
     private Token markedPrevious;
 
+    // 块内 import 提升到模块级
+    final List<ImportDecl> hoistedImports = new ArrayList<ImportDecl>();
+    // 源码引用（用于 ParseException 显示出错行）
+    String sourceForErrors;
+
     // === Helper 实例 ===
     final LiteralHelper literalHelper = new LiteralHelper(this);
     final TypeParser typeParser = new TypeParser(this);
@@ -182,7 +187,7 @@ public class Parser {
         if (check(type)) {
             return advance();
         }
-        throw new ParseException(message, current, type.name());
+        throw new ParseException(message, current, type.name()).withSource(lexer.getSource());
     }
 
     /**
@@ -192,7 +197,7 @@ public class Parser {
         if (check(TokenType.IDENTIFIER) || current.getType().isKeyword()) {
             return advance().getLexeme();
         }
-        throw new ParseException("Expected member name", current, "IDENTIFIER");
+        throw new ParseException("Expected member name", current, "IDENTIFIER").withSource(lexer.getSource());
     }
 
     /**
@@ -239,8 +244,110 @@ public class Parser {
      * 解析程序
      */
     public Program parse() {
+        // 预扫描括号配对，提供精确错误定位
+        checkBracketBalance();
+        try {
+            return doParse();
+        } catch (ParseException e) {
+            throw e.withSource(lexer.getSource());
+        }
+    }
+
+    /**
+     * 预扫描源码中的括号配对。
+     * 在递归下降解析前检测未闭合的 {}/[]/()，报告精确位置。
+     */
+    private void checkBracketBalance() {
+        String source = lexer.getSource();
+        if (source == null) return;
+
+        // 简易括号扫描（跳过字符串和注释）
+        java.util.Deque<int[]> stack = new java.util.ArrayDeque<>(); // [char, line, col]
+        int line = 1, col = 1;
+        boolean inString = false, inLineComment = false, inBlockComment = false;
+        char stringChar = 0;
+        boolean escape = false;
+
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+
+            if (escape) { escape = false; col++; continue; }
+            if (c == '\\' && inString) { escape = true; col++; continue; }
+
+            if (inLineComment) {
+                if (c == '\n') { inLineComment = false; line++; col = 1; }
+                else col++;
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && i + 1 < source.length() && source.charAt(i + 1) == '/') {
+                    inBlockComment = false; i++; col += 2;
+                } else if (c == '\n') { line++; col = 1; }
+                else col++;
+                continue;
+            }
+            if (inString) {
+                if (c == stringChar) { inString = false; col++; continue; }
+                // 字符串模板 ${...} 中的括号不参与匹配——跳过整个模板区域
+                if (c == '$' && i + 1 < source.length() && source.charAt(i + 1) == '{') {
+                    // 找到匹配的 }（支持嵌套）
+                    int depth = 0;
+                    i++; col++; // skip $
+                    for (; i < source.length(); i++) {
+                        char tc = source.charAt(i);
+                        if (tc == '{') depth++;
+                        else if (tc == '}') { depth--; if (depth == 0) break; }
+                        else if (tc == '\n') { line++; col = 0; }
+                        col++;
+                    }
+                    col++;
+                    continue;
+                }
+                if (c == '\n') { line++; col = 1; } else col++;
+                continue;
+            }
+
+            // 非字符串/注释区域
+            if (c == '/' && i + 1 < source.length()) {
+                char next = source.charAt(i + 1);
+                if (next == '/') { inLineComment = true; col++; continue; }
+                if (next == '*') { inBlockComment = true; i++; col += 2; continue; }
+            }
+            if (c == '"') { inString = true; stringChar = c; col++; continue; }
+
+            if (c == '{' || c == '(' || c == '[') {
+                stack.push(new int[]{c, line, col});
+            } else if (c == '}' || c == ')' || c == ']') {
+                char expected = c == '}' ? '{' : c == ')' ? '(' : '[';
+                if (stack.isEmpty()) {
+                    // 多余的关闭括号
+                    throw new ParseException("Unexpected '" + c + "' with no matching '"
+                        + expected + "'", current)
+                        .withSourceAt(source, line);
+                }
+                int[] top = stack.pop();
+                if (top[0] != expected) {
+                    throw new ParseException("Mismatched brackets: '" + (char) top[0]
+                        + "' at line " + top[1] + " closed by '" + c + "' at line " + line,
+                        current).withSourceAt(source, top[1]);
+                }
+            }
+
+            if (c == '\n') { line++; col = 1; } else col++;
+        }
+
+        if (!stack.isEmpty()) {
+            int[] unclosed = stack.pop();
+            throw new ParseException("Unclosed '" + (char) unclosed[0]
+                + "' (opened at line " + unclosed[1] + ", column " + unclosed[2]
+                + "): missing matching close bracket", current)
+                .withSourceAt(source, unclosed[1]);
+        }
+    }
+
+    private Program doParse() {
         SourceLocation loc = location();
-        skipNewlines();
+        skipSeparators();
 
         // 包声明
         PackageDecl packageDecl = null;
@@ -258,7 +365,7 @@ public class Parser {
         List<Declaration> declarations = new ArrayList<Declaration>();
         List<Statement> topLevelStatements = new ArrayList<Statement>();
         while (!isAtEnd()) {
-            skipNewlines();
+            skipSeparators();
             if (isAtEnd()) break;
             if (check(KW_IMPORT)) {
                 imports.add(parseImportDecl());
@@ -285,6 +392,9 @@ public class Parser {
             declarations.add(mainDecl);
         }
 
+        // 合并块内提升的 import
+        imports.addAll(hoistedImports);
+
         lexer.releaseSource(); // 解析完成，释放源码字符串
         return new Program(loc, packageDecl, imports, declarations);
     }
@@ -295,7 +405,7 @@ public class Parser {
      */
     public ParseResult parseTolerant() {
         SourceLocation loc = location();
-        skipNewlines();
+        skipSeparators();
         List<ParseError> errors = new ArrayList<ParseError>();
 
         // 包声明
@@ -324,7 +434,7 @@ public class Parser {
         List<Declaration> declarations = new ArrayList<Declaration>();
         List<Statement> topLevelStatements = new ArrayList<Statement>();
         while (!isAtEnd()) {
-            skipNewlines();
+            skipSeparators();
             if (isAtEnd()) break;
             try {
                 if (isDeclarationStart()) {
@@ -410,8 +520,9 @@ public class Parser {
         if (checkAny(KW_INLINE, KW_SUSPEND)) return true;
         if (checkAny(KW_CLASS, KW_INTERFACE, KW_OBJECT, KW_ENUM)) return true;
         if (checkAny(KW_FUN, KW_VAL, KW_VAR, KW_TYPEALIAS)) return true;
-        // annotation class — 软关键词
+        // 软关键词: annotation class, infix fun
         if (check(IDENTIFIER) && "annotation".equals(current.getLexeme()) && checkAhead(KW_CLASS)) return true;
+        if (check(IDENTIFIER) && "infix".equals(current.getLexeme())) return true;
         return false;
     }
 
@@ -425,7 +536,7 @@ public class Parser {
         return new PackageDecl(loc, name);
     }
 
-    private ImportDecl parseImportDecl() {
+    ImportDecl parseImportDecl() {
         SourceLocation loc = location();
         expect(KW_IMPORT, "Expected 'import'");
 

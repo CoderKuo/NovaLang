@@ -140,6 +140,9 @@ class DeclParser {
             else if (parser.match(KW_INLINE)) mod = Modifier.INLINE;
             else if (parser.match(KW_SUSPEND)) mod = Modifier.SUSPEND;
             else if (parser.match(KW_OPERATOR)) mod = Modifier.OPERATOR;
+            else if (parser.check(IDENTIFIER) && "infix".equals(parser.current.getLexeme())) {
+                parser.advance(); mod = Modifier.INFIX;
+            }
             else break;
 
             if (modifiers.contains(mod)) {

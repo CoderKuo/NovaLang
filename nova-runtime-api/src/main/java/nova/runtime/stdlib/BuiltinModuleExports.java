@@ -19,24 +19,65 @@ public final class BuiltinModuleExports {
     // moduleName → JVM internal class name  — 顶层函数所在的编译类（反射自动发现）
     private static final Map<String, String> moduleClasses = new HashMap<>();
 
+    // 从类名动态提取语言前缀，避免任何 "nova" 字面量被 shadow relocate
+    // BuiltinModuleExports 在 [prefix]nova.runtime.stdlib 包中
+    // 提取 ".runtime." 前面的段作为语言名（"nova"）
+    private static final String LANG_NAME;  // "nova"
+    private static final String LANG_DOT;   // "nova."
+
     static {
+        String className = BuiltinModuleExports.class.getName();
+        int rtIdx = className.indexOf(".runtime.");
+        int dotBefore = className.lastIndexOf('.', rtIdx - 1);
+        LANG_NAME = className.substring(dotBefore + 1, rtIdx);  // "nova"
+        LANG_DOT = LANG_NAME + ".";                              // "nova."
+
+        // 从自身类名推导 stdlib 包路径（兼容 shadow relocate）
+        String self = className.replace('.', '/');
+        String stdlib = self.substring(0, self.lastIndexOf('/'))
+                .replace("/stdlib", "/interpreter/stdlib") + "/";
+
         // nova.time — 命名空间
         Map<String, String> timeNs = new HashMap<>();
-        timeNs.put("DateTime", "nova/runtime/interpreter/stdlib/StdlibTimeCompiled$DateTime");
-        timeNs.put("Duration", "nova/runtime/interpreter/stdlib/StdlibTimeCompiled$DurationNs");
-        namespaceExports.put("nova.time", timeNs);
+        timeNs.put("DateTime", stdlib + "StdlibTimeCompiled$DateTime");
+        timeNs.put("Duration", stdlib + "StdlibTimeCompiled$DurationNs");
+        namespaceExports.put(LANG_DOT + "time", timeNs);
 
         // 模块 → 编译类映射（顶层函数由 HirToMirLowering 反射发现）
-        moduleClasses.put("nova.time", "nova/runtime/interpreter/stdlib/StdlibTimeCompiled");
-        moduleClasses.put("nova.io", "nova/runtime/interpreter/stdlib/StdlibIOCompiled");
-        moduleClasses.put("nova.system", "nova/runtime/interpreter/stdlib/StdlibSystemCompiled");
-        moduleClasses.put("nova.json", "nova/runtime/interpreter/stdlib/StdlibJsonCompiled");
-        moduleClasses.put("nova.text", "nova/runtime/interpreter/stdlib/StdlibRegexCompiled");
-        moduleClasses.put("nova.http", "nova/runtime/interpreter/stdlib/StdlibHttpCompiled");
-        moduleClasses.put("nova.test", "nova/runtime/interpreter/stdlib/StdlibTestCompiled");
+        moduleClasses.put(LANG_DOT + "time", stdlib + "StdlibTimeCompiled");
+        moduleClasses.put(LANG_DOT + "io", stdlib + "StdlibIOCompiled");
+        moduleClasses.put(LANG_DOT + "system", stdlib + "StdlibSystemCompiled");
+        moduleClasses.put(LANG_DOT + "json", stdlib + "StdlibJsonCompiled");
+        moduleClasses.put(LANG_DOT + "text", stdlib + "StdlibRegexCompiled");
+        moduleClasses.put(LANG_DOT + "http", stdlib + "StdlibHttpCompiled");
+        moduleClasses.put(LANG_DOT + "test", stdlib + "StdlibTestCompiled");
     }
 
     private BuiltinModuleExports() {}
+
+    /** 诊断方法：打印模块注册表状态（排查 shadow relocate 问题） */
+    public static String debugDump() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== BuiltinModuleExports Debug ===\n");
+        sb.append("Class: ").append(BuiltinModuleExports.class.getName()).append('\n');
+        sb.append("LANG_DOT: ").append(LANG_DOT).append('\n');
+        sb.append("moduleClasses keys: ").append(moduleClasses.keySet()).append('\n');
+        sb.append("moduleClasses values: ").append(moduleClasses.values()).append('\n');
+        sb.append("namespaceExports keys: ").append(namespaceExports.keySet()).append('\n');
+        sb.append("has(\"").append(LANG_DOT).append("time\"): ").append(has(LANG_DOT + "time")).append('\n');
+        sb.append("getModuleClass(\"").append(LANG_DOT).append("time\"): ").append(getModuleClass(LANG_DOT + "time")).append('\n');
+        // 尝试加载类
+        String cls = getModuleClass(LANG_DOT + "time");
+        if (cls != null) {
+            try {
+                Class.forName(cls.replace('/', '.'));
+                sb.append("Class.forName OK\n");
+            } catch (ClassNotFoundException e) {
+                sb.append("Class.forName FAILED: ").append(e.getMessage()).append('\n');
+            }
+        }
+        return sb.toString();
+    }
 
     /** 检查是否为已注册的内置模块 */
     public static boolean has(String moduleName) {
@@ -61,7 +102,7 @@ public final class BuiltinModuleExports {
      * @return 模块名，未匹配返回 null
      */
     public static String resolveModuleName(String qualifiedName) {
-        if (qualifiedName == null || !qualifiedName.startsWith("nova.")) return null;
+        if (qualifiedName == null || !qualifiedName.startsWith(LANG_DOT)) return null;
         String candidate = qualifiedName;
         while (candidate.contains(".")) {
             if (has(candidate)) return candidate;

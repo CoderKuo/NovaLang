@@ -34,6 +34,7 @@ public class Lexer {
         map.put("val", TokenType.KW_VAL);
         map.put("var", TokenType.KW_VAR);
         map.put("fun", TokenType.KW_FUN);
+        map.put("function", TokenType.KW_FUN);
         map.put("class", TokenType.KW_CLASS);
         map.put("interface", TokenType.KW_INTERFACE);
         map.put("object", TokenType.KW_OBJECT);
@@ -129,6 +130,11 @@ public class Lexer {
 
     public Lexer(String source) {
         this(source, "<input>");
+    }
+
+    /** 获取源码（用于错误报告） */
+    public String getSource() {
+        return source;
     }
 
     /** 释放源码字符串引用（解析完成后调用） */

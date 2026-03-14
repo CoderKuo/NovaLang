@@ -1,6 +1,7 @@
 package nova.runtime.stdlib;
 
 import nova.runtime.NovaScheduler;
+import nova.runtime.NovaScriptContext;
 import nova.runtime.SchedulerHolder;
 
 import java.lang.reflect.Method;
@@ -30,7 +31,9 @@ public final class ConcurrencyHelper {
         }
         Object block = args[0];
         Executor exec = getAsyncExecutor();
+        NovaScriptContext parentCtx = NovaScriptContext.current();
         CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
+            NovaScriptContext.setCurrent(parentCtx);
             try {
                 return invoke0(block);
             } catch (RuntimeException e) {
@@ -39,6 +42,12 @@ public final class ConcurrencyHelper {
                 throw new RuntimeException(e);
             }
         }, exec);
+        // 未 await 的异常输出到日志，避免静默吞掉
+        future.exceptionally(ex -> {
+            java.util.logging.Logger.getLogger("Nova")
+                    .log(java.util.logging.Level.SEVERE, "launch task failed", ex);
+            return null;
+        });
         return new StructuredConcurrencyHelper.CompileJob(future);
     }
 
@@ -48,17 +57,21 @@ public final class ConcurrencyHelper {
      */
     public static Object parallel(Object[] args) {
         if (args.length == 0) {
-            return new Object[0];
+            return new ArrayList<>();
         }
         List<CompletableFuture<Object>> futures = new ArrayList<>(args.length);
         Executor exec = getAsyncExecutor();
+        NovaScriptContext parentCtx = NovaScriptContext.current();
         for (Object block : args) {
-            futures.add(CompletableFuture.supplyAsync(() -> invoke0(block), exec));
+            futures.add(CompletableFuture.supplyAsync(() -> {
+                NovaScriptContext.setCurrent(parentCtx);
+                return invoke0(block);
+            }, exec));
         }
-        Object[] results = new Object[args.length];
+        List<Object> results = new ArrayList<>(args.length);
         for (int i = 0; i < futures.size(); i++) {
             try {
-                results[i] = futures.get(i).get();
+                results.add(futures.get(i).get());
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException) throw (RuntimeException) cause;
@@ -72,6 +85,22 @@ public final class ConcurrencyHelper {
     }
 
     /**
+     * await target — 统一等待入口，兼容 CompletableFuture / CompileJob。
+     */
+    @SuppressWarnings("unchecked")
+    public static Object awaitJoin(Object target) {
+        if (target instanceof CompletableFuture) {
+            return ((CompletableFuture<Object>) target).join();
+        }
+        if (target instanceof StructuredConcurrencyHelper.CompileJob) {
+            ((StructuredConcurrencyHelper.CompileJob) target).join();
+            return null;
+        }
+        // 非 Future 类型：直接返回原值（await 42 → 42）
+        return target;
+    }
+
+    /**
      * withTimeout(millis, block) — 带超时执行 block。
      * vararg 入口：args[0]=millis, args[1]=block
      */
@@ -82,7 +111,11 @@ public final class ConcurrencyHelper {
         long timeout = ((Number) args[0]).longValue();
         Object block = args[1];
         Executor exec = getAsyncExecutor();
-        CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> invoke0(block), exec);
+        NovaScriptContext parentCtx = NovaScriptContext.current();
+        CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
+            NovaScriptContext.setCurrent(parentCtx);
+            return invoke0(block);
+        }, exec);
         try {
             return future.get(timeout, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {

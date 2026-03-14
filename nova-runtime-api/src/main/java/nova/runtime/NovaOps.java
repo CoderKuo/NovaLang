@@ -16,7 +16,9 @@ public final class NovaOps {
      * 运行时动态加法：若任一操作数为 String 则拼接，否则数值加法。
      */
     public static Object add(Object a, Object b) {
-        if (a instanceof String || b instanceof String) {
+        // NovaString → 字符串拼接
+        if (a instanceof String || b instanceof String
+                || a instanceof NovaString || b instanceof NovaString) {
             return String.valueOf(a) + String.valueOf(b);
         }
         return numericOp(a, b, NumOp.ADD);
@@ -52,7 +54,15 @@ public final class NovaOps {
 
     private enum NumOp { ADD, SUB, MUL, DIV, MOD }
 
+    private static Object toJavaNumber(Object v) {
+        if (v instanceof Number) return v;
+        if (v instanceof NovaValue) return ((NovaValue) v).toJavaValue();
+        throw new RuntimeException("Cannot convert " + (v == null ? "null" : v.getClass().getSimpleName()) + " to Number");
+    }
+
     private static Object numericOp(Object a, Object b, NumOp op) {
+        if (!(a instanceof Number)) a = toJavaNumber(a);
+        if (!(b instanceof Number)) b = toJavaNumber(b);
         if (a instanceof Double || b instanceof Double) {
             double da = ((Number) a).doubleValue(), db = ((Number) b).doubleValue();
             switch (op) {

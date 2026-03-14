@@ -134,6 +134,82 @@ class CoreSyntaxIntegrationTest {
         }
     }
 
+    // ============ object 单例 ============
+
+    @Nested
+    @DisplayName("object 单例")
+    class ObjectSingletonTests {
+
+        // ---- 正常值 ----
+
+        @Test void objectFieldAccess() throws Exception {
+            String obj = "object Counter {\n  var count = 0\n  fun inc() { count = count + 1 }\n}\n";
+            dual(obj + "Counter.inc()\nCounter.inc()\nCounter.count",
+                 obj + wrap("Counter.inc()\n    Counter.inc()\n    return Counter.count"), 2);
+        }
+
+        @Test void objectMethodCall() throws Exception {
+            String obj = "object MathHelper {\n  fun square(x: Int) = x * x\n}\n";
+            dual(obj + "MathHelper.square(5)",
+                 obj + wrap("return MathHelper.square(5)"), 25);
+        }
+
+        @Test void objectWithValField() throws Exception {
+            String obj = "object Config {\n  val name = \"Nova\"\n}\n";
+            dual(obj + "Config.name",
+                 obj + wrap("return Config.name"), "Nova");
+        }
+
+        // ---- 边缘值 ----
+
+        @Test void objectFieldMutateMultipleTimes() throws Exception {
+            String obj = "object Acc {\n  var total = 0\n  fun add(n: Int) { total = total + n }\n}\n";
+            dual(obj + "Acc.add(10)\nAcc.add(20)\nAcc.add(30)\nAcc.total",
+                 obj + wrap("Acc.add(10)\n    Acc.add(20)\n    Acc.add(30)\n    return Acc.total"), 60);
+        }
+
+        @Test void objectFieldInitExpression() throws Exception {
+            String obj = "object Nums {\n  val sum = 1 + 2 + 3\n}\n";
+            dual(obj + "Nums.sum",
+                 obj + wrap("return Nums.sum"), 6);
+        }
+
+        @Test void objectStringInterpolation() throws Exception {
+            String obj = "object Info {\n  val version = \"1.0\"\n  var hits = 0\n  fun hit() { hits = hits + 1 }\n}\n";
+            dual(obj + "Info.hit()\nInfo.hit()\n\"v${Info.version}:${Info.hits}\"",
+                 obj + wrap("Info.hit()\n    Info.hit()\n    return \"v${Info.version}:${Info.hits}\""), "v1.0:2");
+        }
+
+        // ---- 前缀自增 ----
+
+        @Test void objectPrefixIncrement_nextReturnValue() throws Exception {
+            // ++count 返回值正确
+            String obj = "object Counter {\n  var count = 0\n  fun next() = ++count\n}\n";
+            dual(obj + "Counter.next()",
+                 obj + wrap("return Counter.next()"), 1);
+        }
+
+        @Test void objectPrefixIncrement_fieldAfterCall() throws Exception {
+            String obj = "object Counter {\n  var count = 0\n  fun next() = ++count\n}\n";
+            dual(obj + "Counter.next()\nCounter.count",
+                 obj + wrap("Counter.next()\n    return Counter.count"), 1);
+        }
+
+        @Test void objectPostfixIncrement_fieldAfterCall() throws Exception {
+            String obj = "object Counter {\n  var count = 0\n  fun next() = count++\n}\n";
+            dual(obj + "Counter.next()\nCounter.count",
+                 obj + wrap("Counter.next()\n    return Counter.count"), 1);
+        }
+
+        // ---- 多 object 交互 ----
+
+        @Test void multipleObjects() throws Exception {
+            String objs = "object A {\n  val x = 10\n}\nobject B {\n  val y = 20\n}\n";
+            dual(objs + "A.x + B.y",
+                 objs + wrap("return A.x + B.y"), 30);
+        }
+    }
+
     // ============ 算术运算符 ============
 
     @Nested
@@ -182,6 +258,117 @@ class CoreSyntaxIntegrationTest {
 
         @Test void testDecrement() throws Exception {
             dual("var x = 5\nx--\nx", wrap("var x = 5\n    x--\n    return x"), 4);
+        }
+    }
+
+    // ============ 动态类型二元运算（Object 操作数） ============
+
+    @Nested
+    @DisplayName("动态类型二元运算")
+    class DynamicBinaryOpTests {
+
+        // ---- Issue 1: Object 类型位运算（isUnknownObjectType + BAND/BOR/BXOR） ----
+
+        @Test void bitwiseAnd_onAnyType() throws Exception {
+            dual("val a: Any = 7\nval b: Any = 3\na & b",
+                 wrap("val a: Any = 7\n    val b: Any = 3\n    return a & b"), 3);
+        }
+
+        @Test void bitwiseOr_onAnyType() throws Exception {
+            dual("val a: Any = 5\nval b: Any = 3\na | b",
+                 wrap("val a: Any = 5\n    val b: Any = 3\n    return a | b"), 7);
+        }
+
+        @Test void bitwiseXor_onAnyType() throws Exception {
+            dual("val a: Any = 6\nval b: Any = 3\na ^ b",
+                 wrap("val a: Any = 6\n    val b: Any = 3\n    return a ^ b"), 5);
+        }
+
+        // ---- Issue 1b: Object 类型移位运算 ----
+
+        @Test void shiftLeft_onAnyType() throws Exception {
+            dual("val a: Any = 1\nval b: Any = 3\na << b",
+                 wrap("val a: Any = 1\n    val b: Any = 3\n    return a << b"), 8);
+        }
+
+        @Test void shiftRight_onAnyType() throws Exception {
+            dual("val a: Any = 8\nval b: Any = 2\na >> b",
+                 wrap("val a: Any = 8\n    val b: Any = 2\n    return a >> b"), 2);
+        }
+
+        @Test void unsignedShiftRight_onAnyType() throws Exception {
+            dual("val a: Any = -1\nval b: Any = 28\na >>> b",
+                 wrap("val a: Any = -1\n    val b: Any = 28\n    return a >>> b"), 15);
+        }
+
+        // ---- Issue 2: Long 移位正确性 ----
+
+        @Test void longShiftLeft() throws Exception {
+            dual("val a = 1L\na << 3",
+                 wrap("val a = 1L\n    return a << 3"), 8L);
+        }
+
+        @Test void longShiftRight() throws Exception {
+            dual("val a = 64L\na >> 2",
+                 wrap("val a = 64L\n    return a >> 2"), 16L);
+        }
+
+        // ---- Issue 1: 真正的 Object 类型（函数返回值，MIR 无法推断） ----
+
+        @Test void bitwiseAnd_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(7) & get(3)",
+                 wrap(fn + "    return get(7) & get(3)"), 3);
+        }
+
+        @Test void bitwiseOr_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(5) | get(3)",
+                 wrap(fn + "    return get(5) | get(3)"), 7);
+        }
+
+        @Test void bitwiseXor_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(6) ^ get(3)",
+                 wrap(fn + "    return get(6) ^ get(3)"), 5);
+        }
+
+        @Test void shiftLeft_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(1) << get(3)",
+                 wrap(fn + "    return get(1) << get(3)"), 8);
+        }
+
+        @Test void shiftRight_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(8) >> get(2)",
+                 wrap(fn + "    return get(8) >> get(2)"), 2);
+        }
+
+        @Test void unsignedShiftRight_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(-1) >>> get(28)",
+                 wrap(fn + "    return get(-1) >>> get(28)"), 15);
+        }
+
+        // ---- Object 类型算术运算（已有路径，回归验证） ----
+
+        @Test void add_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(3) + get(4)",
+                 wrap(fn + "    return get(3) + get(4)"), 7);
+        }
+
+        @Test void mul_dynamicObject() throws Exception {
+            String fn = "fun get(x: Int): Any = x\n";
+            dual(fn + "get(6) * get(7)",
+                 wrap(fn + "    return get(6) * get(7)"), 42);
+        }
+
+        @Test void stringAdd_dynamicObject() throws Exception {
+            String fn = "fun get(x: Any): Any = x\n";
+            dual(fn + "get(\"hello\") + get(\" world\")",
+                 wrap(fn + "    return get(\"hello\") + get(\" world\")"), "hello world");
         }
     }
 
@@ -904,6 +1091,32 @@ class CoreSyntaxIntegrationTest {
             String logic = "fun Int.add(n: Int) = this + n\n10.add(5)";
             dual(logic, "fun Int.add(n: Int) = this + n\n" + wrap("return 10.add(5)"), 15);
         }
+
+        @Test void testInfixCall() throws Exception {
+            String fn = "infix fun Int.times2(n: Int) = this * n\n";
+            dual(fn + "3 times2 4",
+                 fn + wrap("return 3 times2 4"), 12);
+        }
+
+        @Test void testInfixPower() throws Exception {
+            String fn = "infix fun Int.power(exp: Int): Int {\n"
+                + "  var result = 1\n"
+                + "  for (i in 1..exp) { result = result * this }\n"
+                + "  return result\n"
+                + "}\n";
+            dual(fn + "2 power 10",
+                 fn + wrap("return 2 power 10"), 1024);
+        }
+
+        @Test void testExtensionThisInLoop() throws Exception {
+            String fn = "fun Int.power(exp: Int): Int {\n"
+                + "  var result = 1\n"
+                + "  for (i in 1..exp) { result = result * this }\n"
+                + "  return result\n"
+                + "}\n";
+            dual(fn + "2.power(10)",
+                 fn + wrap("return 2.power(10)"), 1024);
+        }
     }
 
     // ============ 方法引用 ============
@@ -1121,20 +1334,467 @@ class CoreSyntaxIntegrationTest {
         }
     }
 
-    @Test
-    @DisplayName("临时")
-    void testFloatMultiply() throws Exception {
-        NovaValue ir = interp("var element = \"雷电\"\n" +
-                "    var level = toNumber(groups.get(1))\n" +
-                "    var attrId = if (element == \"火焰\") { \"fire_damage\" }\n" +
-                "        else if (element == \"冰霜\") { \"ice_damage\" }\n" +
-                "        else if (element == \"雷电\") { \"lightning_damage\" }\n" +
-                "        else { \"poison_damage\" }");
-        Object cr = compile(wrap("var element = \"雷电\"\n" +
-                "    var level = toNumber(groups.get(1))\n" +
-                "    var attrId = if (element == \"火焰\") { \"fire_damage\" }\n" +
-                "        else if (element == \"冰霜\") { \"ice_damage\" }\n" +
-                "        else if (element == \"雷电\") { \"lightning_damage\" }\n" +
-                "        else { \"poison_damage\" }"));
+    // ============ in / !in 二元表达式运算符 ============
+
+    @Nested
+    @DisplayName("in/!in 二元表达式运算符")
+    class InOperatorTests {
+
+        @Test void inRange_true() throws Exception {
+            dual("5 in 1..10", wrap("return 5 in 1..10"), true);
+        }
+
+        @Test void inRange_false() throws Exception {
+            dual("15 in 1..10", wrap("return 15 in 1..10"), false);
+        }
+
+        @Test void notInRange_true() throws Exception {
+            dual("15 !in 1..10", wrap("return 15 !in 1..10"), true);
+        }
+
+        @Test void notInRange_false() throws Exception {
+            dual("5 !in 1..10", wrap("return 5 !in 1..10"), false);
+        }
+
+        @Test void inRange_boundary_start() throws Exception {
+            dual("1 in 1..10", wrap("return 1 in 1..10"), true);
+        }
+
+        @Test void inRange_boundary_end() throws Exception {
+            dual("10 in 1..10", wrap("return 10 in 1..10"), true);
+        }
+
+        @Test void inRange_exclusive_end() throws Exception {
+            dual("10 in 1..<10", wrap("return 10 in 1..<10"), false);
+        }
+
+        @Test void inRange_exclusive_lastInside() throws Exception {
+            dual("9 in 1..<10", wrap("return 9 in 1..<10"), true);
+        }
+
+        @Test void inList() throws Exception {
+            dual("3 in [1, 2, 3, 4]", wrap("return 3 in [1, 2, 3, 4]"), true);
+        }
+
+        @Test void notInList() throws Exception {
+            dual("5 !in [1, 2, 3]", wrap("return 5 !in [1, 2, 3]"), true);
+        }
+
+        @Test void inRange_negative() throws Exception {
+            dual("-3 in -5..0", wrap("return -3 in -5..0"), true);
+        }
+
+        @Test void in_ifCondition() throws Exception {
+            dual("val x = 5\nif (x in 1..10) \"yes\" else \"no\"",
+                 wrap("val x = 5\n    return if (x in 1..10) \"yes\" else \"no\""), "yes");
+        }
+
+        @Test void in_whenNoSubject() throws Exception {
+            String code = "val h = 14\nwhen {\n  h in 0..<6 -> \"night\"\n  h in 6..<12 -> \"morning\"\n  h in 12..<18 -> \"afternoon\"\n  else -> \"evening\"\n}";
+            dual(code, wrap("val h = 14\n    return when {\n      h in 0..<6 -> \"night\"\n      h in 6..<12 -> \"morning\"\n      h in 12..<18 -> \"afternoon\"\n      else -> \"evening\"\n    }"), "afternoon");
+        }
+
+        @Test void in_valAssignment() throws Exception {
+            dual("val b = 3 in 1..5\nb", wrap("val b = 3 in 1..5\n    return b"), true);
+        }
+
+        @Test void in_combinedWithLogical() throws Exception {
+            dual("val x = 5\nx in 1..10 && x !in 3..4",
+                 wrap("val x = 5\n    return x in 1..10 && x !in 3..4"), true);
+        }
+    }
+
+    // ============ 可空原始类型编译 ============
+
+    @Nested
+    @DisplayName("可空原始类型")
+    class NullablePrimitiveTests {
+
+        @Test void nullableInt_withValue() throws Exception {
+            dual("fun f(v: Int?): Int { return v ?: -1 }\nf(42)",
+                 wrap("fun f(v: Int?): Int { return v ?: -1 }\n    return f(42)"), 42);
+        }
+
+        @Test void nullableInt_withNull() throws Exception {
+            dual("fun f(v: Int?): Int { return v ?: -1 }\nf(null)",
+                 wrap("fun f(v: Int?): Int { return v ?: -1 }\n    return f(null)"), -1);
+        }
+
+        @Test void nullableInt_guardVal() throws Exception {
+            String fn = "fun safe(v: Int?): String {\n  guard val x = v else { return \"null\" }\n  return \"val=\" + x\n}\n";
+            dual(fn + "safe(42)", wrap(fn + "    return safe(42)"), "val=42");
+        }
+
+        @Test void nullableInt_guardVal_null() throws Exception {
+            String fn = "fun safe(v: Int?): String {\n  guard val x = v else { return \"null\" }\n  return \"val=\" + x\n}\n";
+            dual(fn + "safe(null)", wrap(fn + "    return safe(null)"), "null");
+        }
+
+        @Test void nullableLong_withNull() throws Exception {
+            dual("fun f(v: Long?): Long { return v ?: -1L }\nf(null)",
+                 wrap("fun f(v: Long?): Long { return v ?: -1L }\n    return f(null)"), -1L);
+        }
+
+        @Test void nullableBoolean_withNull() throws Exception {
+            dual("fun f(v: Boolean?): Boolean { return v ?: false }\nf(null)",
+                 wrap("fun f(v: Boolean?): Boolean { return v ?: false }\n    return f(null)"), false);
+        }
+
+        @Test void nullableInt_arithmetic() throws Exception {
+            dual("fun add(a: Int?, b: Int?): Int { return (a ?: 0) + (b ?: 0) }\nadd(3, null)",
+                 wrap("fun add(a: Int?, b: Int?): Int { return (a ?: 0) + (b ?: 0) }\n    return add(3, null)"), 3);
+        }
+    }
+
+    // ============ 用户类遮蔽内置类型 + nova. 限定名 ============
+
+    @Nested
+    @DisplayName("类型遮蔽与 nova. 限定名")
+    class TypeShadowingTests {
+
+        @Test void userClass_shadowsResult() throws Exception {
+            String code = ""
+                + "sealed class Result\n"
+                + "class Success(val data: String) : Result()\n"
+                + "class Error(val message: String) : Result()\n"
+                + "val r: Result = Success(\"ok\")\n"
+                + "r is Success";
+            dual(code, wrap(code.replace("r is Success", "return r is Success")), true);
+        }
+
+        @Test void userClass_shadowResult_whenMatch() throws Exception {
+            String code = ""
+                + "sealed class Result\n"
+                + "class Success(val data: String) : Result()\n"
+                + "class Error(val msg: String) : Result()\n"
+                + "fun handle(r: Result): String = when (r) {\n"
+                + "    is Success -> r.data\n"
+                + "    is Error -> r.msg\n"
+                + "    else -> \"unknown\"\n"
+                + "}\n"
+                + "handle(Success(\"hello\"))";
+            dual(code, wrap(code.replace("handle(Success(\"hello\"))",
+                 "return handle(Success(\"hello\"))")), "hello");
+        }
+
+        @Test void userClass_shadowResult_errorBranch() throws Exception {
+            String code = ""
+                + "sealed class Result\n"
+                + "class Success(val data: String) : Result()\n"
+                + "class Error(val msg: String) : Result()\n"
+                + "fun handle(r: Result): String = when (r) {\n"
+                + "    is Success -> r.data\n"
+                + "    is Error -> r.msg\n"
+                + "    else -> \"unknown\"\n"
+                + "}\n"
+                + "handle(Error(\"fail\"))";
+            dual(code, wrap(code.replace("handle(Error(\"fail\"))",
+                 "return handle(Error(\"fail\"))")), "fail");
+        }
+
+        @Test void builtinResult_stillWorks() throws Exception {
+            dual("Ok(42).value", wrap("return Ok(42).value"), 42);
+        }
+
+        @Test void builtinResult_errStillWorks() throws Exception {
+            dual("Err(\"x\").error", wrap("return Err(\"x\").error"), "x");
+        }
+
+        @Test void builtinResult_isOk_afterShadow() throws Exception {
+            String code = ""
+                + "sealed class Result\n"
+                + "class Success(val data: String) : Result()\n"
+                + "Ok(100) is Ok";
+            dual(code, wrap(code.replace("Ok(100) is Ok", "return Ok(100) is Ok")), true);
+        }
+
+        // ---- nova. 限定名访问内置类型 ----
+
+        @Test void novaQualified_isInt() throws Exception {
+            dual("42 is nova.Int", wrap("return 42 is nova.Int"), true);
+        }
+
+        @Test void novaQualified_isString() throws Exception {
+            dual("\"hello\" is nova.String", wrap("return \"hello\" is nova.String"), true);
+        }
+
+        @Test void novaQualified_isNotInt() throws Exception {
+            dual("\"abc\" !is nova.Int", wrap("return \"abc\" !is nova.Int"), true);
+        }
+
+        @Test void novaQualified_isBoolean() throws Exception {
+            dual("true is nova.Boolean", wrap("return true is nova.Boolean"), true);
+        }
+
+        @Test void novaQualified_isResult_ok() throws Exception {
+            dual("Ok(1) is nova.Result", wrap("return Ok(1) is nova.Result"), true);
+        }
+
+        @Test void novaQualified_isResult_err() throws Exception {
+            dual("Err(\"x\") is nova.Result", wrap("return Err(\"x\") is nova.Result"), true);
+        }
+
+        @Test void novaQualified_isOk() throws Exception {
+            dual("Ok(1) is nova.Ok", wrap("return Ok(1) is nova.Ok"), true);
+        }
+
+        @Test void novaQualified_isErr() throws Exception {
+            dual("Err(\"x\") is nova.Err", wrap("return Err(\"x\") is nova.Err"), true);
+        }
+
+        @Test void novaQualified_intNotResult() throws Exception {
+            dual("42 !is nova.Result", wrap("return 42 !is nova.Result"), true);
+        }
+
+        @Test void novaQualified_disambiguate_userAndBuiltin() throws Exception {
+            String code = ""
+                + "sealed class Result\n"
+                + "class Success(val v: Int) : Result()\n"
+                + "val userR: Result = Success(1)\n"
+                + "val builtinR = Ok(2)\n"
+                + "\"\" + (userR is Result) + \",\" + (builtinR is nova.Result)";
+            dual(code, wrap(code.replace(
+                 "\"\" + (userR is Result) + \",\" + (builtinR is nova.Result)",
+                 "return \"\" + (userR is Result) + \",\" + (builtinR is nova.Result)")),
+                 "true,true");
+        }
+
+        @Test void novaQualified_isList() throws Exception {
+            dual("[1, 2] is nova.List", wrap("return [1, 2] is nova.List"), true);
+        }
+
+        @Test void novaQualified_isMap() throws Exception {
+            dual("val m = #{\"a\": 1}\nm is nova.Map",
+                 wrap("val m = #{\"a\": 1}\n    return m is nova.Map"), true);
+        }
+    }
+
+    // ============ 分号语句分隔符 ============
+
+    @Nested
+    @DisplayName("分号语句分隔符")
+    class SemicolonTests {
+
+        @Test void semicolon_twoStatements() throws Exception {
+            dual("var x = 1; x = x + 1; x",
+                 wrap("var x = 1; x = x + 1; return x"), 2);
+        }
+
+        @Test void semicolon_multipleVals() throws Exception {
+            dual("val a = 10; val b = 20; a + b",
+                 wrap("val a = 10; val b = 20; return a + b"), 30);
+        }
+
+        @Test void semicolon_mixedWithNewline() throws Exception {
+            dual("val a = 1; val b = 2\nval c = 3; a + b + c",
+                 wrap("val a = 1; val b = 2\n    val c = 3; return a + b + c"), 6);
+        }
+
+        @Test void semicolon_inWhenBranches() throws Exception {
+            String code = "val x = 2\nwhen (x) { 1 -> \"one\" ; 2 -> \"two\" ; else -> \"other\" }";
+            dual(code, wrap("val x = 2\n    return when (x) { 1 -> \"one\" ; 2 -> \"two\" ; else -> \"other\" }"), "two");
+        }
+
+        @Test void semicolon_inWhenNoSubject_withIn() throws Exception {
+            String code = "val h = 8\nwhen { h in 0..<6 -> \"night\" ; h in 6..<12 -> \"morning\" ; else -> \"other\" }";
+            dual(code, wrap("val h = 8\n    return when { h in 0..<6 -> \"night\" ; h in 6..<12 -> \"morning\" ; else -> \"other\" }"), "morning");
+        }
+
+        @Test void semicolon_emptyBetween() throws Exception {
+            dual("val a = 5;; val b = 10; a + b",
+                 wrap("val a = 5;; val b = 10; return a + b"), 15);
+        }
+
+        @Test void semicolon_trailingSemicolon() throws Exception {
+            dual("val x = 42;", wrap("val x = 42;\n    return x"), 42);
+        }
+    }
+
+    // ============ joinToString 重载 ============
+
+    @Nested
+    @DisplayName("joinToString 重载")
+    class JoinToStringTests {
+
+        @Test void joinToString_noArgs() throws Exception {
+            dual("[1, 2, 3].joinToString()",
+                 wrap("return [1, 2, 3].joinToString()"), "1, 2, 3");
+        }
+
+        @Test void joinToString_separator() throws Exception {
+            dual("[1, 2, 3].joinToString(\"-\")",
+                 wrap("return [1, 2, 3].joinToString(\"-\")"), "1-2-3");
+        }
+
+        @Test void joinToString_separatorAndPrefix() throws Exception {
+            dual("[1, 2, 3].joinToString(\", \", \"[\")",
+                 wrap("return [1, 2, 3].joinToString(\", \", \"[\")"), "[1, 2, 3");
+        }
+
+        @Test void joinToString_separatorPrefixPostfix() throws Exception {
+            dual("[1, 2, 3].joinToString(\", \", \"[\", \"]\")",
+                 wrap("return [1, 2, 3].joinToString(\", \", \"[\", \"]\")"), "[1, 2, 3]");
+        }
+
+        @Test void joinToString_emptyList() throws Exception {
+            dual("[].joinToString(\"-\")", wrap("return [].joinToString(\"-\")"), "");
+        }
+
+        @Test void joinToString_singleElement() throws Exception {
+            dual("[42].joinToString(\"-\")", wrap("return [42].joinToString(\"-\")"), "42");
+        }
+
+        @Test void joinToString_emptyListWithPrefixPostfix() throws Exception {
+            dual("[].joinToString(\", \", \"(\", \")\")",
+                 wrap("return [].joinToString(\", \", \"(\", \")\")"), "()");
+        }
+    }
+
+    // ============ toList 扩展方法 ============
+
+    @Nested
+    @DisplayName("toList 扩展方法")
+    class ToListTests {
+
+        @Test void toList_fromRange() throws Exception {
+            dual("(1..3).toList().joinToString(\", \")",
+                 wrap("return (1..3).toList().joinToString(\", \")"), "1, 2, 3");
+        }
+
+        @Test void toList_fromList_isCopy() throws Exception {
+            dual("val a = [1, 2]\nval b = a.toList()\na.add(3)\nb.size()",
+                 wrap("val a = [1, 2]\n    val b = a.toList()\n    a.add(3)\n    return b.size()"), 2);
+        }
+    }
+
+    // ============ Spread 操作符 ============
+
+    @Nested
+    @DisplayName("Spread 操作符 (.. 和 *)")
+    class SpreadOperatorTests {
+
+        // ---- 正常值 ----
+
+        @Test void dotdot_spreadMiddle() throws Exception {
+            dual("val a = [1, 2]\n[0, ..a, 3].joinToString(\", \")",
+                 wrap("val a = [1, 2]\n    return [0, ..a, 3].joinToString(\", \")"), "0, 1, 2, 3");
+        }
+
+        @Test void dotdot_spreadMultiple() throws Exception {
+            dual("val a = [1, 2]\nval b = [3, 4]\n[..a, ..b].joinToString(\", \")",
+                 wrap("val a = [1, 2]\n    val b = [3, 4]\n    return [..a, ..b].joinToString(\", \")"), "1, 2, 3, 4");
+        }
+
+        @Test void dotdot_spreadOnly() throws Exception {
+            dual("val a = [10, 20]\n[..a].joinToString(\", \")",
+                 wrap("val a = [10, 20]\n    return [..a].joinToString(\", \")"), "10, 20");
+        }
+
+        @Test void star_spreadStillWorks() throws Exception {
+            dual("val a = [1, 2]\n[0, *a, 3].joinToString(\", \")",
+                 wrap("val a = [1, 2]\n    return [0, *a, 3].joinToString(\", \")"), "0, 1, 2, 3");
+        }
+
+        @Test void dotdot_mixedWithStar() throws Exception {
+            dual("val a = [1]\nval b = [2]\n[..a, *b].joinToString(\", \")",
+                 wrap("val a = [1]\n    val b = [2]\n    return [..a, *b].joinToString(\", \")"), "1, 2");
+        }
+
+        // ---- 边缘值 ----
+
+        @Test void dotdot_emptyList() throws Exception {
+            dual("val a = []\n[..a].size()",
+                 wrap("val a = []\n    return [..a].size()"), 0);
+        }
+
+        @Test void dotdot_emptyListInMiddle() throws Exception {
+            dual("val a = []\n[1, ..a, 2].joinToString(\", \")",
+                 wrap("val a = []\n    return [1, ..a, 2].joinToString(\", \")"), "1, 2");
+        }
+
+        @Test void dotdot_singleElement() throws Exception {
+            dual("val a = [42]\n[..a].joinToString(\", \")",
+                 wrap("val a = [42]\n    return [..a].joinToString(\", \")"), "42");
+        }
+
+        @Test void dotdot_inlineList() throws Exception {
+            dual("[1, ..[2, 3], 4].joinToString(\", \")",
+                 wrap("return [1, ..[2, 3], 4].joinToString(\", \")"), "1, 2, 3, 4");
+        }
+
+        @Test void dotdot_noSpreadElements() throws Exception {
+            dual("[1, 2, 3].joinToString(\", \")",
+                 wrap("return [1, 2, 3].joinToString(\", \")"), "1, 2, 3");
+        }
+    }
+
+    // ============ 嵌套类定义（函数/方法体内声明类） ============
+
+    @Nested
+    @DisplayName("嵌套类定义提升")
+    class NestedClassHoistTests {
+
+        @Test void classInsideFunction() throws Exception {
+            dual("class Foo(val x: Int)\nFoo(42).x",
+                 wrap("class Foo(val x: Int)\n    return Foo(42).x"), 42);
+        }
+
+        @Test void classInsideFunction_withMethod() throws Exception {
+            dual("class Calc(val v: Int) {\n  fun double(): Int = v * 2\n}\nCalc(5).double()",
+                 wrap("class Calc(val v: Int) {\n      fun double(): Int = v * 2\n    }\n    return Calc(5).double()"), 10);
+        }
+
+        @Test void multipleClassesInsideFunction() throws Exception {
+            String code = ""
+                + "class A(val n: Int)\n"
+                + "class B(val n: Int)\n"
+                + "A(10).n + B(20).n";
+            dual(code, wrap(code.replace("A(10).n + B(20).n", "return A(10).n + B(20).n")), 30);
+        }
+
+        @Test void inheritanceInsideFunction() throws Exception {
+            String code = ""
+                + "open class Base(val v: Int)\n"
+                + "class Child(val extra: Int) : Base(extra * 2)\n"
+                + "Child(5).v";
+            dual(code, wrap(code.replace("Child(5).v", "return Child(5).v")), 10);
+        }
+
+        @Test void sealedClassInsideFunction() throws Exception {
+            String code = ""
+                + "sealed class Shape\n"
+                + "class Circle(val r: Int) : Shape()\n"
+                + "class Rect(val w: Int, val h: Int) : Shape()\n"
+                + "val s: Shape = Rect(3, 4)\n"
+                + "when (s) {\n"
+                + "    is Circle -> s.r\n"
+                + "    is Rect -> s.w * s.h\n"
+                + "    else -> 0\n"
+                + "}";
+            dual(code, wrap(code.replace(
+                 "when (s) {", "return when (s) {")), 12);
+        }
+
+        @Test void classInsideObjectMethod_isCheck() throws Exception {
+            String code = ""
+                + "class Tag(val name: String)\n"
+                + "val t: Any = Tag(\"hello\")\n"
+                + "t is Tag";
+            dual(code, wrap(code.replace("t is Tag", "return t is Tag")), true);
+        }
+
+        @Test void classWithWhenMatch() throws Exception {
+            String code = ""
+                + "sealed class Result\n"
+                + "class Ok(val v: Int) : Result()\n"
+                + "class Fail(val msg: String) : Result()\n"
+                + "fun check(r: Result): String = when (r) {\n"
+                + "    is Ok -> \"ok:\" + r.v\n"
+                + "    is Fail -> \"fail:\" + r.msg\n"
+                + "    else -> \"?\"\n"
+                + "}\n"
+                + "check(Ok(42))";
+            dual(code, wrap(code.replace("check(Ok(42))", "return check(Ok(42))")), "ok:42");
+        }
     }
 }

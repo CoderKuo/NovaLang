@@ -1748,4 +1748,74 @@ class ParserTest {
             assertEquals("<init-block>", init.getName());
         }
     }
+
+    // ============ 错误报告测试 ============
+
+    @Nested
+    @DisplayName("错误报告")
+    class ErrorReportingTests {
+
+        @Test
+        @DisplayName("未闭合的大括号报告打开位置")
+        void testUnclosedBraceReportsOpenPosition() {
+            ParseException ex = assertThrows(ParseException.class,
+                () -> parse("val f = { x ->\n  x + 1\n"));
+            String msg = ex.getMessage();
+            assertTrue(msg.contains("Unclosed '{'"), "应包含 Unclosed: " + msg);
+            assertTrue(msg.contains("line 1"), "应指向第 1 行: " + msg);
+        }
+
+        @Test
+        @DisplayName("错误消息包含源码行")
+        void testErrorMessageContainsSourceLine() {
+            ParseException ex = assertThrows(ParseException.class,
+                () -> parse("val x = .invalid"));
+            String msg = ex.getMessage();
+            assertTrue(msg.contains("val x = .invalid"), "应包含出错的源码行: " + msg);
+        }
+
+        @Test
+        @DisplayName("错误消息包含行号前缀")
+        void testErrorMessageHasLinePrefix() {
+            ParseException ex = assertThrows(ParseException.class,
+                () -> parse("val x = 1\nval y = .bad"));
+            String msg = ex.getMessage();
+            assertTrue(msg.contains("2 | "), "应包含行号前缀: " + msg);
+            assertTrue(msg.contains(".bad"), "应包含出错内容: " + msg);
+        }
+
+        @Test
+        @DisplayName("未闭合的块报告打开位置的源码行")
+        void testUnclosedBlockShowsOpenLine() {
+            ParseException ex = assertThrows(ParseException.class,
+                () -> parse("fun test() {\n  val x = 1\n  val y = 2\n"));
+            String msg = ex.getMessage();
+            assertTrue(msg.contains("Unclosed '{'"), "应包含 Unclosed: " + msg);
+            assertTrue(msg.contains("1 | ") || msg.contains("line 1"), "应指向第 1 行: " + msg);
+        }
+
+        @Test
+        @DisplayName("嵌套 lambda 未闭合报告正确位置")
+        void testNestedLambdaUnclosedBrace() {
+            ParseException ex = assertThrows(ParseException.class,
+                () -> parse("val f = { x ->\n  val g = { y ->\n    x + y\n"));
+            String msg = ex.getMessage();
+            assertTrue(msg.contains("Unclosed '{'"), "应包含 Unclosed: " + msg);
+        }
+
+        @Test
+        @DisplayName("infix 修饰符被正确解析")
+        void testInfixModifier() {
+            Program prog = parse("infix fun Int.add(n: Int) = this + n");
+            FunDecl fn = (FunDecl) prog.getDeclarations().get(0);
+            assertTrue(fn.getModifiers().contains(Modifier.INFIX), "应包含 INFIX 修饰符");
+        }
+
+        @Test
+        @DisplayName("infix 调用不会引发解析错误")
+        void testInfixCallParses() {
+            // 确认 infix 调用语法不会报错（运行时结果由 CoreSyntaxIntegrationTest 验证）
+            assertDoesNotThrow(() -> parse("val r = 1 add 2"));
+        }
+    }
 }

@@ -302,6 +302,8 @@ public final class Builtins {
                     || "Channel".equals(nf.name) || "Mutex".equals(nf.name)) continue; // 解释器需要 NovaMap 包装
             if ("awaitAll".equals(nf.name) || "awaitFirst".equals(nf.name) || "withContext".equals(nf.name)) continue; // 同上
             if ("typeof".equals(nf.name) || "isCallable".equals(nf.name)) continue; // 解释器保留 NovaValue 原生实现
+            if ("Pair".equals(nf.name) || "arrayOf".equals(nf.name)) continue; // 解释器需要 NovaPair/NovaArray 类型
+            if ("readLine".equals(nf.name) || "input".equals(nf.name)) continue; // 解释器需要安全策略 + 自定义 stdin
             final StdlibRegistry.NativeFunctionInfo capturedNf = nf;
             env.defineVal(nf.name, new NovaNativeFunction(nf.name, nf.arity, (interp, args) -> {
                 Object[] javaArgs = new Object[args.size()];

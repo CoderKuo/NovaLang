@@ -1074,7 +1074,7 @@ class LexerTest {
         void testKeywordPrefixAsIdentifier() {
             assertSingleToken("value", TokenType.IDENTIFIER);
             assertSingleToken("variable", TokenType.IDENTIFIER);
-            assertSingleToken("function", TokenType.IDENTIFIER);
+            assertSingleToken("function", TokenType.KW_FUN);  // function 是 fun 的别名
             assertSingleToken("classify", TokenType.IDENTIFIER);
             assertSingleToken("internal2", TokenType.IDENTIFIER);
             assertSingleToken("ifElse", TokenType.IDENTIFIER);

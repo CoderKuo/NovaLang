@@ -100,6 +100,12 @@ class StmtParser {
 
         while (!parser.check(RBRACE) && !parser.isAtEnd()) {
             try {
+                // import 提升到模块级
+                if (parser.check(KW_IMPORT)) {
+                    parser.hoistedImports.add(parser.parseImportDecl());
+                    parser.skipSeparators();
+                    continue;
+                }
                 statements.add(parseStatement());
             } catch (ParseException e) {
                 // 块内容错恢复：跳到下一个语句边界，避免丢失整个外层声明
@@ -108,6 +114,11 @@ class StmtParser {
             parser.skipSeparators();
         }
 
+        if (parser.isAtEnd() && !parser.check(RBRACE)) {
+            throw new ParseException("Unclosed '{' (opened at line " + loc.getLine()
+                + ", column " + loc.getColumn() + "): missing '}'", parser.current)
+                .withSourceAt(parser.lexer.getSource(), loc.getLine());
+        }
         parser.expect(RBRACE, "Expected '}'");
         return new Block(loc, statements);
     }

@@ -33,8 +33,13 @@ class BytecodeVerificationTest {
 
     /** 编译 Nova 源码并对所有生成的 class 做 ASM 验证 */
     private Map<String, byte[]> compileAndVerify(String source) {
-        Map<String, byte[]> classes = compiler.compile(source, "test.nova");
-        assertFalse(classes.isEmpty(), "未生成任何字节码");
+        Map<String, byte[]> classes;
+        try {
+            classes = compiler.compile(source, "test.nova");
+        } catch (Exception e) {
+            throw new AssertionError("编译失败: " + e.getMessage(), e);
+        }
+        assertFalse(classes.isEmpty(), "未生成任何字节码, source:\n" + source);
 
         // 构建包含所有生成类的 ClassLoader，供跨类验证使用
         TestClassLoader loader = new TestClassLoader(classes);

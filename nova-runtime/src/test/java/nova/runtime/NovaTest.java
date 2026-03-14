@@ -846,11 +846,12 @@ class NovaTest {
         }
 
         @Test
-        @DisplayName("defineFunction 重复定义同名函数抛异常（val 语义）")
-        void redefineThrows() {
+        @DisplayName("defineFunction 重复定义同名函数静默覆盖")
+        void redefineOverwrites() {
             nova.defineFunction("fn", () -> "first");
             assertEquals("first", nova.call("fn"));
-            assertThrows(NovaException.class, () -> nova.defineFunction("fn", () -> "second"));
+            nova.defineFunction("fn", () -> "second");
+            assertEquals("second", nova.call("fn"));
         }
 
         @Test

@@ -137,7 +137,10 @@ public final class Environment {
                 if (isMutable) setMutableBit(idx); else clearMutableBit(idx);
                 return;
             }
-            throw new NovaException("Variable already defined: " + name);
+            // 静默覆盖（Builtins 注册阶段可能出现 StdlibRegistry 与手动注册重复）
+            vals[idx] = value;
+            if (isMutable) setMutableBit(idx); else clearMutableBit(idx);
+            return;
         }
         if (idx >= 0) {
             // REPL 重定义

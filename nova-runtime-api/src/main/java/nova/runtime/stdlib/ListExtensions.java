@@ -199,6 +199,10 @@ public final class ListExtensions {
         return min;
     }
 
+    public static Object toList(Object list) {
+        return new ArrayList<>((List<?>) list);
+    }
+
     public static Object toSet(Object list) {
         return new LinkedHashSet<>((List<?>) list);
     }
@@ -218,14 +222,29 @@ public final class ListExtensions {
         return ((List<Object>) list).remove(((Number) index).intValue());
     }
 
+    public static Object joinToString(Object list) {
+        return joinToString(list, ", ");
+    }
+
     public static Object joinToString(Object list, Object separator) {
+        return joinToString(list, separator, null, null);
+    }
+
+    public static Object joinToString(Object list, Object separator, Object prefix) {
+        return joinToString(list, separator, prefix, null);
+    }
+
+    public static Object joinToString(Object list, Object separator, Object prefix, Object postfix) {
         List<?> l = (List<?>) list;
         String sep = separator != null ? separator.toString() : ", ";
-        StringBuilder sb = new StringBuilder();
+        String pre = prefix != null ? prefix.toString() : "";
+        String post = postfix != null ? postfix.toString() : "";
+        StringBuilder sb = new StringBuilder(pre);
         for (int i = 0; i < l.size(); i++) {
             if (i > 0) sb.append(sep);
             sb.append(l.get(i));
         }
+        sb.append(post);
         return sb.toString();
     }
 

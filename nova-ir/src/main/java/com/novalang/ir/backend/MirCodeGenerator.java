@@ -147,6 +147,18 @@ public class MirCodeGenerator {
             generateMethod(cw, method, className, isStatic, superName, cls.getKind());
         }
 
+        // 用户定义 toString() 的 JVM 桥接方法
+        // Nova toString 签名: ()Ljava/lang/Object; — 不覆盖 Object.toString()
+        // 桥接方法签名: ()Ljava/lang/String; — 正确覆盖，转发调用
+        if (!cls.hasAnnotation("data")) {  // @data 已自行生成 toString
+            for (MirFunction method : cls.getMethods()) {
+                if ("toString".equals(method.getName()) && method.getParams().isEmpty()) {
+                    generateToStringBridge(cw, className);
+                    break;
+                }
+            }
+        }
+
         // @data 合成方法
         if (cls.hasAnnotation("data")) {
             generateDataMethods(cw, cls, className);
@@ -336,6 +348,20 @@ public class MirCodeGenerator {
                 }
                 if (!synthSuperLocals.isEmpty() && !func.getBlocks().isEmpty()) {
                     BasicBlock firstBlock = func.getBlocks().get(0);
+                    // 收集传递依赖：合成局部变量依赖的常量、运算等也需要提前发射
+                    boolean changed = true;
+                    while (changed) {
+                        changed = false;
+                        for (MirInst inst : firstBlock.getInstructions()) {
+                            if (synthSuperLocals.contains(inst.getDest()) && inst.getOperands() != null) {
+                                for (int op : inst.getOperands()) {
+                                    if (op >= paramCount && synthSuperLocals.add(op)) {
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     for (MirInst inst : firstBlock.getInstructions()) {
                         if (synthSuperLocals.contains(inst.getDest())) {
                             generateInstruction(mv, inst, blockLabels, func);
@@ -777,6 +803,19 @@ public class MirCodeGenerator {
                         case "Z": unboxBoolean(mv, value); break;
                         default: loadObject(mv, value); break;
                     }
+                } else if (isBoxedNumericDesc(fieldDesc)) {
+                    // 装箱数值类型字段：通过 Number 拆箱再装箱，确保类型安全
+                    // （如 Integer → Double: Number.doubleValue() → Double.valueOf()）
+                    switch (fieldDesc) {
+                        case "Ljava/lang/Integer;":   loadInt(mv, value); boxInt(mv); break;
+                        case "Ljava/lang/Long;":      unboxLong(mv, value); boxLong(mv); break;
+                        case "Ljava/lang/Float;":     unboxFloat(mv, value); boxFloat(mv); break;
+                        case "Ljava/lang/Double;":    unboxDouble(mv, value); boxDouble(mv); break;
+                        case "Ljava/lang/Boolean;":   unboxBoolean(mv, value); boxBoolean(mv); break;
+                        case "Ljava/lang/Character;": loadObject(mv, value);
+                            mv.visitTypeInsn(CHECKCAST, "java/lang/Character"); break;
+                        default: loadObject(mv, value); break;
+                    }
                 } else {
                     loadObject(mv, value);
                     if (!MethodDescriptor.OBJECT_DESC.equals(fieldDesc)) {
@@ -999,13 +1038,15 @@ public class MirCodeGenerator {
                 int src = inst.operand(0);
                 loadObject(mv, src);
                 // Ok/Err/Result 不是 JVM 类，需要运行时值类型检查
-                if ("Ok".equals(typeName)) {
+                // 但如果用户定义了同名类，则使用 JVM INSTANCEOF
+                boolean isUserClass = allFieldDescs.containsKey(typeName);
+                if (!isUserClass && "Ok".equals(typeName)) {
                     mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaResult", "checkIsOk",
                             "(Ljava/lang/Object;)Z", false);
-                } else if ("Err".equals(typeName)) {
+                } else if (!isUserClass && "Err".equals(typeName)) {
                     mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaResult", "checkIsErr",
                             "(Ljava/lang/Object;)Z", false);
-                } else if ("Result".equals(typeName)) {
+                } else if (!isUserClass && "Result".equals(typeName)) {
                     mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaResult", "checkIsResult",
                             "(Ljava/lang/Object;)Z", false);
                 } else {
@@ -1999,6 +2040,20 @@ public class MirCodeGenerator {
         return desc.length() == 1 && "IJFDZBC".indexOf(desc.charAt(0)) >= 0;
     }
 
+    private static boolean isBoxedNumericDesc(String desc) {
+        switch (desc) {
+            case "Ljava/lang/Integer;":
+            case "Ljava/lang/Long;":
+            case "Ljava/lang/Float;":
+            case "Ljava/lang/Double;":
+            case "Ljava/lang/Boolean;":
+            case "Ljava/lang/Character;":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /** 将栈顶原始类型值装箱为对应包装类 */
     private void boxFieldValue(MethodVisitor mv, String fieldDesc) {
         switch (fieldDesc) {
@@ -2445,6 +2500,14 @@ public class MirCodeGenerator {
             generateMethod(cw, method, className, isStatic, superName, ClassKind.CLASS);
         }
 
+        // object 类的 toString 桥接
+        for (MirFunction method : cls.getMethods()) {
+            if ("toString".equals(method.getName()) && method.getParams().isEmpty()) {
+                generateToStringBridge(cw, className);
+                break;
+            }
+        }
+
         cw.visitEnd();
         generatedClasses.put(className, cw.toByteArray());
     }
@@ -2501,6 +2564,27 @@ public class MirCodeGenerator {
     }
 
     // ========== @data 合成方法 ==========
+
+    /**
+     * 用户定义 toString() 的 JVM 桥接方法。
+     * Nova 编译的 toString 签名为 ()Ljava/lang/Object;（不覆盖 Object.toString）。
+     * 此桥接方法签名为 ()Ljava/lang/String;（正确覆盖），内部转发调用并转为 String。
+     */
+    private void generateToStringBridge(ClassWriter cw, String className) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "toString",
+                "()Ljava/lang/String;", null, null);
+        mv.visitCode();
+        mv.visitVarInsn(ALOAD, 0);
+        // 调用 Nova 版 toString()Ljava/lang/Object;
+        mv.visitMethodInsn(INVOKEVIRTUAL, className, "toString",
+                "()Ljava/lang/Object;", false);
+        // Object → String
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/String", "valueOf",
+                "(Ljava/lang/Object;)Ljava/lang/String;", false);
+        mv.visitInsn(ARETURN);
+        mv.visitMaxs(1, 1);
+        mv.visitEnd();
+    }
 
     /**
      * 为 @data class 生成 toString, equals, hashCode, componentN, copy 方法。

@@ -11,6 +11,20 @@ final class Concurrency {
 
     private Concurrency() {}
 
+    /** 注册接受 lambda 的 varargs 函数（方法名与函数名相同） */
+    private static void registerLambda(String name, String owner,
+                                        java.util.function.Function<Object[], Object> impl) {
+        registerLambda(name, owner, name, impl);
+    }
+
+    /** 注册接受 lambda 的 varargs 函数 */
+    private static void registerLambda(String name, String owner, String methodName,
+                                        java.util.function.Function<Object[], Object> impl) {
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            name, -1, owner, methodName,
+            "([Ljava/lang/Object;)Ljava/lang/Object;", impl, true));
+    }
+
     static void register() {
         // async { body } → CompletableFuture.supplyAsync(() -> body)
         StdlibRegistry.register(new StdlibRegistry.SupplierLambdaInfo(
@@ -22,22 +36,11 @@ final class Concurrency {
         ));
 
         // coroutineScope(block) 或 coroutineScope(dispatcher, block)
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "coroutineScope", -1,
-            "nova/runtime/stdlib/StructuredConcurrencyHelper",
-            "coroutineScopeVararg",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> StructuredConcurrencyHelper.coroutineScopeVararg(args)
-        ));
-
+        registerLambda("coroutineScope", "nova/runtime/stdlib/StructuredConcurrencyHelper",
+            "coroutineScopeVararg", args -> StructuredConcurrencyHelper.coroutineScopeVararg(args));
         // supervisorScope(block) 或 supervisorScope(dispatcher, block)
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "supervisorScope", -1,
-            "nova/runtime/stdlib/StructuredConcurrencyHelper",
-            "supervisorScopeVararg",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> StructuredConcurrencyHelper.supervisorScopeVararg(args)
-        ));
+        registerLambda("supervisorScope", "nova/runtime/stdlib/StructuredConcurrencyHelper",
+            "supervisorScopeVararg", args -> StructuredConcurrencyHelper.supervisorScopeVararg(args));
 
         // Dispatchers 常量：Dispatchers.IO / Dispatchers.Default / Dispatchers.Unconfined
         StdlibRegistry.register(new StdlibRegistry.ConstantInfo(
@@ -49,152 +52,46 @@ final class Concurrency {
         ));
 
         // schedule(delayMs, block) — 延迟调度，返回 Task
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "schedule", -1,
-            "nova/runtime/stdlib/SchedulerHelper",
-            "schedule",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> SchedulerHelper.schedule(args)
-        ));
-
+        registerLambda("schedule", "nova/runtime/stdlib/SchedulerHelper", args -> SchedulerHelper.schedule(args));
         // scheduleRepeat(delayMs, periodMs, block) — 重复调度，返回 Task
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "scheduleRepeat", -1,
-            "nova/runtime/stdlib/SchedulerHelper",
-            "scheduleRepeat",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> SchedulerHelper.scheduleRepeat(args)
-        ));
-
+        registerLambda("scheduleRepeat", "nova/runtime/stdlib/SchedulerHelper", args -> SchedulerHelper.scheduleRepeat(args));
         // delay(millis) — 主线程安全检查 + Thread.sleep
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "delay", -1,
-            "nova/runtime/stdlib/SchedulerHelper",
-            "delay",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> SchedulerHelper.delay(args)
-        ));
-
+        registerLambda("delay", "nova/runtime/stdlib/SchedulerHelper", args -> SchedulerHelper.delay(args));
         // scope { block } — 在 IO 线程执行，阻塞调用者直到完成
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "scope", -1,
-            "nova/runtime/stdlib/SchedulerHelper",
-            "scope",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> SchedulerHelper.scope(args)
-        ));
-
+        registerLambda("scope", "nova/runtime/stdlib/SchedulerHelper", args -> SchedulerHelper.scope(args));
         // sync { block } — 提交到主线程执行并等待结果
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "sync", -1,
-            "nova/runtime/stdlib/SchedulerHelper",
-            "sync",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> SchedulerHelper.sync(args)
-        ));
-
+        registerLambda("sync", "nova/runtime/stdlib/SchedulerHelper", args -> SchedulerHelper.sync(args));
         // launch { block } — fire-and-forget 异步，返回 Job
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "launch", -1,
-            "nova/runtime/stdlib/ConcurrencyHelper",
-            "launch",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyHelper.launch(args)
-        ));
-
+        registerLambda("launch", "nova/runtime/stdlib/ConcurrencyHelper", args -> ConcurrencyHelper.launch(args));
         // parallel(tasks...) — 并行执行多个 lambda，返回结果列表
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "parallel", -1,
-            "nova/runtime/stdlib/ConcurrencyHelper",
-            "parallel",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyHelper.parallel(args)
-        ));
-
+        registerLambda("parallel", "nova/runtime/stdlib/ConcurrencyHelper", args -> ConcurrencyHelper.parallel(args));
         // withTimeout(millis, block) — 带超时执行
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "withTimeout", -1,
-            "nova/runtime/stdlib/ConcurrencyHelper",
-            "withTimeout",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyHelper.withTimeout(args)
-        ));
+        registerLambda("withTimeout", "nova/runtime/stdlib/ConcurrencyHelper", args -> ConcurrencyHelper.withTimeout(args));
 
         // ============ 并发原语构造器 ============
 
-        // AtomicInt(initial) — 原子整数
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "AtomicInt", -1,
-            "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
-            "atomicInt",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyPrimitivesHelper.atomicInt(args)
-        ));
-
-        // AtomicLong(initial) — 原子长整数
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "AtomicLong", -1,
-            "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
-            "atomicLong",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyPrimitivesHelper.atomicLong(args)
-        ));
-
-        // AtomicRef(initial) — 原子引用
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "AtomicRef", -1,
-            "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
-            "atomicRef",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyPrimitivesHelper.atomicRef(args)
-        ));
-
-        // Channel(capacity?) — 并发通道
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "Channel", -1,
-            "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
-            "channel",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyPrimitivesHelper.channel(args)
-        ));
-
-        // Mutex() — 互斥锁
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "Mutex", -1,
-            "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
-            "mutex",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyPrimitivesHelper.mutex(args)
-        ));
+        // 并发原语构造器（解释器中需要走 Builtins）
+        registerLambda("AtomicInt", "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
+            "atomicInt", args -> ConcurrencyPrimitivesHelper.atomicInt(args));
+        registerLambda("AtomicLong", "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
+            "atomicLong", args -> ConcurrencyPrimitivesHelper.atomicLong(args));
+        registerLambda("AtomicRef", "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
+            "atomicRef", args -> ConcurrencyPrimitivesHelper.atomicRef(args));
+        registerLambda("Channel", "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
+            "channel", args -> ConcurrencyPrimitivesHelper.channel(args));
+        registerLambda("Mutex", "nova/runtime/stdlib/ConcurrencyPrimitivesHelper",
+            "mutex", args -> ConcurrencyPrimitivesHelper.mutex(args));
 
         // ============ awaitAll / awaitFirst / withContext ============
 
-        // awaitAll(futures) — 等待所有 Future 完成
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "awaitAll", -1,
-            "nova/runtime/stdlib/ConcurrencyHelper",
-            "awaitAll",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyHelper.awaitAll(args)
-        ));
-
-        // awaitFirst(futures) — 返回首个完成的结果
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "awaitFirst", -1,
-            "nova/runtime/stdlib/ConcurrencyHelper",
-            "awaitFirst",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> ConcurrencyHelper.awaitFirst(args)
-        ));
+        registerLambda("awaitAll", "nova/runtime/stdlib/ConcurrencyHelper",
+            args -> ConcurrencyHelper.awaitAll(args));
+        registerLambda("awaitFirst", "nova/runtime/stdlib/ConcurrencyHelper",
+            args -> ConcurrencyHelper.awaitFirst(args));
 
         // withContext(dispatcher, block) — 在指定 executor 上执行 block
-        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "withContext", -1,
-            "nova/runtime/stdlib/StructuredConcurrencyHelper",
-            "withContextVararg",
-            "([Ljava/lang/Object;)Ljava/lang/Object;",
-            args -> StructuredConcurrencyHelper.withContextVararg(args)
-        ));
+        registerLambda("withContext", "nova/runtime/stdlib/StructuredConcurrencyHelper",
+            "withContextVararg", args -> StructuredConcurrencyHelper.withContextVararg(args));
 
         // Future 类型元数据（直接注册，避免反射依赖 nova-runtime 内部类）
         NovaTypeRegistry.registerFutureType();

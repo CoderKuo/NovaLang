@@ -14,7 +14,8 @@ import java.util.Map;
  *   <li>顶层变量赋值 → {@code NovaScriptContext.set(name, value)}</li>
  * </ul>
  *
- * <p>使用 ThreadLocal 保证线程安全，由 {@code NovaCompiledScript.eval()} 管理生命周期。</p>
+ * <p>使用 ThreadLocal 保证线程安全，由 {@code NovaCompiledScript.eval()} 管理生命周期。
+ * 并发函数（launch/parallel）通过 {@link #current()} 捕获后手动传播到 worker 线程。</p>
  */
 public class NovaScriptContext {
 
@@ -22,6 +23,18 @@ public class NovaScriptContext {
 
     private final Map<String, Object> bindings = new HashMap<>();
     private ExtensionRegistry extensionRegistry;
+
+    /** 获取当前线程的上下文（用于并发传播） */
+    public static NovaScriptContext current() {
+        return CURRENT.get();
+    }
+
+    /** 设置当前线程的上下文（用于 worker 线程继承父线程的上下文） */
+    public static void setCurrent(NovaScriptContext ctx) {
+        if (ctx != null) {
+            CURRENT.set(ctx);
+        }
+    }
 
     /**
      * 初始化当前线程的脚本上下文

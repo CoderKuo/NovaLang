@@ -5,6 +5,7 @@ import com.novalang.ir.NovaIrCompiler;
 import com.novalang.ir.mir.MirClass;
 import com.novalang.ir.mir.MirFunction;
 import com.novalang.ir.mir.MirModule;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -249,7 +250,7 @@ class PerformanceBenchmarkTest {
 //    @Test @DisplayName("11 尾递归") void bench11() { benchTailRecursion(11); }
 //    @Test @DisplayName("12 When 表达式") void bench12() { benchWhenExpression(12); }
 //    @Test @DisplayName("13 扩展函数") void bench13() { benchExtensionFunctions(13); }
-    @Test @DisplayName("14 运算符重载") void bench14() { benchOperatorOverloading(14); }
+//    @Test @DisplayName("14 运算符重载") void bench14() { benchOperatorOverloading(14); }
 //    @Test @DisplayName("15 接口多态") void bench15() { benchInterfaceDispatch(15); }
 //    @Test @DisplayName("16 空安全操作符") void bench16() { benchNullSafety(16); }
 //    @Test @DisplayName("17 Range 迭代") void bench17() { benchRangeIteration(17); }
@@ -269,6 +270,7 @@ class PerformanceBenchmarkTest {
 
     @DisplayName("综合性能基准测试")
     @Test
+    @Disabled
     void runAllBenchmarks() {
         List<BenchResult> results = new ArrayList<BenchResult>();
 

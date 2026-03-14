@@ -269,6 +269,16 @@ class ExprParser {
                 boolean isSafe = parser.match(QUESTION);  // as?
                 TypeRef type = parser.parseType();
                 left = new TypeCastExpr(loc, left, type, isSafe);
+            } else if (parser.match(KW_IN)) {
+                // in 包含检查: expr in range
+                Expression range = parseElvisExpr();
+                left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.IN, range);
+            } else if (parser.check(NOT) && parser.checkAhead(KW_IN)) {
+                // !in 包含检查: expr !in range
+                parser.advance();  // consume '!'
+                parser.advance();  // consume 'in'
+                Expression range = parseElvisExpr();
+                left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.NOT_IN, range);
             } else {
                 break;
             }
@@ -290,7 +300,7 @@ class ExprParser {
         return left;
     }
 
-    // 中缀 to（Pair 创建）
+    // 中缀 to（Pair 创建）+ 通用 infix 函数调用
     private Expression parseInfixToExpr() {
         Expression left = parseRangeExpr();
 
@@ -301,7 +311,49 @@ class ExprParser {
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.TO, right);
         }
 
+        // 通用 infix 函数调用: expr name expr → expr.name(expr)
+        // 同一行的标识符（非关键词/声明开头）后跟表达式
+        while (parser.check(IDENTIFIER) && !parser.checkAny(NEWLINE, SEMICOLON, EOF)
+                && !isInfixBreak(parser.current.getLexeme())
+                && parser.previous != null && parser.current.getLine() == parser.previous.getLine()) {
+            SourceLocation loc = parser.location();
+            String name = parser.current.getLexeme();
+            // 回溯保护：确认后面确实是表达式
+            parser.mark();
+            parser.advance(); // consume identifier
+            if (parser.check(NEWLINE) || parser.check(SEMICOLON) || parser.check(EOF)
+                    || parser.check(RBRACE) || parser.check(RPAREN) || parser.check(RBRACKET)
+                    || parser.check(DOT) || parser.check(SAFE_DOT) || parser.check(COMMA)
+                    || parser.check(ASSIGN) || parser.check(LBRACE) || parser.check(COLON)
+                    || parser.check(ARROW)) {
+                parser.reset(); // 不是 infix 调用，回退
+                break;
+            }
+            parser.commitMark();
+            Expression right = parseRangeExpr();
+            left = new CallExpr(loc,
+                    new MemberExpr(loc, left, name),
+                    java.util.Collections.emptyList(),
+                    java.util.Collections.singletonList(new CallExpr.Argument(loc, null, right, false)),
+                    null);
+        }
+
         return left;
+    }
+
+    /** 不应被当作 infix 函数名的标识符 */
+    private static boolean isInfixBreak(String name) {
+        switch (name) {
+            case "to": case "step": case "as": case "is": case "in":
+            case "and": case "or": case "not":
+            case "val": case "var": case "fun": case "class": case "if": case "else":
+            case "for": case "while": case "return": case "when": case "try": case "catch":
+            case "throw": case "import": case "true": case "false": case "null":
+            case "annotation": case "infix":
+                return true;
+            default:
+                return false;
+        }
     }
 
     // 范围 .. ..<
@@ -608,7 +660,7 @@ class ExprParser {
 
     private CallExpr.Argument parseCallArg() {
         SourceLocation loc = parser.location();
-        boolean isSpread = parser.match(MUL);
+        boolean isSpread = parser.matchAny(MUL, RANGE);
 
         String name = null;
         // 检查是否是命名参数
@@ -767,7 +819,7 @@ class ExprParser {
             return parseJumpExpr();
         }
 
-        throw new ParseException("Expected expression", parser.current);
+        throw new ParseException("Expected expression", parser.current).withSource(parser.lexer.getSource());
     }
 
     // 数字字面量: INT, LONG, FLOAT, DOUBLE
@@ -1038,6 +1090,11 @@ class ExprParser {
             parser.skipSeparators();
         }
 
+        if (parser.isAtEnd() && !parser.check(RBRACE)) {
+            throw new ParseException("Unclosed '{' (opened at line " + loc.getLine()
+                + ", column " + loc.getColumn() + "): missing '}'", parser.current)
+                .withSourceAt(parser.lexer.getSource(), loc.getLine());
+        }
         parser.expect(RBRACE, "Expected '}'");
         return new LambdaExpr(loc, params, new Block(loc, statements));
     }
@@ -1164,8 +1221,8 @@ class ExprParser {
         do {
             parser.skipNewlines();
             if (parser.check(RBRACKET) || parser.check(RPAREN) || parser.check(RBRACE)) break;
-            // 支持 Spread 操作符 *expr
-            if (parser.match(MUL)) {
+            // 支持 Spread 操作符 *expr 或 ..expr
+            if (parser.matchAny(MUL, RANGE)) {
                 SourceLocation loc = parser.previousLocation();
                 Expression operand = parseExpression();
                 exprs.add(new SpreadExpr(loc, operand));

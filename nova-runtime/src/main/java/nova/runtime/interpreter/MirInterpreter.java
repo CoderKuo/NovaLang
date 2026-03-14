@@ -1195,14 +1195,30 @@ final class MirInterpreter {
         if (func.hasSuperInitArgs()) {
             // 鎵ц entry block 鐨?CONST 鎸囦护鏉ュ垵濮嬪寲鍚堟垚灞€閮ㄥ彉閲?
             List<BasicBlock> blocks = func.getBlocks();
+            int[] superLocals = func.getSuperInitArgLocals();
             if (!blocks.isEmpty()) {
+                int paramCount = func.getParams().size() + 1;
+                Set<Integer> needed = new java.util.HashSet<>();
+                for (int l : superLocals) {
+                    if (l >= paramCount) needed.add(l);
+                }
+                boolean changed = true;
+                while (changed) {
+                    changed = false;
+                    for (MirInst inst : blocks.get(0).getInstructions()) {
+                        if (needed.contains(inst.getDest()) && inst.getOperands() != null) {
+                            for (int op : inst.getOperands()) {
+                                if (op >= paramCount && needed.add(op)) changed = true;
+                            }
+                        }
+                    }
+                }
                 for (MirInst inst : blocks.get(0).getInstructions()) {
-                    if (inst.getOp().name().startsWith("CONST_")) {
+                    if (needed.contains(inst.getDest())) {
                         executeInst(frame, inst);
                     }
                 }
             }
-            int[] superLocals = func.getSuperInitArgLocals();
             NovaValue thisObj = frame.locals[0];
             List<NovaValue> superArgs = new ArrayList<>(superLocals.length);
             for (int localIdx : superLocals) {

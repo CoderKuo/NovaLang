@@ -491,4 +491,285 @@ class StructuredConcurrencyCodegenTest {
             );
         }
     }
+
+    // ============================================================
+    //  launch + parallel 嵌套 lambda（复现 scriptMode NPE）
+    // ============================================================
+
+    @Nested
+    @DisplayName("launch + parallel 嵌套 lambda")
+    class LaunchParallelTests {
+
+        @Test
+        @DisplayName("parallel 多 lambda 并行执行")
+        void testParallelMultipleLambdas() throws Exception {
+            String code = ""
+                + "import nova.time.*\n"
+                + "val results = parallel(\n"
+                + "    { \"A\" },\n"
+                + "    { \"B\" },\n"
+                + "    { \"C\" }\n"
+                + ")\n"
+                + "results.joinToString(\", \")";
+            dual(code, wrap(""
+                + "import nova.time.*\n"
+                + "    val results = parallel(\n"
+                + "        { \"A\" },\n"
+                + "        { \"B\" },\n"
+                + "        { \"C\" }\n"
+                + "    )\n"
+                + "    return results.joinToString(\", \")"),
+                "A, B, C");
+        }
+
+        @Test
+        @DisplayName("parallel lambda 捕获外部变量")
+        void testParallelCapturesOuterVars() throws Exception {
+            String code = ""
+                + "import nova.time.*\n"
+                + "val x = 10\n"
+                + "val y = 20\n"
+                + "val results = parallel(\n"
+                + "    { \"x=$x\" },\n"
+                + "    { \"y=$y\" }\n"
+                + ")\n"
+                + "results.joinToString(\", \")";
+            dual(code, wrap(""
+                + "import nova.time.*\n"
+                + "    val x = 10\n"
+                + "    val y = 20\n"
+                + "    val results = parallel(\n"
+                + "        { \"x=$x\" },\n"
+                + "        { \"y=$y\" }\n"
+                + "    )\n"
+                + "    return results.joinToString(\", \")"),
+                "x=10, y=20");
+        }
+
+        @Test
+        @DisplayName("coroutineScope 内嵌 parallel + 捕获变量")
+        void testScopeWithParallelAndCapture() throws Exception {
+            String code = ""
+                + "val hp = 20\n"
+                + "val lv = 5\n"
+                + "coroutineScope {\n"
+                + "    val parts = parallel(\n"
+                + "        { \"HP:$hp\" },\n"
+                + "        { \"Lv:$lv\" }\n"
+                + "    )\n"
+                + "    parts.joinToString(\"|\")\n"
+                + "}";
+            dual(code, wrap(""
+                + "    val hp = 20\n"
+                + "    val lv = 5\n"
+                + "    return coroutineScope {\n"
+                + "        val parts = parallel(\n"
+                + "            { \"HP:$hp\" },\n"
+                + "            { \"Lv:$lv\" }\n"
+                + "        )\n"
+                + "        parts.joinToString(\"|\")\n"
+                + "    }"),
+                "HP:20|Lv:5");
+        }
+
+        @Test
+        @DisplayName("parallel + sleep 并行执行（含 import 提升）")
+        void testParallelWithSleep() throws Exception {
+            String code = ""
+                + "import nova.time.*\n"
+                + "val start = now()\n"
+                + "val results = parallel(\n"
+                + "    { sleep(50); \"A\" },\n"
+                + "    { sleep(50); \"B\" },\n"
+                + "    { sleep(50); \"C\" }\n"
+                + ")\n"
+                + "val elapsed = now() - start\n"
+                + "results.joinToString(\", \")";
+            dual(code, wrap(""
+                + "    import nova.time.*\n"
+                + "    val start = now()\n"
+                + "    val results = parallel(\n"
+                + "        { sleep(50); \"A\" },\n"
+                + "        { sleep(50); \"B\" },\n"
+                + "        { sleep(50); \"C\" }\n"
+                + "    )\n"
+                + "    val elapsed = now() - start\n"
+                + "    return results.joinToString(\", \")"),
+                "A, B, C");
+        }
+
+        @Test
+        @DisplayName("launch + await 兼容 CompileJob")
+        void testLaunchAwait() throws Exception {
+            String code = ""
+                + "val job = launch { 42 }\n"
+                + "await job\n"
+                + "\"done\"";
+            dual(code, wrap(""
+                + "    val job = launch { 42 }\n"
+                + "    await job\n"
+                + "    return \"done\""),
+                "done");
+        }
+
+        @Test
+        @DisplayName("async + await 返回值")
+        void testAsyncAwaitValue() throws Exception {
+            dual("val f = async { 10 + 20 }\nawait f",
+                 wrap("val f = async { 10 + 20 }\n    return await f"),
+                 30);
+        }
+    }
+
+    // ============================================================
+    //  scriptMode 编译路径（CompiledNova 场景）
+    // ============================================================
+
+    @Nested
+    @DisplayName("scriptMode 编译路径")
+    class ScriptModeTests {
+
+        private Object runScript(String code) {
+            nova.runtime.Nova nova = new nova.runtime.Nova();
+            nova.runtime.CompiledNova compiled = nova.compileToBytecode(code, "test.nova");
+            return compiled.run();
+        }
+
+        @Test
+        @DisplayName("scriptMode: parallel 多 lambda")
+        void testScriptModeParallel() {
+            Object result = runScript(""
+                + "val results = parallel(\n"
+                + "    { \"A\" },\n"
+                + "    { \"B\" },\n"
+                + "    { \"C\" }\n"
+                + ")\n"
+                + "results.joinToString(\", \")");
+            assertEquals("A, B, C", String.valueOf(result));
+        }
+
+        @Test
+        @DisplayName("scriptMode: parallel + 变量捕获")
+        void testScriptModeParallelCapture() {
+            Object result = runScript(""
+                + "val x = 10\n"
+                + "val y = 20\n"
+                + "val results = parallel(\n"
+                + "    { \"x=$x\" },\n"
+                + "    { \"y=$y\" }\n"
+                + ")\n"
+                + "results.joinToString(\", \")");
+            assertEquals("x=10, y=20", String.valueOf(result));
+        }
+
+        @Test
+        @DisplayName("scriptMode: launch + parallel 嵌套（复现用户 NPE）")
+        void testScriptModeLaunchParallel() {
+            Object result = runScript(""
+                + "val hp = 20\n"
+                + "val lv = 5\n"
+                + "val ping = 30\n"
+                + "coroutineScope {\n"
+                + "    val results = parallel(\n"
+                + "        { \"HP:$hp\" },\n"
+                + "        { \"Lv:$lv\" },\n"
+                + "        { \"Ping:$ping\" }\n"
+                + "    )\n"
+                + "    results.joinToString(\" | \")\n"
+                + "}");
+            assertEquals("HP:20 | Lv:5 | Ping:30", String.valueOf(result));
+        }
+
+        @Test
+        @DisplayName("scriptMode: 外部变量注入 + launch + parallel（模拟 TrMenu）")
+        void testScriptModeWithExternalBindings() {
+            nova.runtime.Nova nova = new nova.runtime.Nova();
+            nova.set("hp", 20);
+            nova.set("lv", 5);
+            nova.set("ping", 30);
+            nova.runtime.CompiledNova compiled = nova.compileToBytecode(""
+                + "coroutineScope {\n"
+                + "    val results = parallel(\n"
+                + "        { \"HP:$hp\" },\n"
+                + "        { \"Lv:$lv\" },\n"
+                + "        { \"Ping:$ping\" }\n"
+                + "    )\n"
+                + "    results.joinToString(\" | \")\n"
+                + "}", "test.nova");
+            Object result = compiled.run();
+            assertEquals("HP:20 | Lv:5 | Ping:30", String.valueOf(result));
+        }
+
+        @Test
+        @DisplayName("scriptMode: import nova.time + now() + launch + parallel + sleep（完整复现）")
+        void testScriptModeFullScenario() {
+            nova.runtime.Nova nova = new nova.runtime.Nova();
+            nova.set("hp", 20);
+            nova.set("lv", 5);
+            nova.set("ping", 30);
+            nova.runtime.CompiledNova compiled = nova.compileToBytecode(""
+                + "import nova.time.*\n"
+                + "val start = now()\n"
+                + "val results = parallel(\n"
+                + "    { sleep(50); \"A:$hp\" },\n"
+                + "    { sleep(50); \"B:$lv\" },\n"
+                + "    { sleep(50); \"C:$ping\" }\n"
+                + ")\n"
+                + "val elapsed = now() - start\n"
+                + "results.joinToString(\", \")", "test.nova");
+            Object result = compiled.run();
+            assertEquals("A:20, B:5, C:30", String.valueOf(result));
+        }
+
+        @Test
+        @DisplayName("scriptMode: 扩展函数 this 引用（点调用）")
+        void testScriptModeExtensionThis() {
+            Object result = runScript(""
+                + "fun Int.power(exp: Int): Int {\n"
+                + "    var result = 1\n"
+                + "    for (i in 1..exp) { result = result * this }\n"
+                + "    return result\n"
+                + "}\n"
+                + "2.power(10)");
+            assertEquals(1024, result);
+        }
+
+        @Test
+        @DisplayName("scriptMode: infix 扩展函数用点调用")
+        void testScriptModeInfixDotCall() {
+            Object result = runScript(""
+                + "infix fun Int.power(exp: Int): Int {\n"
+                + "    var result = 1\n"
+                + "    for (i in 1..exp) { result = result * this }\n"
+                + "    return result\n"
+                + "}\n"
+                + "2.power(10)");
+            assertEquals(1024, result);
+        }
+
+        @Test
+        @DisplayName("scriptMode: infix 扩展函数 infix 调用")
+        void testScriptModeInfixCall() {
+            Object result = runScript(""
+                + "infix fun Int.power(exp: Int): Int {\n"
+                + "    var result = 1\n"
+                + "    for (i in 1..exp) { result = result * this }\n"
+                + "    return result\n"
+                + "}\n"
+                + "2 power 10");
+            assertEquals(1024, result);
+        }
+
+        @Test
+        @DisplayName("scriptMode: import + now() + sleep")
+        void testScriptModeImportTime() {
+            Object result = runScript(""
+                + "import nova.time.*\n"
+                + "val start = now()\n"
+                + "sleep(10)\n"
+                + "val elapsed = now() - start\n"
+                + "elapsed >= 10");
+            assertEquals(true, result);
+        }
+    }
 }
