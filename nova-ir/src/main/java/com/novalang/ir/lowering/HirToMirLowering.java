@@ -3261,11 +3261,12 @@ public class HirToMirLowering {
                 int r = lowerClassConstructorAndReceiverCall(name, expr, builder);
                 if (r >= 0) return r;
             }
+            // 用户定义的顶层函数优先于同名 stdlib 函数
+            if (topLevelFunctionNames.contains(name)) return lowerTopLevelFunctionCall(name, expr, builder);
             { int r = lowerStdlibNativeFunctionCall(name, expr, builder); if (r >= 0) return r; }
             { int r = lowerStdlibSupplierLambdaCall(name, expr, builder); if (r >= 0) return r; }
             { int r = tryStdlibReceiverLambdaCall(name, expr, builder); if (r >= 0) return r; }
             { int r = lowerBuiltinModuleFunction(name, expr, builder); if (r >= 0) return r; }
-            if (topLevelFunctionNames.contains(name)) return lowerTopLevelFunctionCall(name, expr, builder);
             if ("Array".equals(name) && !expr.getArgs().isEmpty())
                 return lowerArrayConstructorCall(name, expr, builder);
             { int r = lowerClassConstructorAndReceiverCall(name, expr, builder); if (r >= 0) return r; }

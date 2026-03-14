@@ -1867,9 +1867,16 @@ class CoreSyntaxIntegrationTest {
             assertEquals("no", String.valueOf(result), "scriptMode");
         }
 
-        // TODO: Boolean 作为 Int+Boolean 混合参数列表中的第二参数在 toJvmDescriptorIntOnly 编译路径
-        // (object Test { fun run() }) 下返回 null。解释器和 scriptMode 路径正常。
-        // 需要 dump 字节码排查 — 后续修复
+        @Test void defaultParam_booleanArgSecond_compile() throws Exception {
+            // 用户函数名 check 与 stdlib check 冲突的修复验证
+            String fn = "fun check(x: Int, strict: Boolean) = if (strict) \"yes\" else \"no\"\n";
+            dual(fn + "check(0, false)", fn + wrap("return check(0, false)"), "no");
+        }
+
+        @Test void defaultParam_booleanComparison() throws Exception {
+            String fn = "fun verify(x: Int, strict: Boolean = true) = if (strict) x > 0 else x >= 0\n";
+            dual(fn + "verify(0, false)", fn + wrap("return verify(0, false)"), true);
+        }
 
         // ---- 多次调用 ----
 
