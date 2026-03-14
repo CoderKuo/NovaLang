@@ -1797,4 +1797,155 @@ class CoreSyntaxIntegrationTest {
             dual(code, wrap(code.replace("check(Ok(42))", "return check(Ok(42))")), "ok:42");
         }
     }
+
+    // ============ 默认参数 ============
+
+    @Nested
+    @DisplayName("默认参数")
+    class DefaultParamTests {
+
+        // ---- 正常值 ----
+
+        @Test void defaultParam_noArgs() throws Exception {
+            String fn = "fun greet(name: String = \"world\") = \"hello $name\"\n";
+            dual(fn + "greet()", fn + wrap("return greet()"), "hello world");
+        }
+
+        @Test void defaultParam_withArg() throws Exception {
+            String fn = "fun greet(name: String = \"world\") = \"hello $name\"\n";
+            dual(fn + "greet(\"Nova\")", fn + wrap("return greet(\"Nova\")"), "hello Nova");
+        }
+
+        @Test void defaultParam_multiple() throws Exception {
+            String fn = "fun calc(a: Int, b: Int = 10, c: Int = 100) = a + b + c\n";
+            dual(fn + "calc(1)", fn + wrap("return calc(1)"), 111);
+        }
+
+        @Test void defaultParam_partialOverride() throws Exception {
+            String fn = "fun calc(a: Int, b: Int = 10, c: Int = 100) = a + b + c\n";
+            dual(fn + "calc(1, 20)", fn + wrap("return calc(1, 20)"), 121);
+        }
+
+        @Test void defaultParam_allOverride() throws Exception {
+            String fn = "fun calc(a: Int, b: Int = 10, c: Int = 100) = a + b + c\n";
+            dual(fn + "calc(1, 2, 3)", fn + wrap("return calc(1, 2, 3)"), 6);
+        }
+
+        // ---- 边缘值 ----
+
+        @Test void defaultParam_expressionDefault() throws Exception {
+            String fn = "fun pad(s: String, len: Int = 2 + 3) = s + len\n";
+            dual(fn + "pad(\"x\")", fn + wrap("return pad(\"x\")"), "x5");
+        }
+
+        @Test void defaultParam_stringDefault() throws Exception {
+            String fn = "fun tag(name: String, cls: String = \"\") = \"<$name class='$cls'>\"\n";
+            dual(fn + "tag(\"div\")", fn + wrap("return tag(\"div\")"), "<div class=''>");
+        }
+
+        @Test void defaultParam_booleanDefault() throws Exception {
+            String fn = "fun check(x: Int, strict: Boolean = true) = if (strict) x > 0 else x >= 0\n";
+            dual(fn + "check(0)", fn + wrap("return check(0)"), false);
+        }
+
+        @Test void defaultParam_intOverride() throws Exception {
+            // 用 Int 参数替代 Boolean 验证默认参数覆盖功能
+            String fn = "fun mode(x: Int, m: Int = 1) = if (m == 0) \"off\" else \"on\"\n";
+            dual(fn + "mode(0, 0)", fn + wrap("return mode(0, 0)"), "off");
+        }
+
+        // ---- 多次调用 ----
+
+        @Test void defaultParam_multipleCalls() throws Exception {
+            String fn = "fun inc(x: Int, step: Int = 1) = x + step\n";
+            dual(fn + "inc(inc(inc(0)))", fn + wrap("return inc(inc(inc(0)))"), 3);
+        }
+    }
+
+    // ============ 命名参数 ============
+
+    @Nested
+    @DisplayName("命名参数")
+    class NamedArgTests {
+
+        // ---- 正常值 ----
+
+        @Test void namedArg_reorder() throws Exception {
+            String fn = "fun sub(a: Int, b: Int) = a - b\n";
+            dual(fn + "sub(b = 1, a = 10)", fn + wrap("return sub(b = 1, a = 10)"), 9);
+        }
+
+        @Test void namedArg_withDefault() throws Exception {
+            String fn = "fun greet(greeting: String = \"hello\", name: String = \"world\") = \"$greeting $name\"\n";
+            dual(fn + "greet(name = \"Nova\")", fn + wrap("return greet(name = \"Nova\")"), "hello Nova");
+        }
+
+        @Test void namedArg_skipMiddle() throws Exception {
+            String fn = "fun f(a: Int = 1, b: Int = 2, c: Int = 3) = a * 100 + b * 10 + c\n";
+            dual(fn + "f(c = 9)", fn + wrap("return f(c = 9)"), 129);
+        }
+
+        @Test void namedArg_allNamed() throws Exception {
+            String fn = "fun f(x: Int, y: Int) = x * y\n";
+            dual(fn + "f(y = 3, x = 4)", fn + wrap("return f(y = 3, x = 4)"), 12);
+        }
+
+        // ---- 边缘值 ----
+
+        @Test void namedArg_sameOrder() throws Exception {
+            String fn = "fun add(a: Int, b: Int) = a + b\n";
+            dual(fn + "add(a = 3, b = 7)", fn + wrap("return add(a = 3, b = 7)"), 10);
+        }
+
+        @Test void namedArg_positionalAndNamed() throws Exception {
+            String fn = "fun f(a: Int, b: Int = 10, c: Int = 100) = a + b + c\n";
+            dual(fn + "f(1, c = 200)", fn + wrap("return f(1, c = 200)"), 211);
+        }
+
+        @Test void namedArg_stringParams() throws Exception {
+            String fn = "fun join(sep: String, left: String, right: String) = left + sep + right\n";
+            dual(fn + "join(right = \"b\", left = \"a\", sep = \"-\")",
+                 fn + wrap("return join(right = \"b\", left = \"a\", sep = \"-\")"), "a-b");
+        }
+    }
+
+    // ============ 多异常捕获 ============
+
+    @Nested
+    @DisplayName("多异常捕获")
+    class MultiCatchTests {
+
+        // ---- 正常值 ----
+
+        @Test void multiCatch_firstType() throws Exception {
+            // 使用 throw 手动抛异常（解释器的 1/0 抛 NovaRuntimeException 而非 ArithmeticException）
+            String code = "try { throw error(\"fail\") } catch (e: Exception | RuntimeException) { \"caught\" }";
+            dual(code, wrap("return " + code), "caught");
+        }
+
+        @Test void multiCatch_noException() throws Exception {
+            String code = "try { \"hello\" } catch (e: Exception | RuntimeException) { \"caught\" }";
+            dual(code, wrap("return " + code), "hello");
+        }
+
+        // ---- 边缘值 ----
+
+        @Test void multiCatch_withPipe() throws Exception {
+            // 验证 | 语法解析正确
+            String code = "try { throw error(\"x\") } catch (e: RuntimeException | IllegalStateException) { \"caught\" }";
+            dual(code, wrap("return " + code), "caught");
+        }
+
+        @Test void multiCatch_withFinally() throws Exception {
+            dual("var x = 0\ntry { throw error(\"x\") } catch (e: Exception | RuntimeException) { x = 1 } finally { x = x + 10 }\nx",
+                 wrap("var x = 0\n    try { throw error(\"x\") } catch (e: Exception | RuntimeException) { x = 1 } finally { x = x + 10 }\n    return x"), 11);
+        }
+
+        // ---- 单 catch 回归 ----
+
+        @Test void singleCatch_stillWorks() throws Exception {
+            String code = "try { throw error(\"x\") } catch (e) { \"caught\" }";
+            dual(code, wrap("return " + code), "caught");
+        }
+    }
 }

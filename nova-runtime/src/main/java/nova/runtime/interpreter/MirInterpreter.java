@@ -2190,7 +2190,7 @@ final class MirInterpreter {
                     nre = new NovaRuntimeException(e.getMessage());
                     nre.initCause(e);
                 }
-                MirFunction.TryCatchEntry handler = findHandler(tryCatches, frame.currentBlockId);
+                MirFunction.TryCatchEntry handler = findMatchingHandler(tryCatches, frame.currentBlockId, e);
                 if (handler != null) {
                     frame.locals[handler.exceptionLocal] = wrapException(nre);
                     frame.currentBlockId = handler.handlerBlock;
@@ -3446,6 +3446,35 @@ final class MirInterpreter {
             }
         }
         return null;
+    }
+
+    /** 带异常类型匹配的 handler 查找——multi-catch 需要按类型过滤 */
+    private MirFunction.TryCatchEntry findMatchingHandler(List<MirFunction.TryCatchEntry> entries,
+                                                          int blockId, Throwable exception) {
+        MirFunction.TryCatchEntry fallback = null;
+        for (MirFunction.TryCatchEntry entry : entries) {
+            if (blockId >= entry.tryStartBlock && blockId < entry.tryEndBlock) {
+                // 通用 catch（无类型或 Exception）→ 直接匹配
+                if (entry.exceptionType == null || "java/lang/Exception".equals(entry.exceptionType)
+                        || "java/lang/Throwable".equals(entry.exceptionType)) {
+                    if (fallback == null) fallback = entry;
+                    continue;
+                }
+                // 精确类型匹配
+                try {
+                    Class<?> exClass = Class.forName(entry.exceptionType.replace('/', '.'));
+                    Throwable cause = (exception instanceof NovaRuntimeException && exception.getCause() != null)
+                            ? exception.getCause() : exception;
+                    if (exClass.isInstance(cause) || exClass.isInstance(exception)) {
+                        return entry;
+                    }
+                } catch (ClassNotFoundException ignored) {
+                    if (fallback == null) fallback = entry;
+                }
+            }
+        }
+        // 没有精确匹配时用通用 catch 兜底
+        return fallback;
     }
 
     private static final NovaValue[] EMPTY_ARGS = new NovaValue[0];

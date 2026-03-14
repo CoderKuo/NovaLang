@@ -2101,6 +2101,15 @@ public class HirToMirLowering {
             builder.getFunction().addTryCatchEntry(
                     tryStartBlock.getId(), mergeBlock.getId(),
                     catchBlock.getId(), exType, exLocal);
+            // 多异常捕获: 为备选类型注册额外的异常表条目（指向同一 handler block）
+            if (catchClause.isMultiCatch()) {
+                for (HirType extraType : catchClause.getExtraExceptionTypes()) {
+                    String extraExType = typeToInternalName(extraType);
+                    builder.getFunction().addTryCatchEntry(
+                            tryStartBlock.getId(), mergeBlock.getId(),
+                            catchBlock.getId(), extraExType, exLocal);
+                }
+            }
         }
 
         // catch 区域结束标记块（供 finally catch-all 覆盖 catch 体内的隐式异常）
@@ -3575,16 +3584,10 @@ public class HirToMirLowering {
                     MirType.ofObject("java/lang/Object"), expr.getLocation());
         }
         // isLocalVar 或无参数无类型实参：回退到函数类型调用
-        // 局部函数默认参数填充
+        // 局部函数默认参数 + 命名参数
         HirFunction localFunc = localFunctionDecls.get(name);
-        if (localFunc != null && expr.getArgs().size() < localFunc.getParams().size()) {
-            List<Expression> filled = new ArrayList<>(expr.getArgs());
-            for (int i = filled.size(); i < localFunc.getParams().size(); i++) {
-                HirParam param = localFunc.getParams().get(i);
-                if (param.hasDefaultValue()) {
-                    filled.add(param.getDefaultValue());
-                }
-            }
+        if (localFunc != null) {
+            List<Expression> filled = mergeArgsWithDefaults(expr, localFunc);
             HirCall filledCall = new HirCall(expr.getLocation(), expr.getType(),
                     expr.getCallee(), expr.getTypeArgs(), filled);
             return lowerFunctionTypeInvocation(filledCall, builder);
@@ -3762,18 +3765,8 @@ public class HirToMirLowering {
      */
     private int lowerTopLevelFunctionCall(String name, HirCall expr, MirBuilder builder) {
         SourceLocation loc = expr.getLocation();
-        // 默认参数填充：实参不足时用声明的默认值表达式补齐
-        List<Expression> effectiveArgs = expr.getArgs();
         HirFunction hirFunc = topLevelFunctionDecls.get(name);
-        if (hirFunc != null && effectiveArgs.size() < hirFunc.getParams().size()) {
-            effectiveArgs = new ArrayList<>(effectiveArgs);
-            for (int i = effectiveArgs.size(); i < hirFunc.getParams().size(); i++) {
-                HirParam param = hirFunc.getParams().get(i);
-                if (param.hasDefaultValue()) {
-                    effectiveArgs.add(param.getDefaultValue());
-                }
-            }
-        }
+        List<Expression> effectiveArgs = mergeArgsWithDefaults(expr, hirFunc);
         int[] args = lowerArgs(effectiveArgs, builder);
         String desc = topLevelFuncDescs.get(name);
         if (desc == null) {
@@ -3869,6 +3862,41 @@ public class HirToMirLowering {
         { int r = lowerDataCopyCall(target, methodName, args, expr, builder, loc); if (r >= 0) return r; }
         { int r = tryComponentNCall(target, methodName, args, builder, loc); if (r >= 0) return r; }
         return lowerStandardMethodCall(target, methodName, args, builder, loc);
+    }
+
+    /**
+     * 合并位置参数 + 命名参数 + 默认值，返回完整的参数列表。
+     * 支持: fun greet(name: String = "world") → greet() / greet("Nova") / greet(name = "Nova")
+     */
+    private List<Expression> mergeArgsWithDefaults(HirCall expr, HirFunction hirFunc) {
+        List<Expression> positionalArgs = expr.getArgs();
+        Map<String, Expression> namedArgs = expr.getNamedArgs();
+        if (hirFunc == null) return positionalArgs;
+
+        List<HirParam> params = hirFunc.getParams();
+        // 无命名参数且参数已满 → 直接返回
+        if ((namedArgs == null || namedArgs.isEmpty()) && positionalArgs.size() >= params.size()) {
+            return positionalArgs;
+        }
+
+        List<Expression> result = new ArrayList<>(params.size());
+        for (int i = 0; i < params.size(); i++) {
+            String paramName = params.get(i).getName();
+            if (namedArgs != null && namedArgs.containsKey(paramName)) {
+                // 命名参数优先
+                result.add(namedArgs.get(paramName));
+            } else if (i < positionalArgs.size()) {
+                // 位置参数
+                result.add(positionalArgs.get(i));
+            } else if (params.get(i).hasDefaultValue()) {
+                // 默认值
+                result.add(params.get(i).getDefaultValue());
+            } else {
+                // 缺少参数 → 用 null 占位（运行时报错）
+                result.add(new Literal(expr.getLocation(), Literal.LiteralKind.NULL, null));
+            }
+        }
+        return result;
     }
 
     private int[] lowerArgs(List<Expression> argExprs, MirBuilder builder) {

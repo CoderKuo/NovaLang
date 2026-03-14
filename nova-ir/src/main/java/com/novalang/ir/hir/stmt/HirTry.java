@@ -51,24 +51,25 @@ public class HirTry extends HirStmt {
     public static class CatchClause {
         private final String paramName;
         private final HirType exceptionType;
+        private final java.util.List<HirType> extraExceptionTypes; // 多异常捕获的备选类型
         private final Statement body;
 
         public CatchClause(String paramName, HirType exceptionType, Statement body) {
+            this(paramName, exceptionType, body, null);
+        }
+
+        public CatchClause(String paramName, HirType exceptionType, Statement body,
+                           java.util.List<HirType> extraExceptionTypes) {
             this.paramName = paramName;
             this.exceptionType = exceptionType;
+            this.extraExceptionTypes = extraExceptionTypes;
             this.body = body;
         }
 
-        public String getParamName() {
-            return paramName;
-        }
-
-        public HirType getExceptionType() {
-            return exceptionType;
-        }
-
-        public Statement getBody() {
-            return body;
-        }
+        public String getParamName() { return paramName; }
+        public HirType getExceptionType() { return exceptionType; }
+        public Statement getBody() { return body; }
+        public java.util.List<HirType> getExtraExceptionTypes() { return extraExceptionTypes; }
+        public boolean isMultiCatch() { return extraExceptionTypes != null && !extraExceptionTypes.isEmpty(); }
     }
 }

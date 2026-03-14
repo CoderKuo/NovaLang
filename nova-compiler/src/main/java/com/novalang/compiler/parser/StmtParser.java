@@ -420,13 +420,19 @@ class StmtParser {
         parser.expect(LPAREN, "Expected '('");
         String paramName = parser.expect(IDENTIFIER, "Expected parameter name").getLexeme();
         TypeRef paramType = null;
+        java.util.List<TypeRef> alternateTypes = null;
         if (parser.match(COLON)) {
             paramType = parser.parseType();
+            // 多异常捕获: catch (e: IOException | ParseException)
+            while (parser.match(BOR)) {
+                if (alternateTypes == null) alternateTypes = new java.util.ArrayList<>();
+                alternateTypes.add(parser.parseType());
+            }
         }
         parser.expect(RPAREN, "Expected ')'");
         Block body = parseBlock();
 
-        return new CatchClause(loc, paramName, paramType, body);
+        return new CatchClause(loc, paramName, paramType, alternateTypes, body);
     }
 
     ReturnStmt parseReturnStmt() {

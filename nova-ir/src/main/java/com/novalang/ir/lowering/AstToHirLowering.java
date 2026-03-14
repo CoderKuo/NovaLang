@@ -24,6 +24,9 @@ import java.util.*;
 public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
 
     private boolean scriptMode = false;
+    // sealed class → 子类名列表（用于 when 穷举性检查）
+    private final Map<String, Set<String>> sealedSubclasses = new HashMap<>();
+    private final Set<String> sealedClassNames = new HashSet<>();
 
     public void setScriptMode(boolean scriptMode) {
         this.scriptMode = scriptMode;
@@ -202,6 +205,29 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
                 for (Statement stmt : ((Block) lowered).getStatements()) {
                     if (stmt instanceof HirDeclStmt) {
                         decls.add(((HirDeclStmt) stmt).getDeclaration());
+                    }
+                }
+            }
+        }
+
+        // 收集 sealed class 子类关系（用于 when 穷举检查）
+        for (HirDecl decl : decls) {
+            if (decl instanceof HirClass) {
+                HirClass hc = (HirClass) decl;
+                if (hc.getModifiers().contains(Modifier.SEALED)) {
+                    sealedClassNames.add(hc.getName());
+                    sealedSubclasses.put(hc.getName(), new HashSet<>());
+                }
+            }
+        }
+        for (HirDecl decl : decls) {
+            if (decl instanceof HirClass) {
+                HirClass hc = (HirClass) decl;
+                if (hc.getSuperClass() != null) {
+                    String superName = hc.getSuperClass() instanceof ClassType
+                            ? ((ClassType) hc.getSuperClass()).getName() : null;
+                    if (superName != null && sealedSubclasses.containsKey(superName)) {
+                        sealedSubclasses.get(superName).add(hc.getName());
                     }
                 }
             }
@@ -857,9 +883,17 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
         List<HirTry.CatchClause> catches = new ArrayList<>();
         if (node.getCatchClauses() != null) {
             for (CatchClause cc : node.getCatchClauses()) {
+                Statement catchBody = lowerStmt(cc.getBody(), ctx);
+                // 多异常捕获: catch (e: A | B | C) → 单个 CatchClause 带多个异常类型
+                List<HirType> extraTypes = null;
+                if (cc.isMultiCatch()) {
+                    extraTypes = new ArrayList<>();
+                    for (TypeRef altType : cc.getAlternateTypes()) {
+                        extraTypes.add(lowerType(altType));
+                    }
+                }
                 catches.add(new HirTry.CatchClause(
-                        cc.getParamName(), lowerType(cc.getParamType()),
-                        lowerStmt(cc.getBody(), ctx)));
+                        cc.getParamName(), lowerType(cc.getParamType()), catchBody, extraTypes));
             }
         }
         Statement finallyBlock = lowerStmt(node.getFinallyBlock(), ctx);
@@ -1115,6 +1149,10 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
         Expression elseExpr = node.getElseExpr() != null
                 ? lowerExpr(node.getElseExpr(), ctx) : ctx.nullLiteral(loc);
 
+        // sealed class 穷举检查
+        checkSealedExhaustiveness(node.getSubject(), node.getBranches(),
+                node.getElseExpr() != null, loc);
+
         for (int i = node.getBranches().size() - 1; i >= 0; i--) {
             WhenBranch branch = node.getBranches().get(i);
             Expression cond = lowerWhenConditionsInline(branch.getConditions(), subjectExpr, loc, ctx);
@@ -1168,6 +1206,47 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
     /**
      * 将分支体转为表达式。ExpressionStmt → 取内部表达式，Block → 取最后一个表达式。
      */
+    /**
+     * sealed class 穷举性检查：当 when subject 类型为 sealed class 时，
+     * 检查所有子类是否都被 is 分支覆盖。未覆盖时输出编译警告。
+     */
+    private void checkSealedExhaustiveness(Expression subject, List<WhenBranch> branches,
+                                            boolean hasElse, SourceLocation loc) {
+        if (hasElse || subject == null || sealedSubclasses.isEmpty()) return;
+        // 从 subject 推断 sealed class 名（如果 subject 有类型标注）
+        String sealedName = null;
+        if (subject instanceof Identifier) {
+            // 无法直接推断类型，跳过
+            return;
+        }
+        if (subject.getHirType() instanceof ClassType) {
+            sealedName = ((ClassType) subject.getHirType()).getName();
+        }
+        if (sealedName == null || !sealedSubclasses.containsKey(sealedName)) return;
+
+        Set<String> required = sealedSubclasses.get(sealedName);
+        if (required.isEmpty()) return;
+        Set<String> covered = new HashSet<>();
+        for (WhenBranch branch : branches) {
+            for (WhenBranch.WhenCondition cond : branch.getConditions()) {
+                if (cond instanceof WhenBranch.TypeCondition) {
+                    WhenBranch.TypeCondition tc = (WhenBranch.TypeCondition) cond;
+                    if (!tc.isNegated() && tc.getType() != null) {
+                        covered.add(tc.getType().toString());
+                    }
+                }
+            }
+        }
+        Set<String> missing = new HashSet<>(required);
+        missing.removeAll(covered);
+        if (!missing.isEmpty()) {
+            System.err.println("[Nova] Warning: non-exhaustive when on sealed class '"
+                + sealedName + "' at line " + loc.getLine()
+                + ": missing branches for " + missing
+                + ". Add 'else' branch or cover all subclasses.");
+        }
+    }
+
     private Expression lowerBranchBodyAsExpr(Statement body, LoweringContext ctx) {
         if (body instanceof ExpressionStmt) {
             return lowerExpr(((ExpressionStmt) body).getExpression(), ctx);
