@@ -29,7 +29,7 @@ public final class NovaTypeNames {
             case "List":    return "java/util/List";
             case "Map":     return "java/util/Map";
             case "Set":     return "java/util/Set";
-            case "Result":  return "nova/runtime/NovaResult";
+            case "Result":  return "com/novalang/runtime/NovaResult";
             default:        return null;
         }
     }
@@ -53,7 +53,7 @@ public final class NovaTypeNames {
             case "java/util/List":      return "List";
             case "java/util/Map":       return "Map";
             case "java/util/Set":       return "Set";
-            case "nova/runtime/NovaResult": return "Result";
+            case "com/novalang/runtime/NovaResult": return "Result";
             default:                    return null;
         }
     }

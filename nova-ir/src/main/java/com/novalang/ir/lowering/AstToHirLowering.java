@@ -578,7 +578,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
         return new HirField(node.getLocation(), node.getName(),
                 toModifierSet(node.getModifiers()),
                 lowerAnnotations(node.getAnnotations(), ctx),
-                type, init, node.isVal(), receiverType,
+                type, init, node.isVal(), node.isLazy(), receiverType,
                 getterBody, setterBody, setterParam);
     }
 
@@ -1463,7 +1463,11 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             // Map entries → pairs as elements
             elements = new ArrayList<>();
             for (CollectionLiteral.MapEntry entry : node.getMapEntries()) {
-                Expression key = lowerExpr(entry.getKey(), ctx);
+                Expression rawKey = entry.getKey();
+                // 裸标识符作为 Map key 时自动转为字符串字面量（类似 JSON/JS 语法）
+                Expression key = (rawKey instanceof Identifier)
+                        ? new Literal(rawKey.getLocation(), ((Identifier) rawKey).getName(), LiteralKind.STRING)
+                        : lowerExpr(rawKey, ctx);
                 Expression value = lowerExpr(entry.getValue(), ctx);
                 // key to value → BinaryExpr(key, TO, value)
                 elements.add(new BinaryExpr(entry.getLocation(), null,

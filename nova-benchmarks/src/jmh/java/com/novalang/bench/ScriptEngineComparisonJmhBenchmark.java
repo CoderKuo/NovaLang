@@ -3,7 +3,7 @@ package com.novalang.bench;
 import javax.script.CompiledScript;
 
 import groovy.lang.Script;
-import nova.runtime.CompiledNova;
+import com.novalang.runtime.CompiledNova;
 import org.apache.commons.jexl3.JexlScript;
 import org.graalvm.polyglot.Context;
 import org.openjdk.jmh.annotations.Benchmark;

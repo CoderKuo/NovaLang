@@ -1,1 +1,1 @@
-nova.script.NovaScriptEngineFactory
+com.novalang.script.NovaScriptEngineFactory

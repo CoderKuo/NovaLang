@@ -7,8 +7,8 @@ import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.ParseException;
 import com.novalang.compiler.parser.Parser;
 import com.novalang.compiler.ast.decl.Program;
-import nova.runtime.*;
-import nova.runtime.interpreter.*;
+import com.novalang.runtime.*;
+import com.novalang.runtime.interpreter.*;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

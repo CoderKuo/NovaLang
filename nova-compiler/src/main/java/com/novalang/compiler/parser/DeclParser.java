@@ -484,6 +484,12 @@ class DeclParser {
             body = parser.parseBlock();
         }
 
+        // where 子句：目前不支持，给出友好报错
+        if (parser.check(KW_WHERE)) {
+            throw new ParseException("'where' generic constraints are not yet supported. " +
+                "Use upper bounds instead: <T : Comparable>", parser.current);
+        }
+
         boolean isInline = modifiers.contains(Modifier.INLINE);
         boolean isOperator = modifiers.contains(Modifier.OPERATOR);
         boolean isSuspend = modifiers.contains(Modifier.SUSPEND);
@@ -636,10 +642,26 @@ class DeclParser {
             type = parser.parseType();
         }
 
-        // 初始化器
+        // 初始化器 或 by lazy { ... } 委托
         Expression initializer = null;
+        boolean isLazyDelegate = false;
         if (parser.match(ASSIGN)) {
             initializer = parser.parseExpression();
+        } else if (parser.check(IDENTIFIER) && "by".equals(parser.current.getLexeme())) {
+            parser.advance(); // consume "by"
+            if (parser.check(IDENTIFIER) && "lazy".equals(parser.current.getLexeme())) {
+                parser.advance(); // consume "lazy"
+                isLazyDelegate = true;
+                // lazy { expr } — 强制解析为 lambda（确保 { } 不被当作 block 立即求值）
+                if (parser.check(LBRACE)) {
+                    initializer = parser.exprParser.parseLambda();
+                } else {
+                    initializer = parser.parseExpression();
+                }
+            } else {
+                // 其他委托暂不支持，回退
+                throw new ParseException("Unsupported delegation, only 'lazy' is supported", parser.current);
+            }
         }
 
         // 解析访问器（get/set）
@@ -664,7 +686,7 @@ class DeclParser {
         }
 
         boolean isConst = modifiers.contains(Modifier.CONST);
-        boolean isLazy = false;  // TODO: 检测 lazy 委托
+        boolean isLazy = isLazyDelegate;
 
         PropertyDecl decl = new PropertyDecl(loc, annotations, modifiers, name, isVal, typeParams,
                 receiverType, type, initializer, getter, setter, isConst, isLazy);

@@ -1,7 +1,7 @@
 package com.novalang.cli;
 
-import nova.runtime.*;
-import nova.runtime.interpreter.*;
+import com.novalang.runtime.*;
+import com.novalang.runtime.interpreter.*;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.terminal.Terminal;

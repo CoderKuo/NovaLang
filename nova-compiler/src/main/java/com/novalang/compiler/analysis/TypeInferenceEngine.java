@@ -2,7 +2,7 @@ package com.novalang.compiler.analysis;
 
 import com.novalang.compiler.analysis.types.*;
 import com.novalang.compiler.ast.expr.*;
-import nova.runtime.NovaTypeRegistry;
+import com.novalang.runtime.NovaTypeRegistry;
 
 import java.util.Collections;
 import java.util.List;

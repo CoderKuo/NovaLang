@@ -11,7 +11,7 @@ import com.novalang.ir.hir.HirDecl;
 import com.novalang.ir.hir.decl.HirClass;
 import com.novalang.ir.hir.decl.HirModule;
 import com.novalang.ir.lowering.AstToHirLowering;
-import nova.runtime.interpreter.NovaRuntimeException;
+import com.novalang.runtime.interpreter.NovaRuntimeException;
 
 import java.io.File;
 import java.io.IOException;

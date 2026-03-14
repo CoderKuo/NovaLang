@@ -56,8 +56,8 @@ public class NovaIrCompiler implements NovaCompilerApi {
 
     /**
      * 设置 relocate 前缀。
-     * 当 nova 运行时包被 shadow relocate 时（如 {@code relocate("nova.", "com.foo.nova.")}），
-     * 传入前缀 {@code "com/foo/"}，生成的字节码会自动重映射对 {@code nova/} 包的引用。
+     * 当运行时包被 shadow relocate 时（如 {@code relocate("com.novalang.", "com.foo.novalang.")}），
+     * 传入前缀 {@code "com/foo/"}，生成的字节码会自动重映射对 {@code com/novalang/} 包的引用。
      *
      * @param prefix 内部名格式的前缀，如 {@code "com/foo/"}, 空串或 null 表示不重映射
      */
@@ -137,15 +137,19 @@ public class NovaIrCompiler implements NovaCompilerApi {
     }
 
     /**
-     * 用 ASM ClassRemapper 重映射生成字节码中对 nova/ 包的引用。
+     * 用 ASM ClassRemapper 重映射生成字节码中对 com/novalang/ 包的引用。
+     * relocatePrefix 由 Nova.configureRelocate 设置，格式为完整的替换前缀
+     * （如 "com/foo/novalang/"），将 "com/novalang/" 替换为该前缀。
      */
     private Map<String, byte[]> remapBytecode(Map<String, byte[]> classes) {
-        final String prefix = relocatePrefix;
+        // 用 StringBuilder 构建标准前缀，避免字面量被 shadow relocate 匹配
+        final String standardBase = new StringBuilder("com/").append("novalang/").toString();
+        final String target = relocatePrefix;
         Remapper remapper = new Remapper() {
             @Override
             public String map(String internalName) {
-                if (internalName.startsWith("nova/")) {
-                    return prefix + internalName;
+                if (internalName.startsWith(standardBase)) {
+                    return target + internalName.substring(standardBase.length());
                 }
                 return internalName;
             }
@@ -157,7 +161,6 @@ public class NovaIrCompiler implements NovaCompilerApi {
             ClassWriter writer = new ClassWriter(0);
             ClassRemapper cr = new ClassRemapper(writer, remapper);
             reader.accept(cr, 0);
-            // 脚本类名不以 nova/ 开头，不会被重映射；保持原名
             remapped.put(entry.getKey(), writer.toByteArray());
         }
         return remapped;

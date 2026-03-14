@@ -9,7 +9,7 @@ public final class InvokeDynamicInfo {
     /** 方法名（作为 invokedynamic 的 name 参数） */
     public final String methodName;
 
-    /** bootstrap 类的内部名（如 "nova/runtime/NovaBootstrap"） */
+    /** bootstrap 类的内部名（如 "com/novalang/runtime/NovaBootstrap"） */
     public final String bootstrapClass;
 
     /** bootstrap 方法名（如 "bootstrapInvoke"） */

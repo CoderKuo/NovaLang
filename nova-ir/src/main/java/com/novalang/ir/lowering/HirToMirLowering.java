@@ -13,11 +13,11 @@ import com.novalang.ir.hir.expr.*;
 import com.novalang.ir.hir.stmt.*;
 import com.novalang.compiler.hirtype.*;
 import com.novalang.ir.mir.*;
-import nova.runtime.resolution.MethodNameCanonicalizer;
-import nova.runtime.resolution.MethodSemantics;
-import nova.runtime.resolution.StdlibMethodResolver;
-import nova.runtime.stdlib.BuiltinModuleExports;
-import nova.runtime.stdlib.StdlibRegistry;
+import com.novalang.runtime.resolution.MethodNameCanonicalizer;
+import com.novalang.runtime.resolution.MethodSemantics;
+import com.novalang.runtime.resolution.StdlibMethodResolver;
+import com.novalang.runtime.stdlib.BuiltinModuleExports;
+import com.novalang.runtime.stdlib.StdlibRegistry;
 
 import java.util.*;
 
@@ -30,6 +30,8 @@ public class HirToMirLowering {
     private final Set<String> topLevelFunctionNames = new HashSet<>();
     private final Set<String> classNames = new HashSet<>();
     private final Set<String> objectNames = new HashSet<>();
+    // val x by lazy { ... } 的内联懒加载信息: varName → [lambdaLocal, cacheLocal, doneLocal]
+    private final Map<String, int[]> lazyVarLocals = new HashMap<>();
     private final Set<String> interfaceNames = new HashSet<>();
     /** 外部已知类型名（仅供 typeToInternalName 使用，不参与方法分派） */
     private final Set<String> externalTypeNames = new HashSet<>();
@@ -127,7 +129,7 @@ public class HirToMirLowering {
 
     /** 脚本上下文 owner：interpreterMode 下用 $ENV 标记，编译路径用 JVM 类名 */
     private String scriptContextOwner() {
-        return interpreterMode ? "$ENV" : "nova/runtime/NovaScriptContext";
+        return interpreterMode ? "$ENV" : "com/novalang/runtime/NovaScriptContext";
     }
 
     private static final class LoopContext {
@@ -1513,6 +1515,16 @@ public class HirToMirLowering {
                 int local = builder.newLocal(field.getName(), localType);
                 // 直接将初始化值 MOVE 到命名的局部变量
                 builder.emitMoveTo(value, local, field.getLocation());
+                // lazy 变量：val x by lazy { expr } → 内联懒加载
+                if (field.isLazy()) {
+                    // 创建辅助 locals: lambda 存储 + 缓存值 + 初始化标记
+                    int cacheLocal = builder.newLocal(field.getName() + "$cache",
+                            MirType.ofObject("java/lang/Object"));
+                    builder.emitMoveTo(builder.emitConstNull(field.getLocation()), cacheLocal, field.getLocation());
+                    int doneLocal = builder.newLocal(field.getName() + "$done", MirType.ofBoolean());
+                    builder.emitMoveTo(builder.emitConstBool(false, field.getLocation()), doneLocal, field.getLocation());
+                    lazyVarLocals.put(field.getName(), new int[]{local, cacheLocal, doneLocal});
+                }
                 // 脚本模式: 导出变量到 NovaScriptContext（区分 val/var）
                 // 块作用域内（while/if/for/try）的变量仅通过寄存器访问，跳过 ENV 注册
                 if (scriptMode && blockScopeDepth == 0) {
@@ -1841,7 +1853,7 @@ public class HirToMirLowering {
         } else {
             // Map 不实现 Iterable，通过 NovaCollections.toIterable() 桥接
             int iterableObj = builder.emitInvokeStatic(
-                    "nova/runtime/NovaCollections|toIterable|(Ljava/lang/Object;)Ljava/lang/Iterable;",
+                    "com/novalang/runtime/NovaCollections|toIterable|(Ljava/lang/Object;)Ljava/lang/Iterable;",
                     new int[]{iterable}, MirType.ofObject("java/lang/Iterable"), loc);
             iter = builder.emitInvokeInterfaceDesc(iterableObj, "iterator", new int[0],
                     "java/lang/Iterable", "()Ljava/util/Iterator;",
@@ -1897,7 +1909,7 @@ public class HirToMirLowering {
                 } else {
                     int nConst = builder.emitConstInt(vi + 1, loc);
                     comp = builder.emitInvokeStatic(
-                            "nova/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
+                            "com/novalang/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
                             new int[]{next, nConst}, MirType.ofObject("java/lang/Object"), loc);
                 }
                 int varLocal = builder.newLocal(varName, MirType.ofObject("java/lang/Object"));
@@ -1966,10 +1978,15 @@ public class HirToMirLowering {
             builder.emitGoto(incrBlock.getId(), loc);
         }
 
-        // 递增循环变量
+        // 递增循环变量（支持 step）
         builder.switchToBlock(incrBlock);
-        int one = builder.emitConstInt(1, loc);
-        int incremented = builder.emitBinary(BinaryOp.ADD, loopVar, one, MirType.ofInt(), loc);
+        int stepVal;
+        if (range.hasStep()) {
+            stepVal = lowerExpr(range.getStep(), builder);
+        } else {
+            stepVal = builder.emitConstInt(1, loc);
+        }
+        int incremented = builder.emitBinary(BinaryOp.ADD, loopVar, stepVal, MirType.ofInt(), loc);
         builder.emitMoveTo(incremented, loopVar, loc);
         builder.emitGoto(headerBlock.getId(), loc);
 
@@ -2246,7 +2263,7 @@ public class HirToMirLowering {
 
         // 2. Result 检查: operand is NovaResult
         builder.switchToBlock(notNullBlock);
-        int isResult = builder.emitTypeCheck(operand, "nova/runtime/NovaResult", loc);
+        int isResult = builder.emitTypeCheck(operand, "com/novalang/runtime/NovaResult", loc);
         BasicBlock resultBlock = builder.newBlock();
         BasicBlock passBlock = builder.newBlock();
         builder.emitBranch(isResult, resultBlock.getId(), passBlock.getId(), loc);
@@ -2254,7 +2271,7 @@ public class HirToMirLowering {
         // Result 分支: isErr → return Err, else getValue()
         builder.switchToBlock(resultBlock);
         int isErr = builder.emitInvokeVirtualDesc(operand, "isErr", new int[0],
-                "nova/runtime/NovaResult", "()Z",
+                "com/novalang/runtime/NovaResult", "()Z",
                 MirType.ofBoolean(), loc);
         BasicBlock errBlock = builder.newBlock();
         BasicBlock okBlock = builder.newBlock();
@@ -2265,7 +2282,7 @@ public class HirToMirLowering {
 
         builder.switchToBlock(okBlock);
         int value = builder.emitInvokeVirtualDesc(operand, "getValue", new int[0],
-                "nova/runtime/NovaResult", "()Ljava/lang/Object;",
+                "com/novalang/runtime/NovaResult", "()Ljava/lang/Object;",
                 MirType.ofObject("java/lang/Object"), loc);
         builder.emitMoveTo(value, resultLocal, loc);
         BasicBlock mergeBlock = builder.newBlock();
@@ -2315,7 +2332,7 @@ public class HirToMirLowering {
             int future = lowerExpr(((AwaitExpr) expr).getOperand(), builder);
             // await → ConcurrencyHelper.awaitJoin(target)
             // 统一处理 CompletableFuture / CompileJob / NovaJob 等
-            String extra = "nova/runtime/stdlib/ConcurrencyHelper|awaitJoin|(Ljava/lang/Object;)Ljava/lang/Object;";
+            String extra = "com/novalang/runtime/stdlib/ConcurrencyHelper|awaitJoin|(Ljava/lang/Object;)Ljava/lang/Object;";
             return builder.emitInvokeStatic(extra, new int[]{future},
                     MirType.ofObject("java/lang/Object"), expr.getLocation());
         }
@@ -2336,7 +2353,7 @@ public class HirToMirLowering {
             int inclusive = builder.emitConstBool(!range.isEndExclusive(), loc);
             String extra = interpreterMode
                     ? "$RANGE|create|(IIZ)Ljava/lang/Object;"
-                    : "nova/runtime/NovaCollections|createRange|(IIZ)Ljava/util/List;";
+                    : "com/novalang/runtime/NovaCollections|createRange|(IIZ)Ljava/util/List;";
             return builder.emitInvokeStatic(extra, new int[]{startVal, endVal, inclusive},
                     MirType.ofObject("java/util/ArrayList"), loc);
         }
@@ -2579,11 +2596,11 @@ public class HirToMirLowering {
         // 4. 创建 MirClass（实现 FunctionN 接口以避免反射调用）
         List<String> lambdaInterfaces;
         switch (invokeParams.size()) {
-            case 0:  lambdaInterfaces = Collections.singletonList("nova/runtime/Function0"); break;
+            case 0:  lambdaInterfaces = Collections.singletonList("com/novalang/runtime/Function0"); break;
             case 1:  lambdaInterfaces = Collections.singletonList(
-                         isImplicitIt ? "nova/runtime/ImplicitItFunction" : "nova/runtime/Function1"); break;
-            case 2:  lambdaInterfaces = Collections.singletonList("nova/runtime/Function2"); break;
-            case 3:  lambdaInterfaces = Collections.singletonList("nova/runtime/Function3"); break;
+                         isImplicitIt ? "com/novalang/runtime/ImplicitItFunction" : "com/novalang/runtime/Function1"); break;
+            case 2:  lambdaInterfaces = Collections.singletonList("com/novalang/runtime/Function2"); break;
+            case 3:  lambdaInterfaces = Collections.singletonList("com/novalang/runtime/Function3"); break;
             default: lambdaInterfaces = Collections.emptyList(); break;
         }
         List<MirFunction> methods = new ArrayList<>();
@@ -2696,10 +2713,10 @@ public class HirToMirLowering {
             // 选择 FunctionN 接口
             List<String> ifaces;
             switch (paramCount) {
-                case 0:  ifaces = Collections.singletonList("nova/runtime/Function0"); break;
-                case 1:  ifaces = Collections.singletonList("nova/runtime/Function1"); break;
-                case 2:  ifaces = Collections.singletonList("nova/runtime/Function2"); break;
-                case 3:  ifaces = Collections.singletonList("nova/runtime/Function3"); break;
+                case 0:  ifaces = Collections.singletonList("com/novalang/runtime/Function0"); break;
+                case 1:  ifaces = Collections.singletonList("com/novalang/runtime/Function1"); break;
+                case 2:  ifaces = Collections.singletonList("com/novalang/runtime/Function2"); break;
+                case 3:  ifaces = Collections.singletonList("com/novalang/runtime/Function3"); break;
                 default: ifaces = Collections.emptyList(); break;
             }
 
@@ -2768,10 +2785,10 @@ public class HirToMirLowering {
             // 选择 FunctionN 接口
             List<String> ifaces;
             switch (paramCount) {
-                case 0:  ifaces = Collections.singletonList("nova/runtime/Function0"); break;
-                case 1:  ifaces = Collections.singletonList("nova/runtime/Function1"); break;
-                case 2:  ifaces = Collections.singletonList("nova/runtime/Function2"); break;
-                case 3:  ifaces = Collections.singletonList("nova/runtime/Function3"); break;
+                case 0:  ifaces = Collections.singletonList("com/novalang/runtime/Function0"); break;
+                case 1:  ifaces = Collections.singletonList("com/novalang/runtime/Function1"); break;
+                case 2:  ifaces = Collections.singletonList("com/novalang/runtime/Function2"); break;
+                case 3:  ifaces = Collections.singletonList("com/novalang/runtime/Function3"); break;
                 default: ifaces = Collections.emptyList(); break;
             }
 
@@ -2849,10 +2866,10 @@ public class HirToMirLowering {
 
             List<String> ifaces;
             switch (paramCount) {
-                case 0:  ifaces = Collections.singletonList("nova/runtime/Function0"); break;
-                case 1:  ifaces = Collections.singletonList("nova/runtime/Function1"); break;
-                case 2:  ifaces = Collections.singletonList("nova/runtime/Function2"); break;
-                case 3:  ifaces = Collections.singletonList("nova/runtime/Function3"); break;
+                case 0:  ifaces = Collections.singletonList("com/novalang/runtime/Function0"); break;
+                case 1:  ifaces = Collections.singletonList("com/novalang/runtime/Function1"); break;
+                case 2:  ifaces = Collections.singletonList("com/novalang/runtime/Function2"); break;
+                case 3:  ifaces = Collections.singletonList("com/novalang/runtime/Function3"); break;
                 default: ifaces = Collections.emptyList(); break;
             }
 
@@ -2983,7 +3000,37 @@ public class HirToMirLowering {
         List<MirLocal> locals = builder.getFunction().getLocals();
         for (int i = locals.size() - 1; i >= 0; i--) {
             if (locals.get(i).getName().equals(ref.getName())) {
-                return locals.get(i).getIndex();
+                int idx = locals.get(i).getIndex();
+                // lazy 变量透明解包：内联 check-and-init
+                int[] lazyInfo = lazyVarLocals.get(ref.getName());
+                if (lazyInfo != null) {
+                    int lambdaLocal = lazyInfo[0], cacheLocal = lazyInfo[1], doneLocal = lazyInfo[2];
+                    SourceLocation loc = ref.getLocation();
+                    // if (!done) { cache = lambda(); done = true }
+                    BasicBlock initBlock = builder.newBlock();
+                    BasicBlock mergeBlock = builder.newBlock();
+                    builder.emitBranch(doneLocal, mergeBlock.getId(), initBlock.getId(), loc);
+                    builder.switchToBlock(initBlock);
+                    // 调用 lambda: 通过方法调用分派（$PipeCall 或 invokedynamic）
+                    int result;
+                    if (interpreterMode) {
+                        result = builder.emitInvokeStatic("$PipeCall|invoke",
+                                new int[]{lambdaLocal}, MirType.ofObject("java/lang/Object"), loc);
+                    } else {
+                        // 编译模式: invokedynamic 分派 invoke()
+                        InvokeDynamicInfo dynInfo = new InvokeDynamicInfo(
+                                "invoke", "com/novalang/runtime/NovaBootstrap", "bootstrapInvoke",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;");
+                        result = builder.emitInvokeDynamic(dynInfo, new int[]{lambdaLocal},
+                                MirType.ofObject("java/lang/Object"), loc);
+                    }
+                    builder.emitMoveTo(result, cacheLocal, loc);
+                    builder.emitMoveTo(builder.emitConstBool(true, loc), doneLocal, loc);
+                    builder.emitGoto(mergeBlock.getId(), loc);
+                    builder.switchToBlock(mergeBlock);
+                    return cacheLocal;
+                }
+                return idx;
             }
         }
         // 接收者 Lambda 上下文：this 引用返回接收者对象
@@ -3077,9 +3124,9 @@ public class HirToMirLowering {
             int right = lowerExpr(expr.getRight(), builder);
             SourceLocation loc = expr.getLocation();
             return builder.emitInvokeStatic(
-                    "nova/runtime/NovaPair|of|(Ljava/lang/Object;Ljava/lang/Object;)Lnova/runtime/NovaPair;",
+                    "com/novalang/runtime/NovaPair|of|(Ljava/lang/Object;Ljava/lang/Object;)Lcom/novalang/runtime/NovaPair;",
                     new int[]{left, right},
-                    MirType.ofObject("nova/runtime/NovaPair"), loc);
+                    MirType.ofObject("com/novalang/runtime/NovaPair"), loc);
         }
 
         int left = lowerExpr(expr.getLeft(), builder);
@@ -3289,7 +3336,7 @@ public class HirToMirLowering {
     /** 内置模块函数 → INVOKESTATIC。返回 -1 表示不匹配 */
     /**
      * 反射发现模块类的 public static 方法，注册到 builtinModuleFunctions。
-     * @param moduleClass JVM 内部类名（如 "nova/runtime/interpreter/stdlib/StdlibIOCompiled"）
+     * @param moduleClass JVM 内部类名（如 "com/novalang/runtime/interpreter/stdlib/StdlibIOCompiled"）
      * @param symbol 指定符号名（null 表示通配符导入，注册所有方法）
      */
     private void discoverModuleFunctions(String moduleClass, String symbol) {
@@ -3358,7 +3405,7 @@ public class HirToMirLowering {
         StdlibRegistry.SupplierLambdaInfo slInfo = StdlibRegistry.getSupplierLambda(name);
         if (slInfo != null && expr.getArgs().size() == 1) {
             int lambdaInst = lowerExpr(expr.getArgs().get(0), builder);
-            String extra = "nova/runtime/stdlib/AsyncHelper|run|(Ljava/lang/Object;)Ljava/lang/Object;";
+            String extra = "com/novalang/runtime/stdlib/AsyncHelper|run|(Ljava/lang/Object;)Ljava/lang/Object;";
             return builder.emitInvokeStatic(extra, new int[]{lambdaInst},
                     MirType.ofObject("java/util/concurrent/CompletableFuture"),
                     expr.getLocation());
@@ -3491,10 +3538,10 @@ public class HirToMirLowering {
                 int[] args = lowerArgs(expr.getArgs(), builder);
                 String funcInterface;
                 switch (args.length) {
-                    case 0:  funcInterface = "nova/runtime/Function0"; break;
-                    case 1:  funcInterface = "nova/runtime/Function1"; break;
-                    case 2:  funcInterface = "nova/runtime/Function2"; break;
-                    case 3:  funcInterface = "nova/runtime/Function3"; break;
+                    case 0:  funcInterface = "com/novalang/runtime/Function0"; break;
+                    case 1:  funcInterface = "com/novalang/runtime/Function1"; break;
+                    case 2:  funcInterface = "com/novalang/runtime/Function2"; break;
+                    case 3:  funcInterface = "com/novalang/runtime/Function3"; break;
                     default:
                         return emitLambdaInvokerCall(fieldVal, args, builder, expr.getLocation());
                 }
@@ -3553,7 +3600,7 @@ public class HirToMirLowering {
                 }
                 descBuilder.append(")Ljava/lang/Object;");
                 InvokeDynamicInfo pipeInfo = new InvokeDynamicInfo(
-                        name, "nova/runtime/NovaBootstrap", "bootstrapStaticInvoke",
+                        name, "com/novalang/runtime/NovaBootstrap", "bootstrapStaticInvoke",
                         descBuilder.toString());
                 return builder.emitInvokeDynamic(pipeInfo, args,
                         MirType.ofObject("java/lang/Object"), expr.getLocation());
@@ -3646,10 +3693,10 @@ public class HirToMirLowering {
         // Lambda 类实现了 FunctionN 接口 → 使用 INVOKEINTERFACE
         String funcInterface;
         switch (args.length) {
-            case 0:  funcInterface = "nova/runtime/Function0"; break;
-            case 1:  funcInterface = "nova/runtime/Function1"; break;
-            case 2:  funcInterface = "nova/runtime/Function2"; break;
-            case 3:  funcInterface = "nova/runtime/Function3"; break;
+            case 0:  funcInterface = "com/novalang/runtime/Function0"; break;
+            case 1:  funcInterface = "com/novalang/runtime/Function1"; break;
+            case 2:  funcInterface = "com/novalang/runtime/Function2"; break;
+            case 3:  funcInterface = "com/novalang/runtime/Function3"; break;
             default:
                 return emitLambdaInvokerCall(callee, args, builder, expr.getLocation());
         }
@@ -3678,26 +3725,26 @@ public class HirToMirLowering {
                 internalName = javaClass.getName().replace('.', '/');
             }
             int classLocal = builder.emitConstClass(internalName, loc);
-            String extra = "nova/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lnova/runtime/interpreter/reflect/NovaClassInfo;";
+            String extra = "com/novalang/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lcom/novalang/runtime/interpreter/reflect/NovaClassInfo;";
             return builder.emitInvokeStatic(extra, new int[]{classLocal},
-                    MirType.ofObject("nova/runtime/interpreter/reflect/NovaClassInfo"), loc);
+                    MirType.ofObject("com/novalang/runtime/interpreter/reflect/NovaClassInfo"), loc);
         }
 
         // classOf(expr) — 参数是表达式（interpreterMode 下所有 classOf 走此路径）
         int objLocal = lowerExpr(arg, builder);
         if (interpreterMode) {
             // interpreterMode: 直接传 NovaValue，MirInterpreter handler 处理 NovaClass/NovaObject/NovaExternalObject
-            String extra = "nova/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lnova/runtime/interpreter/reflect/NovaClassInfo;";
+            String extra = "com/novalang/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lcom/novalang/runtime/interpreter/reflect/NovaClassInfo;";
             return builder.emitInvokeStatic(extra, new int[]{objLocal},
-                    MirType.ofObject("nova/runtime/interpreter/reflect/NovaClassInfo"), loc);
+                    MirType.ofObject("com/novalang/runtime/interpreter/reflect/NovaClassInfo"), loc);
         }
         // codegen 路径: 需要 obj.getClass() 获取 Java Class 对象
         int classLocal = builder.emitInvokeVirtualDesc(objLocal, "getClass", new int[]{},
                 "java/lang/Object", "()Ljava/lang/Class;",
                 MirType.ofObject("java/lang/Class"), loc);
-        String extra = "nova/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lnova/runtime/interpreter/reflect/NovaClassInfo;";
+        String extra = "com/novalang/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lcom/novalang/runtime/interpreter/reflect/NovaClassInfo;";
         return builder.emitInvokeStatic(extra, new int[]{classLocal},
-                MirType.ofObject("nova/runtime/interpreter/reflect/NovaClassInfo"), loc);
+                MirType.ofObject("com/novalang/runtime/interpreter/reflect/NovaClassInfo"), loc);
     }
 
     /**
@@ -4054,7 +4101,7 @@ public class HirToMirLowering {
                         }
                         int nConst = builder.emitConstInt(n, loc);
                         return builder.emitInvokeStatic(
-                                "nova/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
+                                "com/novalang/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
                                 new int[]{target, nConst}, MirType.ofObject("java/lang/Object"), loc);
                     }
                 }
@@ -4205,7 +4252,7 @@ public class HirToMirLowering {
 
         InvokeDynamicInfo info = new InvokeDynamicInfo(
                 methodName,
-                "nova/runtime/NovaBootstrap",
+                "com/novalang/runtime/NovaBootstrap",
                 "bootstrapInvoke",
                 descBuilder.toString()
         );
@@ -4411,7 +4458,7 @@ public class HirToMirLowering {
         }
         // 编译模式：invokedynamic bootstrapGetMember（fieldName 编码在 invokedynamic name 中）
         InvokeDynamicInfo getInfo = new InvokeDynamicInfo(
-                fieldName, "nova/runtime/NovaBootstrap", "bootstrapGetMember",
+                fieldName, "com/novalang/runtime/NovaBootstrap", "bootstrapGetMember",
                 "(Ljava/lang/Object;)Ljava/lang/Object;");
         return builder.emitInvokeDynamic(getInfo, new int[]{target},
                 MirType.ofObject("java/lang/Object"), expr.getLocation());
@@ -4620,7 +4667,7 @@ public class HirToMirLowering {
             }
             // 编译模式：invokedynamic bootstrapSetMember（fieldName 编码在 invokedynamic name 中）
             InvokeDynamicInfo setInfo = new InvokeDynamicInfo(
-                    fieldName, "nova/runtime/NovaBootstrap", "bootstrapSetMember",
+                    fieldName, "com/novalang/runtime/NovaBootstrap", "bootstrapSetMember",
                     "(Ljava/lang/Object;Ljava/lang/Object;)V");
             builder.emitInvokeDynamic(setInfo, new int[]{target, value},
                     MirType.ofVoid(), expr.getLocation());
@@ -5071,7 +5118,7 @@ public class HirToMirLowering {
      */
     private int emitCollectionOpsCall(int target, String methodName, int[] lambdaArgs,
                                        MirBuilder builder, SourceLocation loc) {
-        String collOpsOwner = "nova/runtime/stdlib/CollectionOps";
+        String collOpsOwner = "com/novalang/runtime/stdlib/CollectionOps";
         // 构建参数: [target, ...lambdaArgs]
         int[] allArgs = new int[1 + lambdaArgs.length];
         allArgs[0] = target;
@@ -5088,7 +5135,7 @@ public class HirToMirLowering {
      */
     private int emitScopeFunctionCall(int target, String methodName, int[] lambdaArgs,
                                        MirBuilder builder, SourceLocation loc) {
-        String owner = "nova/runtime/stdlib/NovaScopeFunctions";
+        String owner = "com/novalang/runtime/stdlib/NovaScopeFunctions";
         int[] allArgs = new int[1 + lambdaArgs.length];
         allArgs[0] = target;
         System.arraycopy(lambdaArgs, 0, allArgs, 1, lambdaArgs.length);
@@ -5103,7 +5150,7 @@ public class HirToMirLowering {
      */
     private int emitLambdaInvokerCall(int callee, int[] args,
                                        MirBuilder builder, SourceLocation loc) {
-        String owner = "nova/runtime/stdlib/LambdaInvoker";
+        String owner = "com/novalang/runtime/stdlib/LambdaInvoker";
         String methodName = "invoke" + args.length;
         int[] allArgs = new int[1 + args.length];
         allArgs[0] = callee;

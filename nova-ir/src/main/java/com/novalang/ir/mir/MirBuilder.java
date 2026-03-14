@@ -184,7 +184,7 @@ public class MirBuilder {
             } else if (methodRef.startsWith("$ENV|")) {
                 inst.specialKind = MirInst.SK_ENV_ACCESS;
             }
-        } else if (methodRef.startsWith("nova/runtime/NovaScriptContext|")) {
+        } else if (methodRef.startsWith("com/novalang/runtime/NovaScriptContext|")) {
             inst.specialKind = MirInst.SK_ENV_ACCESS;
         }
         emit(inst);

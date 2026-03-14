@@ -21,7 +21,7 @@ public class MirInst {
     public static final byte SK_NORMAL = 0;
     public static final byte SK_SCOPE_CALL = 1;    // $ScopeCall
     public static final byte SK_PARTIAL_APP = 2;   // $PartialApplication|mask
-    public static final byte SK_ENV_ACCESS = 3;    // $ENV| 或 nova/runtime/NovaScriptContext|
+    public static final byte SK_ENV_ACCESS = 3;    // $ENV| 或 com/novalang/runtime/NovaScriptContext|
 
     /** 特殊标记类型（仅 INVOKE_STATIC 使用，0 = 普通调用） */
     public byte specialKind;

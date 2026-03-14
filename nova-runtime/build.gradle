@@ -105,8 +105,8 @@ shadowJar {
     mergeServiceFiles()
 
     // ??? Caffeine ??????????? Bukkit ClassLoader ????
-    relocate 'com.github.benmanes.caffeine', 'nova.deps.caffeine'
-    relocate 'org.checkerframework', 'nova.deps.checkerframework'
+    relocate 'com.github.benmanes.caffeine', 'com.novalang.deps.caffeine'
+    relocate 'org.checkerframework', 'com.novalang.deps.checkerframework'
 }
 
 // ?? fat jar

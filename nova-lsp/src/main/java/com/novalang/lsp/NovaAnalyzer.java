@@ -14,8 +14,8 @@ import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.ParseError;
 import com.novalang.compiler.parser.ParseResult;
 import com.novalang.compiler.parser.Parser;
-import nova.runtime.NovaTypeRegistry;
-import nova.runtime.stdlib.StdlibRegistry;
+import com.novalang.runtime.NovaTypeRegistry;
+import com.novalang.runtime.stdlib.StdlibRegistry;
 
 import static com.novalang.lsp.LspConstants.*;
 

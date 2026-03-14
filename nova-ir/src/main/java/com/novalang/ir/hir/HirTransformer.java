@@ -313,8 +313,8 @@ public class HirTransformer implements HirVisitor<HirNode, Void> {
         Expression init = transformExpr(node.getInitializer());
         if (init == node.getInitializer()) return node;
         return new HirField(node.getLocation(), node.getName(), node.getModifiers(),
-                node.getAnnotations(), node.getType(), init, node.isVal(), node.getReceiverType(),
-                node.getGetterBody(), node.getSetterBody(), node.getSetterParam());
+                node.getAnnotations(), node.getType(), init, node.isVal(), node.isLazy(),
+                node.getReceiverType(), node.getGetterBody(), node.getSetterBody(), node.getSetterParam());
     }
 
     @Override

@@ -18,6 +18,7 @@ public class HirField extends HirDecl {
     private final HirType type;
     private final Expression initializer;
     private final boolean isVal;
+    private final boolean isLazy;       // val x by lazy { ... }
     private final HirType receiverType; // 扩展属性的接收者类型
     private final AstNode getterBody;   // 自定义 getter 体
     private final AstNode setterBody;   // 自定义 setter 体
@@ -26,23 +27,31 @@ public class HirField extends HirDecl {
     public HirField(SourceLocation location, String name, Set<Modifier> modifiers,
                     List<HirAnnotation> annotations, HirType type,
                     Expression initializer, boolean isVal) {
-        this(location, name, modifiers, annotations, type, initializer, isVal, null, null, null, null);
+        this(location, name, modifiers, annotations, type, initializer, isVal, false, null, null, null, null);
     }
 
     public HirField(SourceLocation location, String name, Set<Modifier> modifiers,
                     List<HirAnnotation> annotations, HirType type,
                     Expression initializer, boolean isVal, HirType receiverType) {
-        this(location, name, modifiers, annotations, type, initializer, isVal, receiverType, null, null, null);
+        this(location, name, modifiers, annotations, type, initializer, isVal, false, receiverType, null, null, null);
     }
 
     public HirField(SourceLocation location, String name, Set<Modifier> modifiers,
                     List<HirAnnotation> annotations, HirType type,
                     Expression initializer, boolean isVal, HirType receiverType,
                     AstNode getterBody, AstNode setterBody, HirParam setterParam) {
+        this(location, name, modifiers, annotations, type, initializer, isVal, false, receiverType, getterBody, setterBody, setterParam);
+    }
+
+    public HirField(SourceLocation location, String name, Set<Modifier> modifiers,
+                    List<HirAnnotation> annotations, HirType type,
+                    Expression initializer, boolean isVal, boolean isLazy, HirType receiverType,
+                    AstNode getterBody, AstNode setterBody, HirParam setterParam) {
         super(location, name, modifiers, annotations);
         this.type = type;
         this.initializer = initializer;
         this.isVal = isVal;
+        this.isLazy = isLazy;
         this.receiverType = receiverType;
         this.getterBody = getterBody;
         this.setterBody = setterBody;
@@ -63,6 +72,10 @@ public class HirField extends HirDecl {
 
     public boolean isVal() {
         return isVal;
+    }
+
+    public boolean isLazy() {
+        return isLazy;
     }
 
     public boolean isVar() {

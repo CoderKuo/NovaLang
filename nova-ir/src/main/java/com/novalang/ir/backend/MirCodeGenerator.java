@@ -722,8 +722,8 @@ public class MirCodeGenerator {
                 } else {
                     // Java 类有参构造：MethodHandleCache 运行时分派（处理重载/varargs）
                     mv.visitMethodInsn(INVOKESTATIC,
-                            "nova/runtime/interpreter/MethodHandleCache", "getInstance",
-                            "()Lnova/runtime/interpreter/MethodHandleCache;", false);
+                            "com/novalang/runtime/interpreter/MethodHandleCache", "getInstance",
+                            "()Lcom/novalang/runtime/interpreter/MethodHandleCache;", false);
                     mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(className));
                     pushInt(mv, argCount);
                     mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
@@ -734,7 +734,7 @@ public class MirCodeGenerator {
                         mv.visitInsn(AASTORE);
                     }
                     mv.visitMethodInsn(INVOKEVIRTUAL,
-                            "nova/runtime/interpreter/MethodHandleCache", "newInstance",
+                            "com/novalang/runtime/interpreter/MethodHandleCache", "newInstance",
                             "(Ljava/lang/Class;[Ljava/lang/Object;)Ljava/lang/Object;", false);
                 }
                 mv.visitVarInsn(ASTORE, inst.getDest());
@@ -923,7 +923,7 @@ public class MirCodeGenerator {
                             mv.visitInsn(AASTORE);
                         }
                     }
-                    mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaScriptContext", "call",
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaScriptContext", "call",
                             "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;", false);
                     if (inst.getDest() >= 0) {
                         mv.visitVarInsn(ASTORE, inst.getDest());
@@ -1041,13 +1041,13 @@ public class MirCodeGenerator {
                 // 但如果用户定义了同名类，则使用 JVM INSTANCEOF
                 boolean isUserClass = allFieldDescs.containsKey(typeName);
                 if (!isUserClass && "Ok".equals(typeName)) {
-                    mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaResult", "checkIsOk",
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaResult", "checkIsOk",
                             "(Ljava/lang/Object;)Z", false);
                 } else if (!isUserClass && "Err".equals(typeName)) {
-                    mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaResult", "checkIsErr",
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaResult", "checkIsErr",
                             "(Ljava/lang/Object;)Z", false);
                 } else if (!isUserClass && "Result".equals(typeName)) {
-                    mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaResult", "checkIsResult",
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaResult", "checkIsResult",
                             "(Ljava/lang/Object;)Z", false);
                 } else {
                     mv.visitTypeInsn(INSTANCEOF, typeName);
@@ -1139,7 +1139,7 @@ public class MirCodeGenerator {
                     // 使用 Object 索引版本，支持 Map 的非 int 键
                     loadObject(mv, target);
                     loadObject(mv, index);
-                    mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaCollections", "getIndex",
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaCollections", "getIndex",
                             "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
                 }
                 mv.visitVarInsn(ASTORE, inst.getDest());
@@ -1186,7 +1186,7 @@ public class MirCodeGenerator {
                     loadObject(mv, target);
                     loadObject(mv, index);
                     loadObject(mv, value);
-                    mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaCollections", "setIndex",
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaCollections", "setIndex",
                             "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", false);
                 }
                 break;
@@ -1236,7 +1236,7 @@ public class MirCodeGenerator {
             if (method != null) {
                 loadObject(mv, left);
                 loadObject(mv, right);
-                mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaOps", method,
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", method,
                         "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
                 mv.visitVarInsn(ASTORE, dest);
                 return;
@@ -1564,7 +1564,7 @@ public class MirCodeGenerator {
             MirTerminator.Branch branch = (MirTerminator.Branch) term;
             // 调用 AbstractNovaValue.truthyCheck(Object) 支持非 Boolean 类型的 truthy 语义
             mv.visitVarInsn(ALOAD, branch.getCondition());
-            mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/AbstractNovaValue", "truthyCheck",
+            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/AbstractNovaValue", "truthyCheck",
                     "(Ljava/lang/Object;)Z", false);
             mv.visitJumpInsn(IFNE, blockLabels.get(branch.getThenBlock()));
             mv.visitJumpInsn(GOTO, blockLabels.get(branch.getElseBlock()));
@@ -2952,7 +2952,7 @@ public class MirCodeGenerator {
             mv.visitMethodInsn(INVOKESTATIC, "java/util/Collections", "emptyMap",
                     "()Ljava/util/Map;", false);
             // 调用 NovaAnnotations.trigger(String, Class, Map)
-            mv.visitMethodInsn(INVOKESTATIC, "nova/runtime/NovaAnnotations", "trigger",
+            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaAnnotations", "trigger",
                     "(Ljava/lang/String;Ljava/lang/Class;Ljava/util/Map;)V", false);
         }
 

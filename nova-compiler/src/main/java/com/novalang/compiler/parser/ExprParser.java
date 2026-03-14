@@ -927,7 +927,7 @@ class ExprParser {
         return new CollectionLiteral(loc, CollectionLiteral.CollectionKind.LIST, elements, null);
     }
 
-    private Expression parseLambda() {
+    Expression parseLambda() {
         SourceLocation loc = parser.location();
         parser.expect(LBRACE, "Expected '{'");
         parser.skipNewlines();

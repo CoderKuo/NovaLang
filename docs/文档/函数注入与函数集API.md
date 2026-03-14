@@ -39,8 +39,8 @@ println(clamp(15, 0, 10))  // 10
 由于 Java Lambda 类型推断的限制，4 参数以上需要显式指定函数接口类型：
 
 ```java
-import nova.runtime.Function4;
-import nova.runtime.Function5;
+import com.novalang.runtime.Function4;
+import com.novalang.runtime.Function5;
 // ... Function6, Function7, Function8
 
 nova.defineFunction("sum4",
@@ -226,7 +226,7 @@ if (nova.hasFunction("onPlayerJoin")) {
 将 Java 类中所有 `@NovaFunc` 标注的静态方法一次性注册为顶级函数：
 
 ```java
-import nova.runtime.interpreter.NovaFunc;
+import com.novalang.runtime.interpreter.NovaFunc;
 
 public class StringUtils {
 
@@ -457,7 +457,7 @@ println(15.clampTo(0, 10))   // 10
 与 `defineFunction` 相同，4 参数以上需要显式指定函数接口类型：
 
 ```java
-import nova.runtime.Function5;  // receiver + 4 extra args
+import com.novalang.runtime.Function5;  // receiver + 4 extra args
 
 nova.registerExtension(String.class, "wrap5",
     (Function5<Object, Object, Object, Object, Object, Object>)
@@ -504,7 +504,7 @@ Nova nova = new Nova()
 将 Java 类中所有 `@NovaExt` 标注的静态方法一次性注册为扩展方法。**第一个参数约定为 receiver**，类型必须与注册的目标类型兼容。
 
 ```java
-import nova.runtime.interpreter.NovaExt;
+import com.novalang.runtime.interpreter.NovaExt;
 
 public class StringExtensions {
 

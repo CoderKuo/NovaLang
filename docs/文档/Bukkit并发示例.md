@@ -36,7 +36,7 @@ public class MyPlugin extends JavaPlugin {
 <summary>展开查看完整实现</summary>
 
 ```java
-import nova.runtime.NovaScheduler;
+import com.novalang.runtime.NovaScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 

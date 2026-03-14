@@ -17,8 +17,8 @@ import org.apache.commons.jexl3.MapContext;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
-import nova.runtime.CompiledNova;
-import nova.runtime.Nova;
+import com.novalang.runtime.CompiledNova;
+import com.novalang.runtime.Nova;
 
 final class ScriptBenchSupport {
 

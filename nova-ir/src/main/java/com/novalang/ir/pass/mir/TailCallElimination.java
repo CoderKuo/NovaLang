@@ -181,7 +181,7 @@ public class TailCallElimination implements MirPass {
             // 顶层函数：自递归调用必须是 INVOKE_STATIC
             if (inst.getOp() != MirOp.INVOKE_STATIC) return false;
             // owner 必须是 $PipeCall 或以 $Module 结尾（interpreterMode 下的自调用路径）
-            // 其他 owner（如 nova/runtime/stdlib/StringExtensions）是标准库调用，不是自递归
+            // 其他 owner（如 com/novalang/runtime/stdlib/StringExtensions）是标准库调用，不是自递归
             String callOwner = extraStr.substring(0, firstSep);
             if (!"$PipeCall".equals(callOwner) && !callOwner.endsWith("$Module")) return false;
         }

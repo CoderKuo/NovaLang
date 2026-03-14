@@ -6,8 +6,8 @@ import com.novalang.compiler.ast.decl.*;
 import com.novalang.compiler.ast.expr.*;
 import com.novalang.compiler.ast.stmt.*;
 import com.novalang.compiler.ast.type.*;
-import nova.runtime.NovaTypeRegistry;
-import nova.runtime.stdlib.StdlibRegistry;
+import com.novalang.runtime.NovaTypeRegistry;
+import com.novalang.runtime.stdlib.StdlibRegistry;
 
 import java.util.ArrayList;
 import java.util.HashMap;

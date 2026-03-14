@@ -1,6 +1,6 @@
 package com.novalang.cli;
 
-import nova.runtime.interpreter.NovaSecurityPolicy;
+import com.novalang.runtime.interpreter.NovaSecurityPolicy;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
