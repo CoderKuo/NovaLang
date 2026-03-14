@@ -12,6 +12,7 @@ application {
 
 dependencies {
     implementation project(':nova-runtime')
+    implementation project(':nova-ir')
 
     // Javalin 4.6.7 — 最后支持 Java 8 的稳定版
     implementation 'io.javalin:javalin:4.6.7'

@@ -1858,14 +1858,18 @@ class CoreSyntaxIntegrationTest {
             dual(fn + "check(false)", fn + wrap("return check(false)"), "no");
         }
 
-        @Test void defaultParam_booleanArgSecond() throws Exception {
-            // 测试 boolean false 作为第二参数
-            // 注: 在 wrap() 编译路径中存在 boolean 参数传递 bug（已知限制）
-            String fn = "fun check(x: Int, strict: Boolean) = if (strict) \"yes\" else \"no\"\n";
-            // 解释器路径
-            NovaValue ir = interp(fn + "check(0, false)");
-            assertEquals("no", ir.asString(), "解释器");
+        @Test void defaultParam_booleanArgSecond_scriptMode() throws Exception {
+            // Boolean 参数在 scriptMode 正常
+            nova.runtime.Nova nova = new nova.runtime.Nova();
+            Object result = nova.compileToBytecode(
+                "fun check(x: Int, strict: Boolean) = if (strict) \"yes\" else \"no\"\n" +
+                "check(0, false)", "test.nova").run();
+            assertEquals("no", String.valueOf(result), "scriptMode");
         }
+
+        // TODO: Boolean 作为 Int+Boolean 混合参数列表中的第二参数在 toJvmDescriptorIntOnly 编译路径
+        // (object Test { fun run() }) 下返回 null。解释器和 scriptMode 路径正常。
+        // 需要 dump 字节码排查 — 后续修复
 
         // ---- 多次调用 ----
 
