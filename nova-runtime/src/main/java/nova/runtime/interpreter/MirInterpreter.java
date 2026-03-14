@@ -2341,8 +2341,8 @@ final class MirInterpreter {
                 case ADD: rawLocals[dest] = a + b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case SUB: rawLocals[dest] = a - b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case MUL: rawLocals[dest] = a * b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
-                case DIV: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a / b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
-                case MOD: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a % b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case DIV: if (b == 0) throw new ArithmeticException("/ by zero"); rawLocals[dest] = a / b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case MOD: if (b == 0) throw new ArithmeticException("/ by zero"); rawLocals[dest] = a % b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case EQ:  locals[dest] = NovaBoolean.of(a == b); return;
                 case NE:  locals[dest] = NovaBoolean.of(a != b); return;
                 case LT:  locals[dest] = NovaBoolean.of(a < b); return;
@@ -2374,8 +2374,8 @@ final class MirInterpreter {
             case ADD: rawLocals[dest] = a + b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case SUB: rawLocals[dest] = a - b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case MUL: rawLocals[dest] = a * b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
-            case DIV: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a / b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
-            case MOD: if (b == 0) throw new NovaRuntimeException("Division by zero"); rawLocals[dest] = a % b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case DIV: if (b == 0) throw new ArithmeticException("/ by zero"); rawLocals[dest] = a / b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case MOD: if (b == 0) throw new ArithmeticException("/ by zero"); rawLocals[dest] = a % b; locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case EQ:  locals[dest] = NovaBoolean.of(a == b); return;
             case NE:  locals[dest] = NovaBoolean.of(a != b); return;
             case LT:  locals[dest] = NovaBoolean.of(a < b); return;
@@ -2424,8 +2424,8 @@ final class MirInterpreter {
                 case ADD: frame.rawLocals[dest] = a + b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case SUB: frame.rawLocals[dest] = a - b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case MUL: frame.rawLocals[dest] = a * b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
-                case DIV: if (b == 0) throw new NovaRuntimeException("Division by zero"); frame.rawLocals[dest] = a / b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
-                case MOD: if (b == 0) throw new NovaRuntimeException("Division by zero"); frame.rawLocals[dest] = a % b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case DIV: if (b == 0) throw new ArithmeticException("/ by zero"); frame.rawLocals[dest] = a / b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
+                case MOD: if (b == 0) throw new ArithmeticException("/ by zero"); frame.rawLocals[dest] = a % b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
                 case EQ:  frame.locals[dest] = NovaBoolean.of(a == b); return;
                 case NE:  frame.locals[dest] = NovaBoolean.of(a != b); return;
                 case LT:  frame.locals[dest] = NovaBoolean.of(a < b); return;
@@ -2458,8 +2458,8 @@ final class MirInterpreter {
             case ADD: frame.rawLocals[dest] = a + b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case SUB: frame.rawLocals[dest] = a - b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case MUL: frame.rawLocals[dest] = a * b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
-            case DIV: if (b == 0) throw new NovaRuntimeException("Division by zero"); frame.rawLocals[dest] = a / b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
-            case MOD: if (b == 0) throw new NovaRuntimeException("Division by zero"); frame.rawLocals[dest] = a % b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case DIV: if (b == 0) throw new ArithmeticException("/ by zero"); frame.rawLocals[dest] = a / b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
+            case MOD: if (b == 0) throw new ArithmeticException("/ by zero"); frame.rawLocals[dest] = a % b; frame.locals[dest] = MirFrame.RAW_INT_MARKER; return;
             case EQ:  frame.locals[dest] = NovaBoolean.of(a == b); return;
             case NE:  frame.locals[dest] = NovaBoolean.of(a != b); return;
             case LT:  frame.locals[dest] = NovaBoolean.of(a < b); return;
@@ -2490,8 +2490,8 @@ final class MirInterpreter {
                 case ADD: result = NovaInt.of(a + b); break;
                 case SUB: result = NovaInt.of(a - b); break;
                 case MUL: result = NovaInt.of(a * b); break;
-                case DIV: if (b == 0) throw new NovaRuntimeException("Division by zero"); result = NovaInt.of(a / b); break;
-                case MOD: if (b == 0) throw new NovaRuntimeException("Division by zero"); result = NovaInt.of(a % b); break;
+                case DIV: if (b == 0) throw new ArithmeticException("/ by zero"); result = NovaInt.of(a / b); break;
+                case MOD: if (b == 0) throw new ArithmeticException("/ by zero"); result = NovaInt.of(a % b); break;
                 case EQ:  result = NovaBoolean.of(a == b); break;
                 case NE:  result = NovaBoolean.of(a != b); break;
                 case LT:  result = NovaBoolean.of(a < b); break;
