@@ -1972,4 +1972,27 @@ class CoreSyntaxIntegrationTest {
             dual(code, wrap("return " + code), "caught");
         }
     }
+
+    // ============ 导入别名 ============
+
+    @Nested
+    @DisplayName("导入别名")
+    class ImportAliasTests {
+
+        @Test void javaImportAlias() throws Exception {
+            // import java 类 as 别名
+            String code = "import java java.util.ArrayList as JList\n" +
+                "val list = JList()\nlist.add(\"hello\")\nlist.size()";
+            dual(code, "import java java.util.ArrayList as JList\n" +
+                wrap("val list = JList()\n    list.add(\"hello\")\n    return list.size()"), 1);
+        }
+
+        @Test void javaImportAlias_construct() throws Exception {
+            // 用别名创建 Java 对象
+            String code = "import java java.util.HashMap as Dict\n" +
+                "val d = Dict()\nd.put(\"a\", 1)\nd.get(\"a\")";
+            dual(code, "import java java.util.HashMap as Dict\n" +
+                wrap("val d = Dict()\n    d.put(\"a\", 1)\n    return d.get(\"a\")"), 1);
+        }
+    }
 }
