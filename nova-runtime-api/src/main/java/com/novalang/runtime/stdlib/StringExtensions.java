@@ -92,6 +92,10 @@ public final class StringExtensions {
         return result;
     }
 
+    public static Object reversed(Object str) {
+        return new StringBuilder((String) str).reverse().toString();
+    }
+
     public static Object lines(Object str) {
         return new ArrayList<>(Arrays.asList(((String) str).split("\\r?\\n", -1)));
     }

@@ -264,6 +264,13 @@ final class VirtualMethodDispatcher {
             if (receiver instanceof Iterable) {
                 return new NovaExternalObject(((Iterable<?>) receiver).iterator());
             }
+            // String → 逐字符迭代
+            if (receiver instanceof NovaString) {
+                String s = ((NovaString) receiver).getValue();
+                java.util.List<NovaValue> chars = new java.util.ArrayList<>(s.length());
+                for (int i = 0; i < s.length(); i++) chars.add(NovaString.of(String.valueOf(s.charAt(i))));
+                return new NovaExternalObject(chars.iterator());
+            }
             if (receiver instanceof NovaExternalObject) {
                 Object jObj = receiver.toJavaValue();
                 if (jObj instanceof Iterable) return new NovaExternalObject(((Iterable<?>) jObj).iterator());

@@ -1,13 +1,13 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaArray;
+import com.novalang.runtime.NovaPair;
 import com.novalang.runtime.NovaResult;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 核心内置函数的 stdlib 实现：error / Pair / range / with / repeat / runCatching 等。
@@ -48,6 +48,20 @@ public final class StdlibCore {
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
             "runCatching", 1, OWNER, "runCatching", O_O, args -> runCatching(args[0]), true));
 
+        // ---- 类型化数组构造器 ----
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "IntArray", 1, OWNER, "intArray", O_O, args -> intArray(args[0]), true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "LongArray", 1, OWNER, "longArray", O_O, args -> longArray(args[0]), true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "DoubleArray", 1, OWNER, "doubleArray", O_O, args -> doubleArray(args[0]), true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "FloatArray", 1, OWNER, "floatArray", O_O, args -> floatArray(args[0]), true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "BooleanArray", 1, OWNER, "booleanArray", O_O, args -> booleanArray(args[0]), true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "CharArray", 1, OWNER, "charArray", O_O, args -> charArray(args[0]), true));
+
         // ---- vararg ----
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
             "arrayOf", -1, OWNER, "arrayOf", VARARG_DESC, StdlibCore::arrayOf));
@@ -64,7 +78,7 @@ public final class StdlibCore {
     }
 
     public static Object pair(Object first, Object second) {
-        return new Object[]{first, second};
+        return NovaPair.of(first, second);
     }
 
     public static Object range(Object start, Object end) {
@@ -91,8 +105,15 @@ public final class StdlibCore {
         return list;
     }
 
+    public static Object intArray(Object size) { return new NovaArray(NovaArray.ElementType.INT, ((Number) size).intValue()); }
+    public static Object longArray(Object size) { return new NovaArray(NovaArray.ElementType.LONG, ((Number) size).intValue()); }
+    public static Object doubleArray(Object size) { return new NovaArray(NovaArray.ElementType.DOUBLE, ((Number) size).intValue()); }
+    public static Object floatArray(Object size) { return new NovaArray(NovaArray.ElementType.FLOAT, ((Number) size).intValue()); }
+    public static Object booleanArray(Object size) { return new NovaArray(NovaArray.ElementType.BOOLEAN, ((Number) size).intValue()); }
+    public static Object charArray(Object size) { return new NovaArray(NovaArray.ElementType.CHAR, ((Number) size).intValue()); }
+
     public static Object arrayOf(Object... args) {
-        return args.clone();
+        return new NovaArray(NovaArray.ElementType.OBJECT, args.clone(), args.length);
     }
 
     public static Object readLine(Object... args) {
@@ -117,32 +138,44 @@ public final class StdlibCore {
     // ---- Lambda 接受函数 ----
 
     public static Object withScope(Object receiver, Object block) {
-        return invoke1(block, receiver);
+        Object prev = NovaScopeFunctions.getScopeReceiver();
+        NovaScopeFunctions.setScopeReceiver(receiver);
+        try {
+            return LambdaUtils.invokeFlexible(block, receiver);
+        } finally {
+            NovaScopeFunctions.setScopeReceiver(prev);
+        }
     }
 
     public static Object repeat(Object times, Object action) {
         int n = ((Number) times).intValue();
+        // lambda 可以是 0 参数 { body } 或 1 参数 { index -> body }
+        boolean hasParam = LambdaUtils.hasInvoke1(action);
         for (int i = 0; i < n; i++) {
-            invoke1(action, i);
+            if (hasParam) {
+                LambdaUtils.invoke1(action, i);
+            } else {
+                LambdaUtils.invoke0(action);
+            }
         }
         return null;
     }
 
     public static Object measureTimeMillis(Object block) {
         long start = System.currentTimeMillis();
-        invoke0(block);
+        LambdaUtils.invoke0(block);
         return System.currentTimeMillis() - start;
     }
 
     public static Object measureNanoTime(Object block) {
         long start = System.nanoTime();
-        invoke0(block);
+        LambdaUtils.invoke0(block);
         return System.nanoTime() - start;
     }
 
     public static Object runCatching(Object block) {
         try {
-            Object result = invoke0(block);
+            Object result = LambdaUtils.invoke0(block);
             return NovaResult.ok(result);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -154,55 +187,8 @@ public final class StdlibCore {
         int n = ((Number) size).intValue();
         List<Object> result = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
-            result.add(invoke1(init, i));
+            result.add(LambdaUtils.invoke1(init, i));
         }
         return result;
-    }
-
-    // ============ Lambda 调用辅助（与 ConcurrencyHelper 同模式） ============
-
-    private static final ConcurrentHashMap<Class<?>, Method> invoke0Cache = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<Class<?>, Method> invoke1Cache = new ConcurrentHashMap<>();
-
-    private static Object invoke0(Object lambda) {
-        try {
-            Method m = invoke0Cache.computeIfAbsent(lambda.getClass(), cls -> {
-                for (Method method : cls.getMethods()) {
-                    if ("invoke".equals(method.getName()) && method.getParameterCount() == 0) return method;
-                }
-                for (Method method : cls.getMethods()) {
-                    if ("invoke".equals(method.getName())) return method;
-                }
-                throw new RuntimeException("Lambda has no invoke() method: " + cls.getName());
-            });
-            return m.invoke(lambda);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
-        }
-    }
-
-    private static Object invoke1(Object lambda, Object arg) {
-        try {
-            Method m = invoke1Cache.computeIfAbsent(lambda.getClass(), cls -> {
-                for (Method method : cls.getMethods()) {
-                    if ("invoke".equals(method.getName()) && method.getParameterCount() == 1) return method;
-                }
-                for (Method method : cls.getMethods()) {
-                    if ("invoke".equals(method.getName())) return method;
-                }
-                throw new RuntimeException("Lambda has no invoke(Object) method: " + cls.getName());
-            });
-            return m.invoke(lambda, arg);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
-        }
     }
 }

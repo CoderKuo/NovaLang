@@ -1,6 +1,7 @@
 package com.novalang.runtime.interpreter;
 
 import com.novalang.runtime.*;
+import com.novalang.runtime.interpreter.reflect.NovaClassInfo;
 import com.novalang.runtime.resolution.MethodNameCanonicalizer;
 import com.novalang.runtime.types.*;
 import com.novalang.runtime.stdlib.StructuredConcurrencyHelper;
@@ -217,11 +218,15 @@ public class Interpreter implements ExecutionContext {
         // 重写 classOf 以支持 HIR 路径
         environment.redefine("classOf", new NovaNativeFunction("classOf", 1, (interp, args) -> {
             NovaValue arg = args.get(0);
-            NovaClass cls;
-            if (arg instanceof NovaClass) cls = (NovaClass) arg;
-            else if (arg instanceof NovaObject) cls = ((NovaObject) arg).getNovaClass();
-            else throw new NovaRuntimeException("classOf() requires a class or object");
-            return buildHirClassInfo(cls);
+            if (arg instanceof NovaClass) return buildHirClassInfo((NovaClass) arg);
+            if (arg instanceof NovaObject) return buildHirClassInfo(((NovaObject) arg).getNovaClass());
+            if (arg instanceof ScalarizedNovaObject) return buildHirClassInfo(((ScalarizedNovaObject) arg).getNovaClass());
+            if (arg instanceof NovaExternalObject) {
+                Object javaVal = ((NovaExternalObject) arg).getJavaObject();
+                if (javaVal instanceof Class) return NovaClassInfo.fromJavaClass((Class<?>) javaVal);
+                return NovaClassInfo.fromJavaClass(javaVal.getClass());
+            }
+            throw new NovaRuntimeException("classOf() requires a class or object");
         }), false);
 
         // Helper 委托对象（放在构造函数末尾，避免 this-escape 警告）

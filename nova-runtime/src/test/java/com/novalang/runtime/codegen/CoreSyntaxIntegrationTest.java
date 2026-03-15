@@ -907,6 +907,18 @@ class CoreSyntaxIntegrationTest {
             dual("#{\"a\": 1, \"b\": 2}.size()", wrap("return #{\"a\": 1, \"b\": 2}.size()"), 2);
         }
 
+        @Test void testMapBareIdentifierKey() throws Exception {
+            dual("#{name: \"Alice\"}[\"name\"]", wrap("return #{name: \"Alice\"}[\"name\"]"), "Alice");
+        }
+
+        @Test void testMapBareIdentifierKeyMultiple() throws Exception {
+            dual("#{a: 1, b: 2}.size()", wrap("return #{a: 1, b: 2}.size()"), 2);
+        }
+
+        @Test void testMapBareIdentifierKeyAccess() throws Exception {
+            dual("#{x: 10, y: 20}[\"x\"]", wrap("return #{x: 10, y: 20}[\"x\"]"), 10);
+        }
+
         @Test void testRange() throws Exception {
             dual("(1..5).size()", wrap("return (1..5).size()"), 5);
         }

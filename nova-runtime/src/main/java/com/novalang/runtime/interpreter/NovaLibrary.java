@@ -46,6 +46,11 @@ public final class NovaLibrary extends AbstractNovaValue {
         return members.get(memberName);
     }
 
+    @Override
+    public NovaValue resolveMember(String name) {
+        return members.get(name);
+    }
+
     /** 是否包含指定成员 */
     public boolean hasMember(String memberName) {
         return members.containsKey(memberName);

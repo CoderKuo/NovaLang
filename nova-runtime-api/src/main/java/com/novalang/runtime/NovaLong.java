@@ -3,7 +3,7 @@ package com.novalang.runtime;
 /**
  * Nova Long 值（64位整数）
  */
-public final class NovaLong extends AbstractNovaValue implements NovaNumber {
+public final class NovaLong extends Number implements NovaValue, NovaNumber {
 
     // 小整数缓存
     private static final int CACHE_LOW = -128;
@@ -114,6 +114,16 @@ public final class NovaLong extends AbstractNovaValue implements NovaNumber {
     }
 
     @Override
+    public float floatValue() {
+        return value;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof NovaValue) return equals((NovaValue) obj);
+        return false;
+    }
+
     public int hashCode() {
         return Long.hashCode(value);
     }

@@ -837,6 +837,8 @@ public class MirCodeGenerator {
                 if (extra.contains("|")) {
                     String[] parts = extra.split("\\|", 3);
                     mv.visitFieldInsn(GETSTATIC, parts[0], parts[1], parts[2]);
+                    // 原始类型字段需装箱后才能 ASTORE
+                    boxPrimitiveDescriptor(mv, parts[2]);
                 } else {
                     mv.visitFieldInsn(GETSTATIC, "java/lang/Object", extra, MethodDescriptor.OBJECT_DESC);
                 }
@@ -1062,7 +1064,23 @@ public class MirCodeGenerator {
                 String typeName = (String) inst.getExtra();
                 int src = inst.operand(0);
                 loadObject(mv, src);
-                mv.visitTypeInsn(CHECKCAST, typeName);
+                // 安全转换 as? → instanceof 检查，不匹配返回 null
+                if (typeName.startsWith("?|")) {
+                    String actualType = typeName.substring(2);
+                    mv.visitInsn(DUP);
+                    mv.visitTypeInsn(INSTANCEOF, actualType);
+                    Label matchLabel = new Label();
+                    Label endLabel = new Label();
+                    mv.visitJumpInsn(IFNE, matchLabel);
+                    mv.visitInsn(POP); // 丢弃不匹配的值
+                    mv.visitInsn(ACONST_NULL);
+                    mv.visitJumpInsn(GOTO, endLabel);
+                    mv.visitLabel(matchLabel);
+                    mv.visitTypeInsn(CHECKCAST, actualType);
+                    mv.visitLabel(endLabel);
+                } else {
+                    mv.visitTypeInsn(CHECKCAST, typeName);
+                }
                 mv.visitVarInsn(ASTORE, inst.getDest());
                 break;
             }
@@ -1119,21 +1137,17 @@ public class MirCodeGenerator {
                     mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Map", "get",
                             "(Ljava/lang/Object;)Ljava/lang/Object;", true);
                 } else if (isListType(targetOwner)) {
-                    // List.get(index)
+                    // List.get(index) — 通过 NovaCollections.getIndex 支持负索引
                     loadObject(mv, target);
-                    mv.visitTypeInsn(CHECKCAST, "java/util/List");
                     loadInt(mv, index);
-                    mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "get",
-                            "(I)Ljava/lang/Object;", true);
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaCollections", "getIndex",
+                            "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
                 } else if ("java/lang/String".equals(targetOwner)) {
-                    // String.charAt(index) → String.valueOf(char)
+                    // String[index] — 通过 NovaCollections.getIndex 支持负索引
                     loadObject(mv, target);
-                    mv.visitTypeInsn(CHECKCAST, "java/lang/String");
                     loadInt(mv, index);
-                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/String", "charAt",
-                            "(I)C", false);
-                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/String", "valueOf",
-                            "(C)Ljava/lang/String;", false);
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaCollections", "getIndex",
+                            "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
                 } else {
                     // 运行时分派: NovaCollections.getIndex(target, index)
                     // 使用 Object 索引版本，支持 Map 的非 int 键
@@ -1364,6 +1378,23 @@ public class MirCodeGenerator {
         MirType.Kind lk = getLocalType(func, left).getKind();
         MirType.Kind rk = getLocalType(func, right).getKind();
 
+        // REF_EQ/REF_NE: 引用相等（===, !==）→ JVM IF_ACMPEQ/IF_ACMPNE
+        if (op == BinaryOp.REF_EQ || op == BinaryOp.REF_NE) {
+            loadObject(mv, left);
+            loadObject(mv, right);
+            Label trueLabel = new Label();
+            Label endLabel = new Label();
+            mv.visitJumpInsn(op == BinaryOp.REF_EQ ? IF_ACMPEQ : IF_ACMPNE, trueLabel);
+            mv.visitInsn(ICONST_0);
+            mv.visitJumpInsn(GOTO, endLabel);
+            mv.visitLabel(trueLabel);
+            mv.visitInsn(ICONST_1);
+            mv.visitLabel(endLabel);
+            boxBoolean(mv);
+            mv.visitVarInsn(ASTORE, dest);
+            return;
+        }
+
         // OBJECT/BOOLEAN 类型的 EQ/NE 使用引用比较（含 null 比较，避免拆箱 NPE）
         boolean isObjectLike = (op == BinaryOp.EQ || op == BinaryOp.NE)
                 && (lk == MirType.Kind.OBJECT || rk == MirType.Kind.OBJECT
@@ -1384,6 +1415,34 @@ public class MirCodeGenerator {
                 mv.visitInsn(ICONST_1);
                 mv.visitLabel(endLabel);
             }
+            boxBoolean(mv);
+            mv.visitVarInsn(ASTORE, dest);
+            return;
+        }
+
+        // 非数值 Object 类型的 LT/GT/LE/GE: Comparable.compareTo 回退（Character, String 等）
+        if ((op == BinaryOp.LT || op == BinaryOp.GT || op == BinaryOp.LE || op == BinaryOp.GE)
+                && (lk == MirType.Kind.OBJECT || rk == MirType.Kind.OBJECT
+                    || lk == MirType.Kind.CHAR || rk == MirType.Kind.CHAR)) {
+            loadObject(mv, left);
+            loadObject(mv, right);
+            mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable", "compareTo",
+                    "(Ljava/lang/Object;)I", true);
+            // compareTo 返回 int，用 IFxx 与 0 比较
+            Label trueLabel = new Label();
+            Label endLabel = new Label();
+            switch (op) {
+                case LT: mv.visitJumpInsn(IFLT, trueLabel); break;
+                case GT: mv.visitJumpInsn(IFGT, trueLabel); break;
+                case LE: mv.visitJumpInsn(IFLE, trueLabel); break;
+                case GE: mv.visitJumpInsn(IFGE, trueLabel); break;
+                default: break;
+            }
+            mv.visitInsn(ICONST_0);
+            mv.visitJumpInsn(GOTO, endLabel);
+            mv.visitLabel(trueLabel);
+            mv.visitInsn(ICONST_1);
+            mv.visitLabel(endLabel);
             boxBoolean(mv);
             mv.visitVarInsn(ASTORE, dest);
             return;
@@ -2141,6 +2200,18 @@ public class MirCodeGenerator {
     /**
      * 如果方法返回原始类型，将栈顶值装箱为对应包装类型。
      */
+    /** 根据字段描述符装箱原始类型（D→Double, I→Integer 等），引用类型不操作 */
+    private void boxPrimitiveDescriptor(MethodVisitor mv, String desc) {
+        switch (desc) {
+            case "I": boxInt(mv); break;
+            case "Z": boxBoolean(mv); break;
+            case "J": boxLong(mv); break;
+            case "F": boxFloat(mv); break;
+            case "D": boxDouble(mv); break;
+            // 引用类型（L...;）不需要装箱
+        }
+    }
+
     private void boxReturnIfPrimitive(MethodVisitor mv, String descriptor) {
         String ret = descriptor.substring(descriptor.indexOf(')') + 1);
         switch (ret) {
@@ -2320,7 +2391,7 @@ public class MirCodeGenerator {
 
     private boolean isComparisonOp(BinaryOp op) {
         switch (op) {
-            case EQ: case NE: case LT: case GT: case LE: case GE: return true;
+            case EQ: case NE: case LT: case GT: case LE: case GE: case REF_EQ: case REF_NE: return true;
             default: return false;
         }
     }

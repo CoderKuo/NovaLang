@@ -39,9 +39,11 @@ class DeclParser {
     Declaration parseDeclaration() {
         parser.skipNewlines();
 
-        // 解析注解和修饰符
+        // 解析注解和修饰符（注解与声明之间允许换行）
         List<Annotation> annotations = parseAnnotations();
+        parser.skipNewlines();
         List<Modifier> modifiers = parseModifiers();
+        parser.skipNewlines();
 
         // annotation class — 软关键词
         if (parser.check(IDENTIFIER) && "annotation".equals(parser.current.getLexeme()) && parser.checkAhead(KW_CLASS)) {
@@ -371,7 +373,7 @@ class DeclParser {
     private EnumDecl parseEnumDecl(List<Annotation> annotations, List<Modifier> modifiers) {
         SourceLocation loc = parser.location();
         parser.expect(KW_ENUM, "Expected 'enum'");
-        parser.expect(KW_CLASS, "Expected 'class'");
+        parser.match(KW_CLASS); // 'class' 可选：enum Color 和 enum class Color 都合法
         String name = parser.expect(IDENTIFIER, "Expected enum name").getLexeme();
         SourceLocation enumNameLoc = parser.previousLocation();
 
@@ -394,7 +396,7 @@ class DeclParser {
             entries = parseEnumEntries();
             parser.skipNewlines();
 
-            if (parser.match(SEMICOLON)) {
+            if (parser.match(SEMICOLON) || isEnumMemberStart()) {
                 parser.skipNewlines();
                 members = new ArrayList<Declaration>();
                 while (!parser.check(RBRACE) && !parser.isAtEnd()) {
@@ -410,6 +412,14 @@ class DeclParser {
                 superTypes, entries, members);
         decl.setNameLocation(enumNameLoc);
         return decl;
+    }
+
+    /** enum entries 后是否紧跟成员声明（无需分号分隔） */
+    private boolean isEnumMemberStart() {
+        return parser.check(KW_FUN) || parser.check(KW_VAL) || parser.check(KW_VAR)
+                || parser.check(KW_CLASS) || parser.check(KW_INTERFACE)
+                || parser.check(KW_ABSTRACT) || parser.check(KW_OPEN)
+                || parser.check(KW_OVERRIDE) || parser.check(KW_CONSTRUCTOR);
     }
 
     private List<EnumDecl.EnumEntry> parseEnumEntries() {

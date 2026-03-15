@@ -2521,6 +2521,8 @@ final class MirInterpreter {
         // 鐩哥瓑鎬ф瘮杈冿紙澶勭悊 null锛?
         if (op == BinaryOp.EQ) return NovaBoolean.of(novaEquals(left, right));
         if (op == BinaryOp.NE) return NovaBoolean.of(!novaEquals(left, right));
+        if (op == BinaryOp.REF_EQ) return NovaBoolean.of(left == right);
+        if (op == BinaryOp.REF_NE) return NovaBoolean.of(left != right);
 
         // 绠楁湳杩愮畻 鈫?BinaryOps
         switch (op) {
@@ -2786,18 +2788,11 @@ final class MirInterpreter {
             }
         }
 
-        if (target instanceof NovaPair) {
-            NovaPair pair = (NovaPair) target;
-            if ("first".equals(fieldName) || "key".equals(fieldName)) {
-                frame.locals[inst.getDest()] = pair.getFirst() instanceof NovaValue
-                        ? (NovaValue) pair.getFirst() : AbstractNovaValue.fromJava(pair.getFirst());
-                return;
-            }
-            if ("second".equals(fieldName) || "value".equals(fieldName)) {
-                frame.locals[inst.getDest()] = pair.getSecond() instanceof NovaValue
-                        ? (NovaValue) pair.getSecond() : AbstractNovaValue.fromJava(pair.getSecond());
-                return;
-            }
+        // NovaPair / 其他带 resolveMember 的类型
+        NovaValue memberVal = target.resolveMember(fieldName);
+        if (memberVal != null) {
+            frame.locals[inst.getDest()] = memberVal;
+            return;
         }
 
         if (target instanceof NovaExternalObject && "message".equals(fieldName)) {
@@ -3413,10 +3408,7 @@ final class MirInterpreter {
 
     /** MIR lowering 鐨?resolveMethodAlias 鍙嶅悜鏄犲皠锛欽ava 鏂规硶鍚?鈫?Nova 鏂规硶鍚?*/
     private boolean novaEquals(NovaValue a, NovaValue b) {
-        if (a == b) return true;
-        if (a == null || a instanceof NovaNull) return b == null || b instanceof NovaNull;
-        if (b == null || b instanceof NovaNull) return false;
-        return a.equals(b);
+        return BinaryOps.novaEquals(a, b);
     }
 
     private Object unwrapNovaValue(NovaValue value) {

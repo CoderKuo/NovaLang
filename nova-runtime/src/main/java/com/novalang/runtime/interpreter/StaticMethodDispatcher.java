@@ -675,24 +675,19 @@ final class StaticMethodDispatcher {
 
     // ============ 辅助方法 ============
 
-    /** componentN 解构操作 */
+    /** componentN 解构操作（委托 NovaValue.componentN，NovaObject 保留用户方法回退） */
     private NovaValue handleComponentN(NovaValue target, int n) {
-        if (target instanceof NovaPair) {
-            Object val = n == 1 ? ((NovaPair) target).getFirst() : ((NovaPair) target).getSecond();
-            return val instanceof NovaValue ? (NovaValue) val : AbstractNovaValue.fromJava(val);
-        }
-        if (target instanceof NovaList) return ((NovaList) target).get(n - 1);
         if (target instanceof NovaObject) {
             NovaObject obj = (NovaObject) target;
-            List<String> fieldOrder = obj.getNovaClass().getDataFieldOrder();
-            if (fieldOrder != null && n >= 1 && n <= fieldOrder.size()) {
-                return obj.getField(fieldOrder.get(n - 1));
+            if (obj.getNovaClass().getDataFieldOrder() != null) {
+                return obj.componentN(n);
             }
-            String compMethodName = "component" + n;
-            NovaCallable compMethod = obj.getMethod(compMethodName);
-            if (compMethod != null) return compMethod.call(interp, Collections.singletonList(obj));
+            // 非 data class：查找用户自定义 componentN 方法
+            NovaCallable method = obj.getMethod("component" + n);
+            if (method != null) return method.call(interp, Collections.singletonList(obj));
+            throw new NovaRuntimeException("Cannot destructure: " + obj.getNovaClass().getName());
         }
-        throw new NovaRuntimeException("Cannot destructure: " + target.getTypeName());
+        return target.componentN(n);
     }
 
     /** classOf() → NovaClassInfo */
@@ -724,6 +719,7 @@ final class StaticMethodDispatcher {
         if (arg instanceof NovaExternalObject) {
             Object javaVal = arg.toJavaValue();
             if (javaVal instanceof Class) return NovaClassInfo.fromJavaClass((Class<?>) javaVal);
+            return NovaClassInfo.fromJavaClass(javaVal.getClass());
         }
         return NovaNull.NULL;
     }

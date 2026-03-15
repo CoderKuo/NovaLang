@@ -178,25 +178,31 @@ public final class ListExtensions {
     }
 
     @SuppressWarnings("unchecked")
+    public static Object max(Object list) {
+        List<?> l = (List<?>) list;
+        if (l.isEmpty()) throw new RuntimeException("List is empty");
+        return Collections.max((List<? extends Comparable<Object>>) l);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object min(Object list) {
+        List<?> l = (List<?>) list;
+        if (l.isEmpty()) throw new RuntimeException("List is empty");
+        return Collections.min((List<? extends Comparable<Object>>) l);
+    }
+
+    @SuppressWarnings("unchecked")
     public static Object maxOrNull(Object list) {
         List<?> l = (List<?>) list;
         if (l.isEmpty()) return null;
-        Object max = l.get(0);
-        for (int i = 1; i < l.size(); i++) {
-            if (((Comparable<Object>) l.get(i)).compareTo(max) > 0) max = l.get(i);
-        }
-        return max;
+        return Collections.max((List<? extends Comparable<Object>>) l);
     }
 
     @SuppressWarnings("unchecked")
     public static Object minOrNull(Object list) {
         List<?> l = (List<?>) list;
         if (l.isEmpty()) return null;
-        Object min = l.get(0);
-        for (int i = 1; i < l.size(); i++) {
-            if (((Comparable<Object>) l.get(i)).compareTo(min) < 0) min = l.get(i);
-        }
-        return min;
+        return Collections.min((List<? extends Comparable<Object>>) l);
     }
 
     public static Object toList(Object list) {

@@ -4,8 +4,9 @@ import com.novalang.compiler.ast.stmt.Block;
 import com.novalang.compiler.ast.SourceLocation;
 import com.novalang.compiler.ast.decl.Declaration;
 import com.novalang.compiler.ast.decl.DestructuringDecl;
+import com.novalang.compiler.ast.decl.FunDecl;
 import com.novalang.compiler.ast.decl.PropertyDecl;
-import com.novalang.compiler.ast.expr.Expression;
+import com.novalang.compiler.ast.expr.*;
 import com.novalang.compiler.ast.stmt.*;
 import com.novalang.compiler.ast.type.TypeRef;
 
@@ -30,6 +31,10 @@ class StmtParser {
         parser.skipNewlines();
 
         if (parser.check(LBRACE)) {
+            // 检测 Lambda IIFE: { ... }() / { ... }.method() — 作为表达式处理
+            if (isImmediatelyInvoked()) {
+                return parseExpressionStmt();
+            }
             return parseBlock();
         }
         if (parser.check(KW_IF)) {
@@ -84,6 +89,17 @@ class StmtParser {
         if (parser.isDeclarationStart()) {
             SourceLocation loc = parser.location();
             Declaration decl = parser.parseDeclaration();
+            // 函数声明 IIFE: fun name() { ... }(args) → 声明 + 立即调用
+            if (decl instanceof FunDecl && parser.check(LPAREN)) {
+                FunDecl funDecl = (FunDecl) decl;
+                List<CallExpr.Argument> args = parser.exprParser.parseCallArgs();
+                Identifier callee = new Identifier(loc, funDecl.getName());
+                CallExpr call = new CallExpr(loc, callee, Collections.<TypeRef>emptyList(), args, null);
+                List<Statement> stmts = new ArrayList<Statement>();
+                stmts.add(new DeclarationStmt(loc, decl));
+                stmts.add(new ExpressionStmt(loc, call));
+                return new Block(loc, stmts);
+            }
             return new DeclarationStmt(loc, decl);
         }
 
@@ -135,6 +151,21 @@ class StmtParser {
             }
             parser.advance();
         }
+    }
+
+    /** 检测 { ... } 后是否紧跟 () 或 . — 判定为 Lambda IIFE 而非代码块 */
+    private boolean isImmediatelyInvoked() {
+        parser.mark();
+        parser.advance(); // consume {
+        int depth = 1;
+        while (!parser.isAtEnd() && depth > 0) {
+            if (parser.check(LBRACE)) depth++;
+            if (parser.check(RBRACE)) depth--;
+            parser.advance();
+        }
+        boolean result = parser.check(LPAREN) || parser.check(DOT) || parser.check(SAFE_DOT);
+        parser.reset();
+        return result;
     }
 
     Statement parseExpressionStmt() {

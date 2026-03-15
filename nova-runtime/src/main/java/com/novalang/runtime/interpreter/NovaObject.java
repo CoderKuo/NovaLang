@@ -167,6 +167,17 @@ public final class NovaObject extends AbstractNovaValue {
         return map;
     }
 
+    @Override
+    public NovaValue componentN(int n) {
+        java.util.List<String> fieldOrder = novaClass.getDataFieldOrder();
+        if (fieldOrder != null && n >= 1 && n <= fieldOrder.size()) {
+            return getField(fieldOrder.get(n - 1));
+        }
+        throw new UnsupportedOperationException(
+                "Cannot destructure " + novaClass.getName()
+                        + ": not a data class or component" + n + " out of range");
+    }
+
     // ============ 方法调用 ============
 
     public NovaCallable getMethod(String name) {

@@ -3,6 +3,7 @@ package com.novalang.runtime.stdlib;
 import com.novalang.runtime.Function1;
 import com.novalang.runtime.Function2;
 import com.novalang.runtime.NovaDynamic;
+import com.novalang.runtime.NovaResult;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -41,6 +42,11 @@ public final class CollectionOps {
     public static Object map(Object listObj, Object lambda) {
         if (listObj instanceof Map) {
             return MapExtensions.map(listObj, lambda);
+        }
+        if (listObj instanceof NovaResult) {
+            NovaResult r = (NovaResult) listObj;
+            if (r.isOk()) return NovaResult.ok(invokeLambda1(lambda, r.getValue()));
+            return r; // Err 原样返回
         }
         List<?> list = (List<?>) listObj;
         List<Object> result = new ArrayList<>(list.size());

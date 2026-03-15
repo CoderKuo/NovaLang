@@ -21,6 +21,26 @@ public final class NovaOps {
                 || a instanceof NovaString || b instanceof NovaString) {
             return String.valueOf(a) + String.valueOf(b);
         }
+        // List + List → 合并
+        if (a instanceof java.util.List && b instanceof java.util.List) {
+            java.util.List<Object> result = new java.util.ArrayList<>((java.util.List<?>) a);
+            result.addAll((java.util.List<?>) b);
+            return result;
+        }
+        // Map + Map → 合并
+        if (a instanceof java.util.Map && b instanceof java.util.Map) {
+            java.util.Map<Object, Object> result = new java.util.LinkedHashMap<>((java.util.Map<?, ?>) a);
+            result.putAll((java.util.Map<?, ?>) b);
+            return result;
+        }
+        // operator overloading: obj.plus(other)
+        if (!(a instanceof Number)) {
+            try {
+                return NovaDynamic.invokeMethod(a, "plus", b);
+            } catch (RuntimeException ignored) {
+                // plus 方法不存在，回退到数值操作
+            }
+        }
         return numericOp(a, b, NumOp.ADD);
     }
 

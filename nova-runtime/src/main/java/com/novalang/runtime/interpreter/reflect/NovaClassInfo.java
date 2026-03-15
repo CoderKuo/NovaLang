@@ -19,6 +19,7 @@ public final class NovaClassInfo extends AbstractNovaValue {
 
     // 公共字段（编译模式 NovaDynamic.getMember 可读）
     public final String name;
+    public final String qualifiedName;
     public final String superclass;
     public final List<String> interfaces;
 
@@ -33,11 +34,12 @@ public final class NovaClassInfo extends AbstractNovaValue {
     public NovaClass getNovaClass() { return novaClass; }
     public Class<?> getJavaClass() { return javaClass; }
 
-    private NovaClassInfo(String name, String superclass, List<String> interfaces,
+    private NovaClassInfo(String name, String qualifiedName, String superclass, List<String> interfaces,
                           List<NovaFieldInfo> fieldInfos, List<NovaMethodInfo> methodInfos,
                           List<NovaAnnotationInfo> annotationInfos,
                           NovaClass novaClass, Class<?> javaClass) {
         this.name = name;
+        this.qualifiedName = qualifiedName;
         this.superclass = superclass;
         this.interfaces = interfaces;
         this.fieldInfos = fieldInfos;
@@ -56,6 +58,21 @@ public final class NovaClassInfo extends AbstractNovaValue {
     }
 
     public List<NovaAnnotationInfo> getAnnotationInfos() {
+        return annotationInfos;
+    }
+
+    /** 别名：与语法文档一致（classOf(X).fields） */
+    public List<NovaFieldInfo> getFields() {
+        return fieldInfos;
+    }
+
+    /** 别名：与语法文档一致（classOf(X).methods） */
+    public List<NovaMethodInfo> getMethods() {
+        return methodInfos;
+    }
+
+    /** 别名：与语法文档一致（classOf(X).annotations） */
+    public List<NovaAnnotationInfo> getAnnotations() {
         return annotationInfos;
     }
 
@@ -88,7 +105,7 @@ public final class NovaClassInfo extends AbstractNovaValue {
     public static NovaClassInfo create(String name, String superclass, List<String> interfaces,
                                         List<NovaFieldInfo> fields, List<NovaMethodInfo> methods,
                                         List<NovaAnnotationInfo> annotations, NovaClass novaClass) {
-        return new NovaClassInfo(name, superclass, interfaces, fields, methods, annotations, novaClass, null);
+        return new NovaClassInfo(name, name, superclass, interfaces, fields, methods, annotations, novaClass, null);
     }
 
     // ============ 工厂方法 ============
@@ -170,7 +187,7 @@ public final class NovaClassInfo extends AbstractNovaValue {
             ifaceNames.add(iface.getName());
         }
 
-        return new NovaClassInfo(cls.getName(), superName, ifaceNames,
+        return new NovaClassInfo(cls.getName(), cls.getName(), superName, ifaceNames,
                 fields, methods, annotations, cls, null);
     }
 
@@ -205,7 +222,7 @@ public final class NovaClassInfo extends AbstractNovaValue {
             ifaceNames.add(iface.getSimpleName());
         }
 
-        return new NovaClassInfo(cls.getSimpleName(), superName, ifaceNames,
+        return new NovaClassInfo(cls.getSimpleName(), cls.getName(), superName, ifaceNames,
                 fields, methods, Collections.<NovaAnnotationInfo>emptyList(), null, cls);
     }
 

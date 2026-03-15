@@ -88,6 +88,17 @@ public interface NovaValue {
     // ============ 类型检查方法 ============
 
     /**
+     * 解析动态成员（用于编译模式 NovaDynamic 的成员访问和方法调用）。
+     * 容器类型（如 NovaLibrary）覆写此方法以支持编译路径的动态分派。
+     *
+     * @param name 成员名
+     * @return 成员值，未找到返回 null
+     */
+    default NovaValue resolveMember(String name) {
+        return null;
+    }
+
+    /**
      * 获取 Nova 类型名，用于扩展函数查找的类型映射
      *
      * @return Nova 类型名，默认 null
@@ -211,6 +222,20 @@ public interface NovaValue {
      */
     default boolean isObject() {
         return false;
+    }
+
+    // ============ 解构支持 ============
+
+    /**
+     * 解构取分量（1-based）。返回第 n 个分量，不可解构时抛异常。
+     *
+     * @param n 分量序号（从 1 开始）
+     * @return 第 n 个分量
+     * @throws UnsupportedOperationException 如果该类型不支持解构
+     */
+    default NovaValue componentN(int n) {
+        throw new UnsupportedOperationException(
+                "Cannot destructure value of type '" + getTypeName() + "'");
     }
 
     // ============ 类型转换方法 ============

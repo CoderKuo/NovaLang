@@ -757,7 +757,12 @@ public class Lexer {
         try {
             addToken(TokenType.INT_LITERAL, Integer.parseInt(text, radix));
         } catch (NumberFormatException e) {
-            error("Invalid integer literal: " + source.substring(start, current));
+            // 超出 int 范围自动提升为 long
+            try {
+                addToken(TokenType.LONG_LITERAL, Long.parseLong(text, radix));
+            } catch (NumberFormatException e2) {
+                error("Invalid integer literal: " + source.substring(start, current));
+            }
         }
     }
 

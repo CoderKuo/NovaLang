@@ -33,7 +33,8 @@ println(info2.name)  // "Person"
 
 | 属性 | 类型 | 说明 |
 |------|------|------|
-| `name` | `String` | 类名 |
+| `name` | `String` | 类名（简单名，如 `"File"`） |
+| `qualifiedName` | `String` | 全限定名（Java 类为 `"java.io.File"`，Nova 类与 `name` 相同） |
 | `superclass` | `String?` | 父类名，无父类时为 `null` |
 | `interfaces` | `List<String>` | 实现的接口名列表 |
 | `fields` | `List<FieldInfo>` | 所有字段信息列表 |
@@ -59,9 +60,15 @@ class Dog : Animal, Drawable {
 
 val info = classOf(Dog)
 println(info.name)                  // "Dog"
+println(info.qualifiedName)         // "Dog"（Nova 类与 name 相同）
 println(info.superclass)            // "Animal"
 println(info.interfaces)            // ["Drawable"]
 println(info.methods.size())        // 2
+
+// Java 类的全限定名
+val fileInfo = classOf(java.io.File("test"))
+println(fileInfo.name)              // "File"
+println(fileInfo.qualifiedName)     // "java.io.File"
 ```
 
 ---

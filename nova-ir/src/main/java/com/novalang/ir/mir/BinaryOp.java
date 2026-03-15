@@ -6,6 +6,7 @@ package com.novalang.ir.mir;
 public enum BinaryOp {
     ADD, SUB, MUL, DIV, MOD,
     EQ, NE, LT, GT, LE, GE,
+    REF_EQ, REF_NE,
     AND, OR,
     SHL, SHR, USHR,
     BAND, BOR, BXOR

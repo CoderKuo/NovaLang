@@ -247,16 +247,6 @@ final class MemberResolver {
         // data class 成员
         if (novaObj.getNovaClass().isData()) {
             if ("copy".equals(memberName)) return createDataCopyFunction(novaObj);
-            if (memberName.startsWith("component") && memberName.length() > 9) {
-                try {
-                    int n = Integer.parseInt(memberName.substring(9));
-                    List<String> fieldNames = getDataClassFieldNames(novaObj.getNovaClass());
-                    if (n >= 1 && n <= fieldNames.size()) {
-                        NovaValue fieldValue = novaObj.getField(fieldNames.get(n - 1));
-                        return NovaNativeFunction.create(memberName, () -> fieldValue);
-                    }
-                } catch (NumberFormatException ignored) { }
-            }
         }
         // Java 委托回退
         if (novaObj.getJavaDelegate() != null) {
@@ -429,25 +419,17 @@ final class MemberResolver {
             NovaValue key = NovaString.of(memberName);
             if (map.containsKey(key)) return map.get(key);
         }
-        // componentN 解构支持（List/Pair）
+        // componentN 解构支持（统一委托 NovaValue.componentN）
         if (memberName.startsWith("component") && memberName.length() > 9) {
             try {
                 int n = Integer.parseInt(memberName.substring(9));
                 if (n >= 1) {
-                    if (obj instanceof NovaList) {
-                        NovaList list = (NovaList) obj;
-                        if (n <= list.size()) {
-                            NovaValue val = list.get(n - 1);
-                            return NovaNativeFunction.create(memberName, () -> val);
-                        }
-                    }
-                    if (obj instanceof NovaPair) {
-                        NovaPair pair = (NovaPair) obj;
-                        if (n == 1) return NovaNativeFunction.create(memberName, () -> AbstractNovaValue.fromJava(pair.getFirst()));
-                        if (n == 2) return NovaNativeFunction.create(memberName, () -> AbstractNovaValue.fromJava(pair.getSecond()));
-                    }
+                    NovaValue val = obj.componentN(n);
+                    return NovaNativeFunction.create(memberName, () -> val);
                 }
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException ignored) {
+            } catch (UnsupportedOperationException | IndexOutOfBoundsException ignored) {
+            }
         }
         // 扩展属性 fallback
         ExtensionRegistry.ExtensionProperty extProp = interp.findNovaExtensionProperty(obj, memberName);
@@ -630,6 +612,7 @@ final class MemberResolver {
     NovaValue resolveHirClassInfoMember(NovaClassInfo info, String memberName, AstNode node) {
         switch (memberName) {
             case "name": return NovaString.of(info.name);
+            case "qualifiedName": return NovaString.of(info.qualifiedName);
             case "superclass": return info.superclass != null ? NovaString.of(info.superclass) : NovaNull.NULL;
             case "interfaces": {
                 List<NovaValue> list = new ArrayList<>();

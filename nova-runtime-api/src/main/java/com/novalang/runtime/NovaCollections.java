@@ -48,18 +48,26 @@ public class NovaCollections {
     public static Iterable<?> toIterable(Object value) {
         if (value instanceof Iterable) return (Iterable<?>) value;
         if (value instanceof java.util.Map) return ((java.util.Map<?, ?>) value).entrySet();
+        if (value instanceof String) {
+            String s = (String) value;
+            List<String> chars = new java.util.ArrayList<>(s.length());
+            for (int i = 0; i < s.length(); i++) chars.add(String.valueOf(s.charAt(i)));
+            return chars;
+        }
         throw new RuntimeException("Not iterable: " + (value == null ? "null" : value.getClass().getName()));
     }
 
     /**
-     * 解构取分量：List → get(n-1)，Map.Entry → getKey()/getValue()。
+     * 解构取分量（编译路径入口）。委托 {@link NovaValue#componentN(int)}，
+     * 同时处理 Map.Entry 等非 NovaValue 的 Java 对象。
      */
     public static Object componentN(Object value, int n) {
-        if (value instanceof List) return ((List<?>) value).get(n - 1);
+        if (value instanceof NovaValue) return ((NovaValue) value).componentN(n);
         if (value instanceof java.util.Map.Entry) {
             java.util.Map.Entry<?, ?> entry = (java.util.Map.Entry<?, ?>) value;
             return n == 1 ? entry.getKey() : entry.getValue();
         }
+        if (value instanceof List) return ((List<?>) value).get(n - 1);
         throw new RuntimeException("Cannot destructure: " + (value == null ? "null" : value.getClass().getName()));
     }
 
@@ -67,8 +75,19 @@ public class NovaCollections {
      * 运行时索引取值：List → get(index)，数组 → Array.get(index)，String → charAt。
      */
     public static Object getIndex(Object target, int index) {
+        // 负索引支持: -1 → 最后一个元素
+        if (index < 0) {
+            int size = 0;
+            if (target instanceof List) size = ((List<?>) target).size();
+            else if (target instanceof NovaList) size = ((NovaList) target).size();
+            else if (target instanceof NovaArray) size = ((NovaArray) target).length();
+            else if (target instanceof String) size = ((String) target).length();
+            else if (target != null && target.getClass().isArray()) size = java.lang.reflect.Array.getLength(target);
+            if (size > 0) index = size + index;
+        }
         if (target instanceof List) return ((List<?>) target).get(index);
         if (target instanceof NovaList) return ((NovaList) target).get(index);
+        if (target instanceof NovaArray) return ((NovaArray) target).get(index);
         if (target instanceof String) return String.valueOf(((String) target).charAt(index));
         if (target != null && target.getClass().isArray()) return java.lang.reflect.Array.get(target, index);
         throw new RuntimeException("Cannot index: " + (target == null ? "null" : target.getClass().getName()));
@@ -93,6 +112,7 @@ public class NovaCollections {
     @SuppressWarnings("unchecked")
     public static void setIndex(Object target, int index, Object value) {
         if (target instanceof List) { ((List<Object>) target).set(index, value); return; }
+        if (target instanceof NovaArray) { ((NovaArray) target).set(index, value instanceof NovaValue ? (NovaValue) value : AbstractNovaValue.fromJava(value)); return; }
         if (target != null && target.getClass().isArray()) { java.lang.reflect.Array.set(target, index, value); return; }
         throw new RuntimeException("Cannot index: " + (target == null ? "null" : target.getClass().getName()));
     }

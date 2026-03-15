@@ -91,6 +91,17 @@ public final class NovaDynamic {
             }
         }
 
+        // java.util.Map（编译模式 Map 字面量生成 HashMap）
+        if (target instanceof java.util.Map) {
+            Object val = ((java.util.Map<?, ?>) target).get(memberName);
+            if (val != null) return val;
+        }
+
+        if (target instanceof NovaValue) {
+            NovaValue member = ((NovaValue) target).resolveMember(memberName);
+            if (member != null) return member;
+        }
+
         if (target instanceof Class<?>) {
             Class<?> cls = (Class<?>) target;
             ConcurrentHashMap<String, MethodHandle> cache =
@@ -215,6 +226,11 @@ public final class NovaDynamic {
             }
         }
 
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, EMPTY_ARGS);
+            if (result != NOVA_MAP_MISS) return result;
+        }
+
         Class<?> clazz = target.getClass();
         MethodDispatchCache cache = methodCache.computeIfAbsent(clazz, k -> new MethodDispatchCache());
         MethodHandle method = cache.zeroArg.get(methodName);
@@ -280,6 +296,11 @@ public final class NovaDynamic {
             if (result != NOVA_MAP_MISS) {
                 return result;
             }
+        }
+
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0});
+            if (result != NOVA_MAP_MISS) return result;
         }
 
         Class<?> clazz = target.getClass();
@@ -352,6 +373,11 @@ public final class NovaDynamic {
             }
         }
 
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0, a1});
+            if (result != NOVA_MAP_MISS) return result;
+        }
+
         Class<?> clazz = target.getClass();
         MethodDispatchCache cache = methodCache.computeIfAbsent(clazz, k -> new MethodDispatchCache());
         MethodKey key = lookupMethodKey.get().init(methodName, argClass(a0), argClass(a1), null, null, null, null, 2);
@@ -420,6 +446,11 @@ public final class NovaDynamic {
             if (result != NOVA_MAP_MISS) {
                 return result;
             }
+        }
+
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0, a1, a2});
+            if (result != NOVA_MAP_MISS) return result;
         }
 
         Class<?> clazz = target.getClass();
@@ -492,6 +523,11 @@ public final class NovaDynamic {
             }
         }
 
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0, a1, a2, a3});
+            if (result != NOVA_MAP_MISS) return result;
+        }
+
         Class<?> clazz = target.getClass();
         MethodDispatchCache cache = methodCache.computeIfAbsent(clazz, k -> new MethodDispatchCache());
         MethodKey key = lookupMethodKey.get().init(methodName, argClass(a0), argClass(a1), argClass(a2), argClass(a3), null, null, 4);
@@ -560,6 +596,11 @@ public final class NovaDynamic {
             if (result != NOVA_MAP_MISS) {
                 return result;
             }
+        }
+
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0, a1, a2, a3, a4});
+            if (result != NOVA_MAP_MISS) return result;
         }
 
         Class<?> clazz = target.getClass();
@@ -632,6 +673,11 @@ public final class NovaDynamic {
             }
         }
 
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0, a1, a2, a3, a4, a5});
+            if (result != NOVA_MAP_MISS) return result;
+        }
+
         Class<?> clazz = target.getClass();
         MethodDispatchCache cache = methodCache.computeIfAbsent(clazz, k -> new MethodDispatchCache());
         MethodKey key = lookupMethodKey.get().init(methodName, argClass(a0), argClass(a1), argClass(a2), argClass(a3), argClass(a4), argClass(a5), 6);
@@ -700,6 +746,11 @@ public final class NovaDynamic {
             if (result != NOVA_MAP_MISS) {
                 return result;
             }
+        }
+
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0, a1, a2, a3, a4, a5, a6});
+            if (result != NOVA_MAP_MISS) return result;
         }
 
         Class<?> clazz = target.getClass();
@@ -772,6 +823,11 @@ public final class NovaDynamic {
             }
         }
 
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, new Object[]{a0, a1, a2, a3, a4, a5, a6, a7});
+            if (result != NOVA_MAP_MISS) return result;
+        }
+
         Class<?> clazz = target.getClass();
         MethodDispatchCache cache = methodCache.computeIfAbsent(clazz, k -> new MethodDispatchCache());
         MethodKey key = lookupMethodKey.get().init(methodName, argClass(a0), argClass(a1), argClass(a2), argClass(a3), argClass(a4), argClass(a5), argClass(a6), argClass(a7), 8);
@@ -841,6 +897,11 @@ public final class NovaDynamic {
             }
         }
 
+        if (target instanceof NovaValue) {
+            Object result = invokeNovaValueMember((NovaValue) target, methodName, args);
+            if (result != NOVA_MAP_MISS) return result;
+        }
+
         Class<?> clazz = target.getClass();
         MethodDispatchCache cache = methodCache.computeIfAbsent(clazz, k -> new MethodDispatchCache());
         String key = cacheKey(methodName, args);
@@ -884,6 +945,24 @@ public final class NovaDynamic {
         return member.dynamicInvoke(novaArgs);
     }
 
+    /**
+     * NovaValue.resolveMember 动态成员调用（NovaLibrary 等容器类型）。
+     * 返回 NOVA_MAP_MISS 表示未命中。
+     */
+    private static Object invokeNovaValueMember(NovaValue target, String methodName, Object[] args) {
+        NovaValue member = target.resolveMember(methodName);
+        if (member == null) return NOVA_MAP_MISS;
+        if (!member.isCallable()) return member;
+        if (args.length == 0) return member.dynamicInvoke(EMPTY_NOVA_ARGS);
+        NovaValue[] novaArgs = new NovaValue[args.length];
+        for (int i = 0; i < args.length; i++) {
+            novaArgs[i] = args[i] instanceof NovaValue
+                    ? (NovaValue) args[i]
+                    : AbstractNovaValue.fromJava(args[i]);
+        }
+        return member.dynamicInvoke(novaArgs);
+    }
+
     private static Object invokeGenericExtension(MethodDispatchCache cache, Class<?> clazz, Object target,
                                                String methodName, Object[] args, String cacheKey) {
         StdlibRegistry.ExtensionMethodInfo extInfo = cache.genericStdlib.get(cacheKey);
@@ -909,6 +988,14 @@ public final class NovaDynamic {
                 argTypes[i] = args[i] != null ? args[i].getClass() : Object.class;
             }
             ExtensionRegistry.RegisteredExtension ext = extReg.lookup(clazz, methodName, argTypes);
+            // NovaValue 回退：NovaString → String.class, NovaInt → Integer.class 等
+            if (ext == null && target instanceof NovaValue) {
+                Object javaVal = ((NovaValue) target).toJavaValue();
+                if (javaVal != null && javaVal.getClass() != clazz) {
+                    ext = extReg.lookup(javaVal.getClass(), methodName, argTypes);
+                    if (ext != null) target = javaVal;
+                }
+            }
             if (ext != null) {
                 try {
                     return ext.invoke(target, args);
@@ -1419,7 +1506,45 @@ public final class NovaDynamic {
         method = resolveStdlibExtensionHandle(clazz, methodName, arity, type);
         if (method != null) return method;
 
+        // 4. script 扩展（NovaScriptContext.getExtensionRegistry）
+        method = resolveScriptExtensionHandle(clazz, methodName, arity, type);
+        if (method != null) return method;
+
         return null;
+    }
+
+    /**
+     * 从 ExtensionRegistry 解析 script 扩展方法为 MethodHandle。
+     * 成功后 NovaBootstrap 可安装到 MutableCallSite 内联缓存。
+     */
+    private static MethodHandle resolveScriptExtensionHandle(Class<?> clazz, String methodName,
+                                                              int arity, MethodType type) {
+        ExtensionRegistry extReg = NovaScriptContext.getExtensionRegistry();
+        if (extReg == null) return null;
+        Class<?>[] argTypes = new Class<?>[arity];
+        java.util.Arrays.fill(argTypes, Object.class);
+        ExtensionRegistry.RegisteredExtension ext = extReg.lookup(clazz, methodName, argTypes);
+        if (ext == null) return null;
+        // 包装为静态中转方法 invokeScriptExt(ext, receiver, args...)
+        try {
+            MethodHandle bridge = LOOKUP.findStatic(NovaDynamic.class, "invokeScriptExt",
+                    MethodType.methodType(Object.class, ExtensionRegistry.RegisteredExtension.class,
+                            Object.class, Object[].class));
+            // 绑定 ext 实例
+            MethodHandle bound = bridge.bindTo(ext);
+            // (Object receiver, Object[] args) → 收集后 arity 个额外参数为 Object[]
+            MethodHandle collected = bound.asCollector(Object[].class, arity);
+            // (Object receiver, Object a0, ...) → Object，签名与 type 匹配
+            return collected.asType(type);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** script 扩展方法调用中转（供 MethodHandle 绑定） */
+    public static Object invokeScriptExt(ExtensionRegistry.RegisteredExtension ext,
+                                          Object receiver, Object[] args) throws Exception {
+        return ext.invoke(receiver, args);
     }
 
     /**

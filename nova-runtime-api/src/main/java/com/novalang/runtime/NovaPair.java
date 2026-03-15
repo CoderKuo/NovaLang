@@ -37,6 +37,22 @@ public final class NovaPair extends AbstractNovaValue {
     }
 
     @Override
+    public NovaValue resolveMember(String name) {
+        switch (name) {
+            case "first": case "key":   return AbstractNovaValue.fromJava(first);
+            case "second": case "value": return AbstractNovaValue.fromJava(second);
+            default: return null;
+        }
+    }
+
+    @Override
+    public NovaValue componentN(int n) {
+        if (n == 1) return AbstractNovaValue.fromJava(first);
+        if (n == 2) return AbstractNovaValue.fromJava(second);
+        throw new IndexOutOfBoundsException("Pair only has component1 and component2");
+    }
+
+    @Override
     public String getTypeName() {
         return "Pair";
     }

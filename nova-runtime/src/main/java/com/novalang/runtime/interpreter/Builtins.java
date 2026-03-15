@@ -201,6 +201,28 @@ public final class Builtins {
                 return arr;
             }));
 
+        // 类型化数组构造器: IntArray(size), LongArray(size), ... 支持可选的 init lambda
+        for (NovaArray.ElementType et : new NovaArray.ElementType[]{
+                NovaArray.ElementType.INT, NovaArray.ElementType.LONG,
+                NovaArray.ElementType.DOUBLE, NovaArray.ElementType.FLOAT,
+                NovaArray.ElementType.BOOLEAN, NovaArray.ElementType.CHAR}) {
+            String ctorName = et.name().charAt(0) + et.name().substring(1).toLowerCase() + "Array";
+            NovaArray.ElementType elemType = et;
+            env.defineVal(ctorName, new NovaNativeFunction(ctorName, -1,
+                (interp, args) -> {
+                    if (args.isEmpty()) throw new NovaRuntimeException(ctorName + "(size) requires at least 1 argument");
+                    int size = args.get(0).asInt();
+                    NovaArray arr = new NovaArray(elemType, size);
+                    if (args.size() >= 2 && isCallableValue(args.get(1))) {
+                        NovaCallable initFn = interp.asCallable(args.get(1), "Builtins method");
+                        for (int i = 0; i < size; i++) {
+                            arr.set(i, initFn.call(interp, java.util.Collections.singletonList(NovaInt.of(i))));
+                        }
+                    }
+                    return arr;
+                }));
+        }
+
         // Pair(first, second) - 创建 Pair
         env.defineVal("Pair", NovaNativeFunction.create("Pair",
             (first, second) -> new NovaPair(first, second)));
@@ -332,18 +354,10 @@ public final class Builtins {
         }
 
         // ============ 反射 API ============
-
-        // classOf(ClassOrInstance) - 获取类反射信息
+        // classOf 占位：由 Interpreter 构造器 redefine 为支持 HIR 的完整版本，
+        // MIR 路径由 StaticMethodDispatcher.handleClassInfoFromJavaClass 处理
         env.defineVal("classOf", new NovaNativeFunction("classOf", 1, (interp, args) -> {
-            NovaValue arg = args.get(0);
-            if (arg instanceof NovaClass) {
-                return NovaClassInfo.fromNovaClass((NovaClass) arg);
-            } else if (arg instanceof ScalarizedNovaObject) {
-                return NovaClassInfo.fromNovaClass(((ScalarizedNovaObject) arg).getNovaClass());
-            } else if (arg instanceof NovaObject) {
-                return NovaClassInfo.fromNovaClass(((NovaObject) arg).getNovaClass());
-            }
-            throw new NovaRuntimeException("classOf() requires a class or object");
+            throw new NovaRuntimeException("classOf() not initialized — Interpreter redefine missing");
         }));
 
         // ============ 注解处理器注册 ============

@@ -3,7 +3,7 @@ package com.novalang.runtime;
 /**
  * Nova Int 值（32位整数）
  */
-public final class NovaInt extends AbstractNovaValue implements NovaNumber {
+public final class NovaInt extends Number implements NovaValue, NovaNumber {
 
     // 整数缓存（覆盖常见运算范围，含 Fibonacci 等递推序列）
     private static final int CACHE_LOW = -128;
@@ -110,6 +110,17 @@ public final class NovaInt extends AbstractNovaValue implements NovaNumber {
         if (other.isNumber()) {
             return this.asDouble() == other.asDouble();
         }
+        return false;
+    }
+
+    @Override
+    public float floatValue() {
+        return value;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof NovaValue) return equals((NovaValue) obj);
         return false;
     }
 

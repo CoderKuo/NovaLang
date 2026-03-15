@@ -343,9 +343,11 @@ public final class Nova {
         // 解释器侧
         interpreter.registerExtension(targetType, methodName, method);
         // 编译器侧 — 适配 NovaCallable → ExtensionMethod
+        // NovaNativeFunction.arity 含 receiver，ExtensionRegistry.paramTypes 不含
         int arity = (method instanceof NovaNativeFunction)
                 ? ((NovaNativeFunction) method).getArity() : 0;
-        Class<?>[] paramTypes = new Class<?>[arity];
+        int extraParams = Math.max(0, arity - 1);
+        Class<?>[] paramTypes = new Class<?>[extraParams];
         Arrays.fill(paramTypes, Object.class);
         extensionRegistry.register(targetType, methodName, paramTypes, Object.class,
                 new ExtensionMethod<Object, Object>() {

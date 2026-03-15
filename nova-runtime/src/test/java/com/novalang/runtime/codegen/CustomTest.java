@@ -1,5 +1,11 @@
 package com.novalang.runtime.codegen;
 
+import com.novalang.ir.NovaIrCompiler;
+import com.novalang.ir.mir.*;
+import com.novalang.ir.pass.PassPipeline;
+import com.novalang.compiler.lexer.Lexer;
+import com.novalang.compiler.parser.Parser;
+import com.novalang.compiler.ast.decl.Program;
 import com.novalang.runtime.*;
 import com.novalang.runtime.interpreter.Interpreter;
 import org.junit.jupiter.api.*;
@@ -282,7 +288,7 @@ public class CustomTest {
             compiled.run();
             java.util.List<String> groups = java.util.List.of("火焰", "3");
             compiled.call("resolve", result, groups);
-            System.out.println("debugInfo: " + result.debugInfo);
+            System.err.println("debugInfo: " + result.debugInfo);
             assertEquals("fire_damage", result.lastKey,
                 "debugSet 应成功, debugInfo=" + result.debugInfo);
             assertEquals(45.0, result.lastValue, 0.01);
@@ -402,6 +408,351 @@ public class CustomTest {
             Object result = compiled.call("test", new DamageCtx(10.0));
             assertEquals(15.0, ((Number) result).doubleValue(), 0.1,
                 "setDamage(getDamage()*1.5): 10.0*1.5=15.0");
+        }
+    }
+
+    // ============ defineLibrary 编译模式测试 ============
+
+    @Nested
+    @DisplayName("defineLibrary — 编译模式")
+    class DefineLibraryCompileTests {
+
+        @Test
+        @DisplayName("defineLibrary 值访问")
+        void testLibraryVal() throws Exception {
+            Nova nova = new Nova();
+            nova.defineLibrary("config", lib -> {
+                lib.defineVal("VERSION", "2.0");
+            });
+            CompiledNova compiled = nova.compileToBytecode("config.VERSION", "test.nova");
+            Object result = compiled.run();
+            assertEquals("2.0", String.valueOf(result));
+        }
+
+        @Test
+        @DisplayName("defineLibrary 无参函数调用")
+        void testLibraryFunction0() throws Exception {
+            Nova nova = new Nova();
+            nova.defineLibrary("util", lib -> {
+                lib.defineFunction("hello", () -> "world");
+            });
+            CompiledNova compiled = nova.compileToBytecode("util.hello()", "test.nova");
+            Object result = compiled.run();
+            assertEquals("world", String.valueOf(result));
+        }
+
+        @Test
+        @DisplayName("defineLibrary 带参函数调用")
+        void testLibraryFunction1() throws Exception {
+            Nova nova = new Nova();
+            nova.defineLibrary("math", lib -> {
+                lib.defineFunction("double", (Object x) -> ((Number) x).intValue() * 2);
+            });
+            CompiledNova compiled = nova.compileToBytecode("math.double(21)", "test.nova");
+            Object result = compiled.run();
+            assertEquals(42, result);
+        }
+
+        @Test
+        @DisplayName("defineLibrary 多参数函数")
+        void testLibraryFunction2() throws Exception {
+            Nova nova = new Nova();
+            nova.defineLibrary("calc", lib -> {
+                lib.defineFunction("add", (Object a, Object b) ->
+                        ((Number) a).intValue() + ((Number) b).intValue());
+            });
+            CompiledNova compiled = nova.compileToBytecode("calc.add(10, 20)", "test.nova");
+            Object result = compiled.run();
+            assertEquals(30, result);
+        }
+    }
+
+    // ============ registerExtension 编译模式测试 ============
+
+    @Nested
+    @DisplayName("registerExtension — 编译模式")
+    class RegisterExtensionCompileTests {
+
+        @Test
+        @DisplayName("String 扩展方法 — 无额外参数")
+        void testStringExtension0() throws Exception {
+            Nova nova = new Nova();
+            nova.registerExtension(String.class, "shout",
+                    (Object s) -> ((String) s).toUpperCase() + "!");
+            CompiledNova compiled = nova.compileToBytecode("\"hello\".shout()", "test.nova");
+            assertEquals("HELLO!", compiled.run());
+        }
+
+        @Test
+        @DisplayName("String 扩展方法 — 带1个参数")
+        void testStringExtension1() throws Exception {
+            Nova nova = new Nova();
+            nova.registerExtension(String.class, "surround",
+                    (Object s, Object ch) -> ch.toString() + s.toString() + ch.toString());
+            CompiledNova compiled = nova.compileToBytecode("\"hello\".surround(\"*\")", "test.nova");
+            assertEquals("*hello*", compiled.run());
+        }
+
+        @Test
+        @DisplayName("String 扩展方法 — 带2个参数")
+        void testStringExtension2() throws Exception {
+            Nova nova = new Nova();
+            nova.registerExtension(String.class, "between",
+                    (Object s, Object left, Object right) ->
+                            left.toString() + s.toString() + right.toString());
+            CompiledNova compiled = nova.compileToBytecode("\"hi\".between(\"[\", \"]\")", "test.nova");
+            assertEquals("[hi]", compiled.run());
+        }
+
+        @Test
+        @DisplayName("Integer 扩展方法")
+        void testIntExtension() throws Exception {
+            Nova nova = new Nova();
+            nova.registerExtension(Integer.class, "isEven",
+                    (Object n) -> ((Number) n).intValue() % 2 == 0);
+            CompiledNova compiled = nova.compileToBytecode("42.isEven()", "test.nova");
+            assertEquals(true, compiled.run());
+        }
+
+        @Test
+        @DisplayName("扩展方法在函数体内使用")
+        void testExtensionInFunction() throws Exception {
+            Nova nova = new Nova();
+            nova.registerExtension(String.class, "wrap",
+                    (Object s, Object prefix, Object suffix) ->
+                            prefix.toString() + s.toString() + suffix.toString());
+            CompiledNova compiled = nova.compileToBytecode(
+                    "fun test(s: String) = s.wrap(\"[\", \"]\")\ntest(\"hi\")", "test.nova");
+            assertEquals("[hi]", compiled.run());
+        }
+
+        @Test
+        @DisplayName("defineFunction + registerExtension 混合使用")
+        void testMixedDefineAndExtension() throws Exception {
+            Nova nova = new Nova();
+            nova.defineFunction("greet", (Object name) -> "Hello, " + name);
+            nova.registerExtension(String.class, "exclaim",
+                    (Object s) -> s.toString() + "!!!");
+            CompiledNova compiled = nova.compileToBytecode(
+                    "greet(\"Nova\").exclaim()", "test.nova");
+            assertEquals("Hello, Nova!!!", compiled.run());
+        }
+    }
+
+    // ============ Map 点访问 + List 索引访问（编译模式） ============
+
+    @Nested
+    @DisplayName("Map/List 编译模式访问")
+    class MapListCompileTests {
+
+        @Test
+        @DisplayName("Map 点访问取值")
+        void testMapDotAccess() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "val m = #{name: \"Alice\", age: 30}\nm.name", "test.nova");
+            assertEquals("Alice", compiled.run());
+        }
+
+        @Test
+        @DisplayName("Map 点访问取数字")
+        void testMapDotAccessInt() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "val m = #{x: 10, y: 20}\nm.x + m.y", "test.nova");
+            assertEquals(30, compiled.run());
+        }
+
+        @Test
+        @DisplayName("Map [] 访问")
+        void testMapBracketAccess() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "val m = #{\"key\": \"value\"}\nm[\"key\"]", "test.nova");
+            assertEquals("value", compiled.run());
+        }
+
+        @Test
+        @DisplayName("Map 注入后点访问")
+        void testInjectedMapDotAccess() throws Exception {
+            Nova nova = new Nova();
+            java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("name", "Bob");
+            data.put("score", 95);
+            nova.defineVal("data", data);
+            CompiledNova compiled = nova.compileToBytecode("data.name", "test.nova");
+            assertEquals("Bob", compiled.run());
+        }
+
+        @Test
+        @DisplayName("List [] 索引访问")
+        void testListIndexAccess() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "val list = [10, 20, 30]\nlist[1]", "test.nova");
+            assertEquals(20, compiled.run());
+        }
+
+        @Test
+        @DisplayName("List 负索引访问")
+        void testListNegativeIndex() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "val list = [\"a\", \"b\", \"c\"]\nlist[-1]", "test.nova");
+            assertEquals("c", compiled.run());
+        }
+
+        @Test
+        @DisplayName("List 注入后索引访问")
+        void testInjectedListIndexAccess() throws Exception {
+            Nova nova = new Nova();
+            java.util.List<Object> items = java.util.Arrays.asList("x", "y", "z");
+            nova.defineVal("items", items);
+            CompiledNova compiled = nova.compileToBytecode("items[0]", "test.nova");
+            assertEquals("x", compiled.run());
+        }
+
+        @Test
+        @DisplayName("嵌套 Map.List 混合访问")
+        void testNestedMapListAccess() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "val data = #{items: [1, 2, 3]}\ndata.items[2]", "test.nova");
+            assertEquals(3, compiled.run());
+        }
+    }
+
+    // ============ 全局变量函数内写回测试 ============
+
+    @Nested
+    @DisplayName("全局变量函数内修改 — 编译模式")
+    class GlobalVarMutationTests {
+
+        @Test
+        @DisplayName("run() 内函数修改全局变量后可读取新值")
+        void testFunctionMutatesGlobalVar() throws Exception {
+            Nova nova = new Nova();
+            String code =
+                    "var counter = 0\n" +
+                    "fun increment() { counter = counter + 1 }\n" +
+                    "increment()\n" +
+                    "increment()\n" +
+                    "increment()\n" +
+                    "counter";
+            CompiledNova compiled = nova.compileToBytecode(code, "test.nova");
+            assertEquals(3, compiled.run());
+        }
+
+        @Test
+        @DisplayName("run() 内函数修改全局变量 — 模拟 showTime 场景")
+        void testShowTimeScenario() throws Exception {
+            Nova nova = new Nova();
+            String code =
+                    "var showTime = 0\n" +
+                    "fun updateTime() { showTime = 42 }\n" +
+                    "updateTime()\n" +
+                    "showTime";
+            CompiledNova compiled = nova.compileToBytecode(code, "test.nova");
+            assertEquals(42, compiled.run(), "函数内赋值 showTime=42 应写回全局");
+        }
+
+        @Test
+        @DisplayName("run() 内多函数共享全局变量")
+        void testMultiFunctionShareGlobal() throws Exception {
+            Nova nova = new Nova();
+            String code =
+                    "var value = 0\n" +
+                    "fun set(v) { value = v }\n" +
+                    "fun get() = value\n" +
+                    "set(100)\n" +
+                    "get()";
+            CompiledNova compiled = nova.compileToBytecode(code, "test.nova");
+            assertEquals(100, compiled.run());
+        }
+
+        @Test
+        @DisplayName("call() 调用函数修改全局变量后可通过 call() 读取")
+        void testCallMutatesGlobal() throws Exception {
+            Nova nova = new Nova();
+            String code =
+                    "var showTime = 0\n" +
+                    "fun onNotify() {\n" +
+                    "    showTime = 999\n" +
+                    "}\n" +
+                    "fun getShowTime() = showTime\n";
+            CompiledNova compiled = nova.compileToBytecode(code, "test.nova");
+            compiled.run();  // 注册函数
+            compiled.call("onNotify");
+            Object result = compiled.call("getShowTime");
+            assertEquals(999, result, "onNotify 修改 showTime 后 getShowTime 应返回 999");
+        }
+    }
+
+    // ============ MIR Dump 调试 ============
+
+    @Test
+    @DisplayName("MIR dump: lazy mutable capture")
+    void dumpLazyMutableCaptureMir() {
+        String code =
+                "var counter = 0\n" +
+                "val x by lazy { counter = counter + 1; 42 }\n" +
+                "val before = counter\n" +
+                "val value = x\n" +
+                "val after = counter\n" +
+                "\"before=$before,after=$after,value=$value\"";
+
+        // 解释器模式 MIR dump（无优化 Pass，纯 lowering 输出）
+        PassPipeline pipeline = new PassPipeline();
+        pipeline.setInterpreterMode(true);
+        // 不添加任何 MIR Pass，观察 lowering 原始输出
+        Program program = new Parser(new Lexer(code, "test.nova"), "test.nova").parse();
+        MirModule mir = pipeline.executeToMir(program);
+
+        System.err.println("===== INTERPRETER MODE MIR =====");
+        for (MirClass cls : mir.getClasses()) {
+            System.err.println("class " + cls.getName() + " {");
+            for (MirFunction m : cls.getMethods()) printFunc(m);
+            System.err.println("}");
+        }
+        for (MirFunction f : mir.getTopLevelFunctions()) printFunc(f);
+        System.err.println("===== END =====");
+
+        // 跑一下确认结果
+        Interpreter interp = new Interpreter();
+        NovaValue result = interp.eval(code, "test.nova");
+        System.err.println("Lazy Result: " + result);
+
+        // 嵌套闭包 MIR dump（匹配实际 Interpreter 配置）
+        String nestedCode = "var x = 0\nval outer = {\n    val inner = { x = x + 1 }\n    inner()\n}\nouter()\nx";
+        PassPipeline p3 = new PassPipeline();
+        p3.setInterpreterMode(true);
+        p3.setScriptMode(true);
+        MirModule mir3 = p3.executeToMir(new Parser(new Lexer(nestedCode, "t"), "t").parse());
+        System.err.println("===== NESTED CLOSURE MIR =====");
+        for (MirClass cls : mir3.getClasses()) {
+            System.err.println("class " + cls.getName() + " {");
+            for (MirFunction m : cls.getMethods()) printFunc(m);
+            System.err.println("}");
+        }
+        System.err.println("===== END =====");
+        NovaValue nestedResult = new Interpreter().eval(nestedCode, "t.nova");
+        System.err.println("Nested closure result: " + nestedResult);
+    }
+
+    private void printFunc(MirFunction func) {
+        System.err.println("  fun " + func.getName() + " -> " + func.getReturnType());
+        System.err.println("    locals:");
+        for (MirLocal local : func.getLocals()) {
+            System.err.println("      %" + local.getIndex() + " " + local.getName() + " : " + local.getType());
+        }
+        for (BasicBlock block : func.getBlocks()) {
+            System.err.println("    block_" + block.getId() + ":");
+            for (MirInst inst : block.getInstructions()) {
+                System.err.println("      " + inst);
+            }
+            if (block.getTerminator() != null) {
+                System.err.println("      " + block.getTerminator());
+            }
         }
     }
 }

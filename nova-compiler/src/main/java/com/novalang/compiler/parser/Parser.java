@@ -370,7 +370,17 @@ public class Parser {
             if (check(KW_IMPORT)) {
                 imports.add(parseImportDecl());
             } else if (isDeclarationStart()) {
-                declarations.add(parseDeclaration());
+                Declaration decl = parseDeclaration();
+                declarations.add(decl);
+                // 函数声明 IIFE: fun name() { ... }(args) → 声明 + 立即调用
+                if (decl instanceof FunDecl && check(LPAREN)) {
+                    FunDecl funDecl = (FunDecl) decl;
+                    List<CallExpr.Argument> args = exprParser.parseCallArgs();
+                    Identifier callee = new Identifier(decl.getLocation(), funDecl.getName());
+                    CallExpr call = new CallExpr(decl.getLocation(), callee,
+                            Collections.<TypeRef>emptyList(), args, null);
+                    topLevelStatements.add(new ExpressionStmt(decl.getLocation(), call));
+                }
             } else {
                 Statement stmt = parseStatement();
                 if (stmt instanceof DeclarationStmt) {

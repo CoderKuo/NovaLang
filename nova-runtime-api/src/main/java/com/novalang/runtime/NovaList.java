@@ -94,6 +94,15 @@ public final class NovaList extends AbstractNovaValue implements NovaContainer {
         return elements.iterator();
     }
 
+    @Override
+    public NovaValue componentN(int n) {
+        if (n < 1 || n > elements.size()) {
+            throw new IndexOutOfBoundsException(
+                    "component" + n + " out of range for List of size " + elements.size());
+        }
+        return elements.get(n - 1);
+    }
+
     // ============ 列表操作 ============
 
     public int size() {

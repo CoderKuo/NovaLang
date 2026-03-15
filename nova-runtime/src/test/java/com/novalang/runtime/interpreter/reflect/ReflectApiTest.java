@@ -255,6 +255,16 @@ class ReflectApiTest {
             NovaValue result = interpreter.evalRepl("classOf(Foo).toString()");
             assertTrue(result.asString().contains("Foo"));
         }
+
+        @Test
+        @DisplayName("Nova 类 qualifiedName 与 name 相同")
+        void testQualifiedNameNovaClass() {
+            interpreter.evalRepl("class Person(val name: String)");
+            NovaValue name = interpreter.evalRepl("classOf(Person).name");
+            NovaValue qn = interpreter.evalRepl("classOf(Person).qualifiedName");
+            assertEquals("Person", name.asString());
+            assertEquals("Person", qn.asString());
+        }
     }
 
     @Nested
@@ -355,6 +365,32 @@ class ReflectApiTest {
                 + "val info = classOf(Calculator)\n"
                 + "info.methods.size()";
             assertTrue(interpreter.evalRepl(code).asInt() >= 2);
+        }
+
+        @Test
+        @DisplayName("Java 类 qualifiedName 返回全限定名")
+        void testJavaClassQualifiedName() {
+            NovaValue result = interpreter.evalRepl(
+                    "classOf(java.io.File(\"test\")).qualifiedName");
+            assertEquals("java.io.File", result.asString());
+        }
+
+        @Test
+        @DisplayName("Java 类 name 返回简单名")
+        void testJavaClassName() {
+            NovaValue result = interpreter.evalRepl(
+                    "classOf(java.io.File(\"test\")).name");
+            assertEquals("File", result.asString());
+        }
+
+        @Test
+        @DisplayName("Java 类 name 与 qualifiedName 不同")
+        void testJavaClassNameVsQualifiedName() {
+            interpreter.evalRepl("val info = classOf(java.lang.StringBuilder())");
+            NovaValue name = interpreter.evalRepl("info.name");
+            NovaValue qn = interpreter.evalRepl("info.qualifiedName");
+            assertEquals("StringBuilder", name.asString());
+            assertEquals("java.lang.StringBuilder", qn.asString());
         }
     }
 }

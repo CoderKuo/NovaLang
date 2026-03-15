@@ -3,7 +3,7 @@ package com.novalang.runtime;
 /**
  * Nova Float 值（32位浮点数）
  */
-public final class NovaFloat extends AbstractNovaValue implements NovaNumber {
+public final class NovaFloat extends Number implements NovaValue, NovaNumber {
 
     private static final NovaFloat ZERO = new NovaFloat(0.0f);
     private static final NovaFloat ONE = new NovaFloat(1.0f);
@@ -61,6 +61,11 @@ public final class NovaFloat extends AbstractNovaValue implements NovaNumber {
     }
 
     @Override
+    public float floatValue() {
+        return value;
+    }
+
+    @Override
     public double doubleValue() {
         return value;
     }
@@ -95,6 +100,11 @@ public final class NovaFloat extends AbstractNovaValue implements NovaNumber {
     }
 
     @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof NovaValue) return equals((NovaValue) obj);
+        return false;
+    }
+
     public int hashCode() {
         return Float.hashCode(value);
     }

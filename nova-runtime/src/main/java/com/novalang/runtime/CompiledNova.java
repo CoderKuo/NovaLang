@@ -130,7 +130,14 @@ public final class CompiledNova {
                 cls = findFuncClass(funcName);
                 funcClassCache.put(funcName, cls);
             }
-            return MethodHandleCache.getInstance().invokeStatic(cls, funcName, args);
+            Object result = MethodHandleCache.getInstance().invokeStatic(cls, funcName, args);
+            // 回写全局变量（函数内可能修改了 showTime 等全局变量）
+            bindings.putAll(NovaScriptContext.getAll());
+            if (result instanceof NovaValue) {
+                if (((NovaValue) result).isNull()) return null;
+                return ((NovaValue) result).toJavaValue();
+            }
+            return result;
         } catch (NovaRuntimeException e) {
             throw e;
         } catch (Throwable e) {
@@ -205,6 +212,11 @@ public final class CompiledNova {
             Object result = mainHandle.invoke();
             // 回写导出变量
             bindings.putAll(NovaScriptContext.getAll());
+            // 将 NovaValue 转为 Java 对象（与解释器模式行为一致）
+            if (result instanceof NovaValue) {
+                if (((NovaValue) result).isNull()) return null;
+                return ((NovaValue) result).toJavaValue();
+            }
             return result;
         } catch (RuntimeException e) {
             throw e;

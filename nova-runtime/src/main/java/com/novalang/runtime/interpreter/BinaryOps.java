@@ -45,6 +45,8 @@ public final class BinaryOps {
         NovaCallable callable = null;
         if (target instanceof NovaObject) {
             callable = ((NovaObject) target).getMethod(methodName);
+        } else if (target instanceof ScalarizedNovaObject) {
+            callable = ((ScalarizedNovaObject) target).getMethod(methodName);
         } else if (target instanceof NovaEnumEntry) {
             callable = ((NovaEnumEntry) target).getMethod(methodName);
         }
@@ -78,6 +80,16 @@ public final class BinaryOps {
             return NovaLong.of(longOp.applyAsLong(left.asLong(), right.asLong()));
         }
         return NovaInt.of(intOp.applyAsInt(left.asInt(), right.asInt()));
+    }
+
+    // ============ 相等性比较（null 安全） ============
+
+    /** null/NovaNull 安全的相等性比较。MirInterpreter 和 HirEvaluator 统一使用此方法。 */
+    public static boolean novaEquals(NovaValue a, NovaValue b) {
+        if (a == b) return true;
+        if (a == null || a instanceof NovaNull) return b == null || b instanceof NovaNull;
+        if (b == null || b instanceof NovaNull) return false;
+        return a.equals(b);
     }
 
     // ============ 算术操作 ============
@@ -190,8 +202,13 @@ public final class BinaryOps {
 
     /** x + 1 → x.inc()，x - 1 → x.dec() */
     private static NovaValue tryIncDec(NovaValue left, NovaValue right, String methodName, Interpreter interp) {
-        if (left instanceof NovaObject && right instanceof NovaInt && ((NovaInt) right).getValue() == 1) {
-            NovaCallable method = ((NovaObject) left).getMethod(methodName);
+        if (right instanceof NovaInt && ((NovaInt) right).getValue() == 1) {
+            NovaCallable method = null;
+            if (left instanceof NovaObject) {
+                method = ((NovaObject) left).getMethod(methodName);
+            } else if (left instanceof ScalarizedNovaObject) {
+                method = ((ScalarizedNovaObject) left).getMethod(methodName);
+            }
             if (method != null) {
                 NovaBoundMethod bound = new NovaBoundMethod(left, method);
                 return interp.executeBoundMethod(bound, Collections.emptyList(), null);

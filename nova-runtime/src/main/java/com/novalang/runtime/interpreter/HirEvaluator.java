@@ -1026,30 +1026,23 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
     }
 
     private NovaValue extractComponent(NovaValue value, int index) {
-        if (value instanceof NovaPair) {
-            return AbstractNovaValue.fromJava(index == 0 ? ((NovaPair) value).getFirst() : ((NovaPair) value).getSecond());
-        }
-        if (value instanceof NovaList) {
-            NovaList list = (NovaList) value;
-            return index < list.size() ? list.get(index) : NovaNull.NULL;
-        }
-        // 尝试调用 componentN
-        String methodName = "component" + (index + 1);
+        // index 为 0-based（来自 for 循环），componentN 为 1-based
+        int n = index + 1;
+        // 非 data 的 NovaObject：查找用户自定义 componentN 方法
         if (value instanceof NovaObject) {
             NovaObject obj = (NovaObject) value;
-            NovaCallable callable = obj.getNovaClass().findCallableMethod(methodName);
-            if (callable != null) {
-                return new NovaBoundMethod(value, callable).call(interp, Collections.emptyList());
-            }
-            // @data 类自动生成 componentN
-            if (obj.getNovaClass().isData()) {
-                List<String> fieldNames = interp.getDataClassFieldNames(obj.getNovaClass());
-                if (index < fieldNames.size()) {
-                    return obj.getField(fieldNames.get(index));
+            if (obj.getNovaClass().getDataFieldOrder() == null) {
+                NovaCallable method = obj.getNovaClass().findCallableMethod("component" + n);
+                if (method != null) {
+                    return new NovaBoundMethod(value, method).call(interp, Collections.emptyList());
                 }
             }
         }
-        return NovaNull.NULL;
+        try {
+            return value.componentN(n);
+        } catch (Exception e) {
+            return NovaNull.NULL;
+        }
     }
 
     @Override
@@ -1434,8 +1427,8 @@ final class HirEvaluator implements HirVisitor<NovaValue, Void> {
                 case MUL: return BinaryOps.mul(left, right, interp);
                 case DIV: return BinaryOps.div(left, right, interp);
                 case MOD: return BinaryOps.mod(left, right, interp);
-                case EQ:  return NovaBoolean.of(left.equals(right));
-                case NE:  return NovaBoolean.of(!left.equals(right));
+                case EQ:  return NovaBoolean.of(BinaryOps.novaEquals(left, right));
+                case NE:  return NovaBoolean.of(!BinaryOps.novaEquals(left, right));
                 case REF_EQ: return NovaBoolean.of(left.refEquals(right));
                 case REF_NE: return NovaBoolean.of(!left.refEquals(right));
                 case LT:  return NovaBoolean.of(BinaryOps.compare(left, right, interp) < 0);

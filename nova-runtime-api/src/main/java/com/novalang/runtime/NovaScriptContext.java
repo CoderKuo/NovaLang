@@ -1,5 +1,6 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.stdlib.NovaScopeFunctions;
 import com.novalang.runtime.stdlib.StdlibRegistry;
 
 import java.util.HashMap;
@@ -150,6 +151,11 @@ public class NovaScriptContext {
         StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(name);
         if (nfInfo != null) {
             return nfInfo.impl.apply(args);
+        }
+        // scope receiver 回退：.run { method() } 中裸方法调用分派到 scope receiver
+        Object scopeReceiver = NovaScopeFunctions.getScopeReceiver();
+        if (scopeReceiver != null) {
+            return NovaDynamic.invokeMethod(scopeReceiver, name, args);
         }
         throw new NovaException("Undefined function: " + name);
     }
