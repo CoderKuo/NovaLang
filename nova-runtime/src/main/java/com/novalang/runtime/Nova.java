@@ -64,6 +64,7 @@ public final class Nova {
 
     public Nova setStdout(PrintStream out) {
         interpreter.setStdout(out);
+        NovaPrint.setOut(out); // 统一输出层（编译路径 + 解释器路径共用）
         return this;
     }
 
@@ -645,6 +646,7 @@ public final class Nova {
      * 真字节码预编译，指定文件名。
      */
     public CompiledNova compileToBytecode(String code, String fileName) {
+        Builtins.ensureJavaClassRegistered();
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
         configureRelocate(compiler);

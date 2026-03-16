@@ -18,13 +18,15 @@ public final class SchedulerHelper {
 
     private SchedulerHelper() {}
 
-    private static final ConcurrentHashMap<Class<?>, Method> invokeCache = new ConcurrentHashMap<>();
+    // invoke 缓存已迁移到 LambdaUtils
 
-    /**
-     * schedule(delayMs, block) — 延迟调度，返回 NovaTask。
-     * vararg 入口：args[0]=delayMs, args[1]=block
-     */
+    private static Object delegateToInterpreter(String funcName, Object[] args) {
+        return ConcurrencyHelper.delegateToInterpreter(funcName, args);
+    }
+
     public static Object schedule(Object[] args) {
+        Object delegated = delegateToInterpreter("schedule", args);
+        if (delegated != null) return delegated;
         if (args.length != 2) {
             throw new RuntimeException("schedule expects 2 arguments (delayMs, block), got " + args.length);
         }
@@ -43,6 +45,8 @@ public final class SchedulerHelper {
      * vararg 入口：args[0]=delayMs, args[1]=periodMs, args[2]=block
      */
     public static Object scheduleRepeat(Object[] args) {
+        Object delegated = delegateToInterpreter("scheduleRepeat", args);
+        if (delegated != null) return delegated;
         if (args.length != 3) {
             throw new RuntimeException("scheduleRepeat expects 3 arguments (delayMs, periodMs, block), got " + args.length);
         }
@@ -62,6 +66,8 @@ public final class SchedulerHelper {
      * vararg 入口：args[0]=millis
      */
     public static Object delay(Object[] args) {
+        Object delegated = delegateToInterpreter("delay", args);
+        if (delegated != null) return delegated;
         if (args.length != 1) {
             throw new RuntimeException("delay expects 1 argument (millis), got " + args.length);
         }
@@ -100,6 +106,8 @@ public final class SchedulerHelper {
      * vararg 入口：args[0]=block
      */
     public static Object scope(Object[] args) {
+        Object delegated = delegateToInterpreter("scope", args);
+        if (delegated != null) return delegated;
         if (args.length != 1) {
             throw new RuntimeException("scope expects 1 argument (block), got " + args.length);
         }
@@ -170,43 +178,13 @@ public final class SchedulerHelper {
         }
     }
 
-    /** 无参调用 lambda 并返回结果 */
+    /** 无参调用 lambda 并返回结果（委托 LambdaUtils） */
     private static Object invokeAndReturn(Object lambda) {
-        try {
-            Method m = findInvokeMethod(lambda);
-            return m.invoke(lambda);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
-        }
+        return LambdaUtils.invoke0(lambda);
     }
 
-    /** 无参调用 lambda: block.invoke() */
+    /** 无参调用 lambda（委托 LambdaUtils，支持 NovaCallable） */
     private static void invoke0(Object lambda) {
-        try {
-            Method m = findInvokeMethod(lambda);
-            m.invoke(lambda);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
-        }
-    }
-
-    private static Method findInvokeMethod(Object lambda) {
-        return invokeCache.computeIfAbsent(lambda.getClass(), cls -> {
-            for (Method m : cls.getMethods()) {
-                if ("invoke".equals(m.getName()) && m.getParameterCount() == 0) return m;
-            }
-            for (Method m : cls.getMethods()) {
-                if ("invoke".equals(m.getName())) return m;
-            }
-            throw new RuntimeException("Lambda has no invoke() method: " + cls.getName());
-        });
+        LambdaUtils.invoke0(lambda);
     }
 }

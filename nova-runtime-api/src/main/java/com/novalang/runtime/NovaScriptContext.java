@@ -1,7 +1,7 @@
 package com.novalang.runtime;
 
 import com.novalang.runtime.stdlib.NovaScopeFunctions;
-import com.novalang.runtime.stdlib.StdlibRegistry;
+
 
 import java.util.HashMap;
 import java.util.Map;
@@ -147,11 +147,9 @@ public class NovaScriptContext {
                         + args.length + " arg(s) (type: " + func.getClass().getName() + ")");
             }
         }
-        // stdlib 回退：脚本绑定中未找到时，尝试调用标准库函数（如 sin, cos, abs 等）
-        StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(name);
-        if (nfInfo != null) {
-            return nfInfo.impl.apply(args);
-        }
+        // stdlib 回退：通过 NovaRuntime 统一入口调用内置函数
+        Object builtinResult = NovaRuntime.callBuiltin(name, args);
+        if (builtinResult != NovaRuntime.NOT_FOUND) return builtinResult;
         // scope receiver 回退：.run { method() } 中裸方法调用分派到 scope receiver
         Object scopeReceiver = NovaScopeFunctions.getScopeReceiver();
         if (scopeReceiver != null) {

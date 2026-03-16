@@ -204,6 +204,16 @@ public class MirBuilder {
     }
 
     /**
+     * PUTSTATIC className.fieldName : fieldDesc = valueReg
+     * extra 格式: "className|fieldName|fieldDesc"
+     */
+    public void emitPutStatic(String className, String fieldName, String fieldDesc,
+                               int valueReg, SourceLocation loc) {
+        String extra = className + "|" + fieldName + "|" + fieldDesc;
+        emit(new MirInst(MirOp.SET_STATIC, -1, new int[]{valueReg}, extra, loc));
+    }
+
+    /**
      * 发射接口方法调用。
      * extra 格式: "owner|methodName|descriptor"
      */

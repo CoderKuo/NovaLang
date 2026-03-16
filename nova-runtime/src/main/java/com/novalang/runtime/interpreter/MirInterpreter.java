@@ -198,6 +198,7 @@ final class MirInterpreter {
         this.cachedMaxRecursionDepth = childInterp.getSecurityPolicy().getMaxRecursionDepth();
         this.mirFunctions.putAll(parent.mirFunctions);
         this.mirClasses.putAll(parent.mirClasses);
+        this.moduleStaticFields.putAll(parent.moduleStaticFields);
         this.classRegistrar = new MirClassRegistrar(childInterp, mirClasses, mirFunctions, this, parent.classRegistrar);
         this.callDispatcher = new MirCallDispatcher(childInterp, childInterp.memberResolver, this, mirFunctions, mirClasses);
     }
@@ -209,6 +210,7 @@ final class MirInterpreter {
         mirFunctions.clear();
         // 淇濈暀 lambda 鍖垮悕绫伙紙璺?evalRepl 璋冪敤鐨勯棴鍖呬粛闇€瑕佸畠浠級
         mirClasses.entrySet().removeIf(e -> !e.getKey().contains(MARKER_LAMBDA));
+        // moduleStaticFields 跨 eval 持久化（REPL 模式下顶层变量跨调用共享）
         resetExecutionState();
         tailIntLoopPlanCache.clear();
         tailIntLoopPlan3Cache.clear();
@@ -2315,7 +2317,8 @@ final class MirInterpreter {
                 break;
 
             case INVOKE_DYNAMIC:
-                throw new NovaRuntimeException("INVOKE_DYNAMIC is not supported in interpreter mode");
+                executeInvokeDynamic(frame, inst);
+                break;
         }
     }
 
@@ -2656,17 +2659,20 @@ final class MirInterpreter {
             return;
         }
 
-        if (JAVA_ARRAY_LIST.equals(className)) {
-            frame.locals[inst.getDest()] = new NovaList();
-            return;
-        }
-        if (JAVA_HASH_MAP.equals(className)) {
-            frame.locals[inst.getDest()] = new NovaMap();
-            return;
-        }
-        if (JAVA_LINKED_HASH_SET.equals(className)) {
-            frame.locals[inst.getDest()] = new NovaList();
-            return;
+        // Java 集合快捷转换（安全策略有方法黑名单时跳过，保留真实 Java 类型供安全检查使用）
+        if (!interp.getSecurityPolicy().hasMethodRestrictions()) {
+            if (JAVA_ARRAY_LIST.equals(className)) {
+                frame.locals[inst.getDest()] = new NovaList();
+                return;
+            }
+            if (JAVA_HASH_MAP.equals(className)) {
+                frame.locals[inst.getDest()] = new NovaMap();
+                return;
+            }
+            if (JAVA_LINKED_HASH_SET.equals(className)) {
+                frame.locals[inst.getDest()] = new NovaList();
+                return;
+            }
         }
 
         try {
@@ -2758,6 +2764,59 @@ final class MirInterpreter {
             }
         }
         throw new NovaRuntimeException("Lambda class not found: " + lambdaClassName);
+    }
+
+    // ============ INVOKE_DYNAMIC ============
+
+    /**
+     * INVOKE_DYNAMIC 解释器分派：根据 bootstrap 方法类型路由到已有的分派器。
+     * 使统一 MIR（编译路径风格）在解释器中也能正确执行。
+     */
+    private void executeInvokeDynamic(MirFrame frame, MirInst inst) {
+        Object extra = inst.getExtra();
+        if (!(extra instanceof com.novalang.ir.mir.InvokeDynamicInfo)) {
+            throw new NovaRuntimeException("INVOKE_DYNAMIC: invalid extra type");
+        }
+        com.novalang.ir.mir.InvokeDynamicInfo info = (com.novalang.ir.mir.InvokeDynamicInfo) extra;
+        int[] ops = inst.getOperands();
+
+        switch (info.bootstrapMethod) {
+            case "bootstrapInvoke": {
+                // target.method(args) → 委托 executeInvokeVirtual
+                MirInst virtualInst = new MirInst(
+                        com.novalang.ir.mir.MirOp.INVOKE_VIRTUAL,
+                        inst.getDest(), ops, info.methodName, inst.getLocation());
+                callDispatcher.executeInvokeVirtual(frame, virtualInst);
+                return;
+            }
+            case "bootstrapGetMember": {
+                // target.member → 委托 executeGetField
+                MirInst getInst = new MirInst(
+                        com.novalang.ir.mir.MirOp.GET_FIELD,
+                        inst.getDest(), ops, info.methodName, inst.getLocation());
+                executeGetField(frame, getInst);
+                return;
+            }
+            case "bootstrapSetMember": {
+                // target.member = value → 委托 executeSetField
+                MirInst setInst = new MirInst(
+                        com.novalang.ir.mir.MirOp.SET_FIELD,
+                        inst.getDest(), ops, info.methodName, inst.getLocation());
+                executeSetField(frame, setInst);
+                return;
+            }
+            case "bootstrapStaticInvoke": {
+                // 委托给 StaticMethodDispatcher 的 $PipeCall 分派链
+                // （环境查找 → 类构造器 → scope receiver → stdlib → Java 类等）
+                MirInst pipeInst = new MirInst(
+                        MirOp.INVOKE_STATIC,
+                        inst.getDest(), ops, "$PipeCall|" + info.methodName, inst.getLocation());
+                callDispatcher.executeInvokeStatic(frame, pipeInst);
+                return;
+            }
+            default:
+                throw new NovaRuntimeException("Unknown bootstrap method: " + info.bootstrapMethod);
+        }
     }
 
     // ============ GET_FIELD / SET_FIELD ============
@@ -3015,12 +3074,22 @@ final class MirInterpreter {
 
     // ============ GET_STATIC / SET_STATIC ============
 
+    /** $Module 顶层静态字段存储（MIR 解释器路径） */
+    private final Map<String, NovaValue> moduleStaticFields = new HashMap<>();
+
     private void executeGetStatic(MirFrame frame, MirInst inst) {
         String extra = inst.extraAs();
         int pipe = extra.indexOf('|');
         String owner = extra.substring(0, pipe);
         int pipe2 = extra.indexOf('|', pipe + 1);
         String fieldName = pipe2 >= 0 ? extra.substring(pipe + 1, pipe2) : extra.substring(pipe + 1);
+
+        // $Module 顶层静态字段
+        if (owner.endsWith("$Module")) {
+            NovaValue val = moduleStaticFields.get(fieldName);
+            frame.locals[inst.getDest()] = val != null ? val : NovaNull.NULL;
+            return;
+        }
 
         // 鐗规畩澶勭悊 System.out
         if (JAVA_SYSTEM.equals(owner) && "out".equals(fieldName)) {
@@ -3120,6 +3189,12 @@ final class MirInterpreter {
         int pipe2 = extra.indexOf('|', pipe + 1);
         String fieldName = pipe2 >= 0 ? extra.substring(pipe + 1, pipe2) : extra.substring(pipe + 1);
         NovaValue value = frame.get(inst.operand(0));
+
+        // $Module 顶层静态字段
+        if (owner.endsWith("$Module")) {
+            moduleStaticFields.put(fieldName, value);
+            return;
+        }
 
         MirClassInfo classInfo = mirClasses.get(owner);
         if (classInfo != null) {

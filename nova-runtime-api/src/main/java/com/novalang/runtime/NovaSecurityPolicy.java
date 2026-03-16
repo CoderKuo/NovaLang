@@ -1,11 +1,19 @@
-package com.novalang.runtime.interpreter;
+package com.novalang.runtime;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 安全策略配置类
  *
- * <p>控制 NovaLang 解释器的安全行为，限制 Java 互操作、资源使用等。</p>
+ * <p>控制 NovaLang 解释器和编译模式的安全行为，限制 Java 互操作、资源使用等。</p>
+ *
+ * <p>编译模式通过 ThreadLocal + 静态检查方法实现安全拦截：</p>
+ * <ul>
+ *   <li>{@link #checkLoop()} — 循环回边检查（MirCodeGenerator 织入）</li>
+ *   <li>{@link #checkClass(String)} — 类访问检查（NovaBootstrap 调用）</li>
+ *   <li>{@link #checkMethod(String, String)} — 方法黑名单检查（NovaBootstrap 调用）</li>
+ * </ul>
  *
  * <p>使用示例：</p>
  * <pre>
@@ -49,6 +57,10 @@ public final class NovaSecurityPolicy {
     private final long maxLoopIterations;    // 0=无限制
     private final int maxAsyncTasks;         // 0=无限制
 
+    // --- 编译模式运行时状态（per-policy 实例） ---
+    private final AtomicLong loopCounter = new AtomicLong(0);
+    private volatile long startNanos;
+
     private NovaSecurityPolicy(Builder builder) {
         this.level = builder.level;
         this.allowedPackages = Collections.unmodifiableSet(new HashSet<>(builder.allowedPackages));
@@ -66,6 +78,82 @@ public final class NovaSecurityPolicy {
         this.maxRecursionDepth = builder.maxRecursionDepth;
         this.maxLoopIterations = builder.maxLoopIterations;
         this.maxAsyncTasks = builder.maxAsyncTasks;
+    }
+
+    // ============ ThreadLocal 上下文（编译模式用） ============
+
+    private static final ThreadLocal<NovaSecurityPolicy> CURRENT = new ThreadLocal<>();
+
+    /** 设置当前线程的安全策略（执行入口调用） */
+    public static void setCurrent(NovaSecurityPolicy policy) {
+        CURRENT.set(policy);
+    }
+
+    /** 获取当前线程的安全策略 */
+    public static NovaSecurityPolicy current() {
+        return CURRENT.get();
+    }
+
+    /** 清除当前线程的安全策略（执行结束时调用） */
+    public static void clearCurrent() {
+        CURRENT.remove();
+    }
+
+    // ============ 编译模式静态检查入口 ============
+
+    /**
+     * 循环回边检查（MirCodeGenerator 在回边处织入调用）。
+     * UNRESTRICTED 或无策略时立即返回，零开销。
+     */
+    public static void checkLoop() {
+        NovaSecurityPolicy p = CURRENT.get();
+        if (p == null || p.level == Level.UNRESTRICTED) return;
+        p.doCheckLoop();
+    }
+
+    /**
+     * 类访问检查（NovaBootstrap fallback 调用）。
+     */
+    public static void checkClass(String className) {
+        NovaSecurityPolicy p = CURRENT.get();
+        if (p == null || p.level == Level.UNRESTRICTED) return;
+        if (!p.isClassAllowed(className)) {
+            throw denied("Cannot access class: " + className);
+        }
+    }
+
+    /**
+     * 方法黑名单检查（NovaBootstrap fallback 调用）。
+     */
+    public static void checkMethod(String className, String methodName) {
+        NovaSecurityPolicy p = CURRENT.get();
+        if (p == null || p.level == Level.UNRESTRICTED) return;
+        if (!p.isMethodAllowed(className, methodName)) {
+            throw denied("Cannot call method: " + className + "." + methodName);
+        }
+    }
+
+    /** 重置运行时计数器（每次执行前调用） */
+    public void resetCounters() {
+        loopCounter.set(0);
+        startNanos = System.nanoTime();
+    }
+
+    private void doCheckLoop() {
+        // 迭代计数检查
+        if (maxLoopIterations > 0) {
+            long count = loopCounter.incrementAndGet();
+            if (count > maxLoopIterations) {
+                throw denied("Maximum loop iterations exceeded (" + maxLoopIterations + ")");
+            }
+        }
+        // 执行时间检查
+        if (maxExecutionTimeMs > 0 && startNanos > 0) {
+            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+            if (elapsedMs > maxExecutionTimeMs) {
+                throw denied("Execution timeout exceeded (" + maxExecutionTimeMs + "ms)");
+            }
+        }
     }
 
     // ============ 预定义工厂方法 ============
@@ -196,6 +284,11 @@ public final class NovaSecurityPolicy {
         return !deniedMethods.contains(className + "." + methodName);
     }
 
+    /** 是否有方法黑名单限制（用于 MirInterpreter 决定是否跳过集合快捷转换） */
+    public boolean hasMethodRestrictions() {
+        return !deniedMethods.isEmpty();
+    }
+
     public boolean isJavaInteropAllowed() {
         return level == Level.UNRESTRICTED || allowJavaInterop;
     }
@@ -243,8 +336,8 @@ public final class NovaSecurityPolicy {
     // ============ 错误工厂 ============
 
     /** 创建安全拒绝异常 */
-    public static NovaRuntimeException denied(String action) {
-        return new NovaRuntimeException("Security policy denied: " + action);
+    public static NovaException denied(String action) {
+        return new NovaException("Security policy denied: " + action);
     }
 
     // ============ Builder ============

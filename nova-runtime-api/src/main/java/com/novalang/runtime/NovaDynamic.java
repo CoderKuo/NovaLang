@@ -84,19 +84,13 @@ public final class NovaDynamic {
             throw new NullPointerException("Cannot access member '" + memberName + "' on null");
         }
 
-        if (target instanceof NovaMap) {
-            NovaValue val = ((NovaMap) target).get(NovaString.of(memberName));
-            if (val != null) {
-                return val;
-            }
-        }
-
         // java.util.Map（编译模式 Map 字面量生成 HashMap）
-        if (target instanceof java.util.Map) {
+        if (target instanceof java.util.Map && !(target instanceof NovaMap)) {
             Object val = ((java.util.Map<?, ?>) target).get(memberName);
             if (val != null) return val;
         }
 
+        // 统一成员分派：NovaMap 键查找、NovaResult 属性、NovaPair 别名等
         if (target instanceof NovaValue) {
             NovaValue member = ((NovaValue) target).resolveMember(memberName);
             if (member != null) return member;
@@ -123,7 +117,20 @@ public final class NovaDynamic {
                 getterCache.computeIfAbsent(clazz, k -> new ConcurrentHashMap<>());
         MethodHandle getter = cache.get(memberName);
         if (getter == null) {
-            getter = resolveGetter(clazz, memberName);
+            try {
+                getter = resolveGetter(clazz, memberName);
+            } catch (RuntimeException e) {
+                // resolveGetter 失败 → scope receiver / ScriptContext fallback
+                Object scopeReceiver = com.novalang.runtime.stdlib.NovaScopeFunctions.getScopeReceiver();
+                if (scopeReceiver != null && scopeReceiver != target) {
+                    return getMember(scopeReceiver, memberName);
+                }
+                if (NovaScriptContext.isActive()) {
+                    Object binding = NovaScriptContext.get(memberName);
+                    if (binding != null) return binding;
+                }
+                throw e;
+            }
             cache.put(memberName, getter);
         }
         return invokeInstance0(getter, target, memberName);
@@ -1007,6 +1014,12 @@ public final class NovaDynamic {
             }
         }
 
+        // scope receiver fallback: lambda 内裸方法调用重定向到 scope receiver（run/apply/with）
+        Object scopeReceiver = com.novalang.runtime.stdlib.NovaScopeFunctions.getScopeReceiver();
+        if (scopeReceiver != null && scopeReceiver != target) {
+            return invokeMethod(scopeReceiver, methodName, args);
+        }
+
         throw noSuchMethod(clazz, methodName, args.length, args);
     }
 
@@ -1511,6 +1524,80 @@ public final class NovaDynamic {
         if (method != null) return method;
 
         return null;
+    }
+
+    /**
+     * 为 Java 类包装对象（toJavaValue() 返回 Class<?>）解析静态方法 MethodHandle。
+     * 编译路径 val Math = javaClass("java.lang.Math"); Math.abs(-1) 走此路径安装缓存。
+     *
+     * @param receiver NovaValue 实例
+     * @param methodName 静态方法名
+     * @param arity 参数数量
+     * @return (Object receiver, Object... args) → Object 签名的 MethodHandle，解析失败返回 null
+     */
+    /**
+     * 解析 Java 类的静态方法为 MethodHandle。
+     * 返回签名 (Object receiver, Object... args) → Object，receiver 位置传 Class 对象。
+     * 用于 NovaBootstrap 穿透 NovaJavaClass 安装内联缓存。
+     */
+    public static MethodHandle resolveStaticForCallSite(Class<?> javaClass, String methodName,
+                                                         int arity, Object[] args) {
+        // 从候选方法中找匹配的静态方法（使用 isArgsCompatible 精确匹配参数类型）
+        List<Method> candidates = new ArrayList<>();
+        for (Method m : javaClass.getMethods()) {
+            if (m.getName().equals(methodName)
+                    && java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                    && isArgsCompatible(m, args)) {
+                candidates.add(m);
+            }
+        }
+        if (candidates.isEmpty()) {
+            // 回退：仅按参数数量匹配
+            for (Method m : javaClass.getMethods()) {
+                if (m.getName().equals(methodName)
+                        && java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                        && m.getParameterCount() == arity) {
+                    candidates.add(m);
+                }
+            }
+        }
+        if (candidates.isEmpty()) return null;
+
+        Method best = candidates.size() == 1 ? candidates.get(0) : selectMostSpecific(candidates);
+        MethodHandle handle = unreflectWithFallback(best);
+        if (handle == null) return null;
+        try {
+            MethodType staticType = MethodType.genericMethodType(arity);
+            MethodHandle adapted = handle.asType(staticType);
+            MethodHandle withReceiver = MethodHandles.dropArguments(adapted, 0, Object.class);
+            return withReceiver.asType(instanceType(arity));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 为 Java 类包装对象解析静态字段 getter MethodHandle。
+     * 编译路径 val Integer = javaClass("java.lang.Integer"); Integer.MAX_VALUE 走此路径。
+     *
+     * @return (Object target) → Object 签名的 MethodHandle，解析失败返回 null
+     */
+    public static MethodHandle resolveJavaClassGetterCallSite(Object target, String memberName) {
+        if (!(target instanceof NovaValue)) return null;
+        Object javaVal = ((NovaValue) target).toJavaValue();
+        if (!(javaVal instanceof Class<?>)) return null;
+        Class<?> javaClass = (Class<?>) javaVal;
+        try {
+            java.lang.reflect.Field field = javaClass.getField(memberName);
+            if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) return null;
+            MethodHandle getter = MethodHandles.publicLookup().findStaticGetter(
+                    javaClass, memberName, field.getType());
+            // 包装为 (Object target) → Object：drop receiver + 装箱返回值
+            MethodHandle boxed = getter.asType(MethodType.methodType(Object.class));
+            return MethodHandles.dropArguments(boxed, 0, Object.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

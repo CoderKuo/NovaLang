@@ -44,6 +44,13 @@ public final class NovaMap extends AbstractNovaValue implements NovaContainer {
     }
 
     @Override
+    public NovaValue resolveMember(String name) {
+        NovaValue key = NovaString.of(name);
+        if (entries.containsKey(key)) return entries.get(key);
+        return null;
+    }
+
+    @Override
     public boolean isMap() {
         return true;
     }

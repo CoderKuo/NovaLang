@@ -278,7 +278,10 @@ public class Interpreter implements ExecutionContext {
 
     public PrintStream getStdout() { return stdout; }
 
-    public void setStdout(PrintStream stdout) { this.stdout = stdout; }
+    public void setStdout(PrintStream stdout) {
+        this.stdout = stdout;
+        NovaPrint.setOut(stdout);
+    }
 
     public PrintStream getStderr() { return stderr; }
 
@@ -614,6 +617,11 @@ public class Interpreter implements ExecutionContext {
         this.totalLoopIterations = 0;
         this.callDepth = 0;
         this.callStack.clear();
+        // 设置编译模式安全策略上下文
+        NovaSecurityPolicy.setCurrent(securityPolicy);
+        if (securityPolicy.getLevel() != NovaSecurityPolicy.Level.UNRESTRICTED) {
+            securityPolicy.resetCounters();
+        }
     }
 
     /** 创建 Any 类型扩展方法（toString/hashCode/equals + 作用域函数） */
@@ -709,7 +717,12 @@ public class Interpreter implements ExecutionContext {
         mirPipeline.setExternalInterfaceNames(mirInterpreter.getKnownInterfaceNames());
         MirModule mir = mirPipeline.executeToMir(program);
         mirInterpreter.resetState();
-        return mirInterpreter.executeModule(mir);
+        NovaRuntime.setCurrentContext(this);
+        try {
+            return mirInterpreter.executeModule(mir);
+        } finally {
+            NovaRuntime.clearCurrentContext();
+        }
     }
 
     /**
@@ -1087,6 +1100,34 @@ public class Interpreter implements ExecutionContext {
     @Override
     public Object getMirInterpreter() {
         return mirInterpreter;
+    }
+
+    @Override
+    public NovaValue callFunction(String name, java.util.List<NovaValue> args) {
+        NovaValue func = environment.tryGet(name);
+        if (func instanceof NovaCallable) {
+            return ((NovaCallable) func).call(this, args);
+        }
+        return null;
+    }
+
+    @Override
+    public java.util.concurrent.Executor getAsyncExecutor() {
+        NovaScheduler sched = getScheduler();
+        if (sched != null) {
+            java.util.concurrent.Executor async = sched.asyncExecutor();
+            if (async != null) return async;
+        }
+        return java.util.concurrent.ForkJoinPool.commonPool();
+    }
+
+    @Override
+    public Object runInScope(Object block, boolean supervisor) {
+        NovaCallable callable = asCallable(AbstractNovaValue.fromJava(block), "coroutineScope");
+        NovaScope scope = new NovaScope(this, NovaDispatchers.DEFAULT, supervisor);
+        NovaValue result = callable.call(this, java.util.Collections.singletonList(scope));
+        scope.joinAll();
+        return result instanceof NovaValue ? ((NovaValue) result).toJavaValue() : result;
     }
 
 }

@@ -31,11 +31,11 @@ public final class StdlibTypeChecks {
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
             "isMap", 1, OWNER, "isMap", O_O, args -> isMap(args[0])));
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "len", 1, OWNER, "len", O_O, args -> len(args[0])));
+            "len", 1, OWNER, "len", O_O, args -> len(args[0]), false, true));
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "typeof", 1, OWNER, "typeof", O_O, args -> typeof(args[0])));
+            "typeof", 1, OWNER, "typeof", O_O, args -> typeof(args[0]), false, true));
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
-            "isCallable", 1, OWNER, "isCallable", O_O, args -> isCallable(args[0])));
+            "isCallable", 1, OWNER, "isCallable", O_O, args -> isCallable(args[0]), false, true));
     }
 
     // ============ 实现（编译器 INVOKESTATIC 直接调用） ============
@@ -68,6 +68,10 @@ public final class StdlibTypeChecks {
     @NovaFunction(signature = "len(value)", description = "返回字符串、列表或 Map 的长度", returnType = "Int")
     public static Object len(Object value) {
         if (value instanceof String) return ((String) value).length();
+        if (value instanceof NovaValue && ((NovaValue) value).isString()) return ((NovaValue) value).asString().length();
+        if (value instanceof com.novalang.runtime.NovaList) return ((com.novalang.runtime.NovaList) value).size();
+        if (value instanceof com.novalang.runtime.NovaMap) return ((com.novalang.runtime.NovaMap) value).size();
+        if (value instanceof com.novalang.runtime.NovaArray) return ((com.novalang.runtime.NovaArray) value).length();
         if (value instanceof List) return ((List<?>) value).size();
         if (value instanceof Map) return ((Map<?, ?>) value).size();
         if (value != null && value.getClass().isArray()) return java.lang.reflect.Array.getLength(value);

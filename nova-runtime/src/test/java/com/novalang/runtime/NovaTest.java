@@ -6,7 +6,7 @@ import com.novalang.runtime.interpreter.NovaFunc;
 import com.novalang.runtime.interpreter.NovaLibrary;
 import com.novalang.runtime.interpreter.NovaNativeFunction;
 import com.novalang.runtime.interpreter.NovaRuntimeException;
-import com.novalang.runtime.interpreter.NovaSecurityPolicy;
+import com.novalang.runtime.NovaSecurityPolicy;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -370,6 +370,83 @@ class NovaTest {
         void withSecurityPolicy() {
             Nova nova = new Nova(NovaSecurityPolicy.strict());
             assertEquals(42, nova.eval("42"));
+        }
+    }
+
+    // ── 编译模式 Java 互操作 ──────────────────────────────
+
+    @Nested
+    @DisplayName("编译模式 Java 互操作 (javaClass)")
+    class CompiledJavaInteropTests {
+
+        @Test
+        @DisplayName("javaClass 调用静态方法 Math.abs")
+        void javaClassStaticMethod() {
+            Object result = new Nova().compileToBytecode(
+                    "val Math = javaClass(\"java.lang.Math\")\n" +
+                    "Math.abs(-42)", "test.nova").run();
+            assertEquals(42, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("javaClass 创建 ArrayList 并调用实例方法")
+        void javaClassInstanceMethod() {
+            Object result = new Nova().compileToBytecode(
+                    "val ArrayList = javaClass(\"java.util.ArrayList\")\n" +
+                    "val list = ArrayList()\n" +
+                    "list.add(\"hello\")\n" +
+                    "list.add(\"world\")\n" +
+                    "list.size()", "test.nova").run();
+            assertEquals(2, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("javaClass 访问静态字段 Integer.MAX_VALUE")
+        void javaClassStaticField() {
+            Object result = new Nova().compileToBytecode(
+                    "val Integer = javaClass(\"java.lang.Integer\")\n" +
+                    "Integer.MAX_VALUE", "test.nova").run();
+            assertEquals(Integer.MAX_VALUE, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("javaClass StringBuilder 链式调用")
+        void javaClassStringBuilder() {
+            Object result = new Nova().compileToBytecode(
+                    "val StringBuilder = javaClass(\"java.lang.StringBuilder\")\n" +
+                    "val sb = StringBuilder()\n" +
+                    "sb.append(\"hello\")\n" +
+                    "sb.append(\" \")\n" +
+                    "sb.append(\"world\")\n" +
+                    "sb.toString()", "test.nova").run();
+            assertEquals("hello world", result);
+        }
+
+        @Test
+        @DisplayName("javaClass 在函数内使用")
+        void javaClassInsideFunction() {
+            Object result = new Nova().compileToBytecode(
+                    "val Math = javaClass(\"java.lang.Math\")\n" +
+                    "fun sumAbs(a: Int, b: Int): Int {\n" +
+                    "    return Math.abs(a) + Math.abs(b)\n" +
+                    "}\n" +
+                    "sumAbs(-3, -7)", "test.nova").run();
+            assertEquals(10, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("javaClass Collections.sort 排序")
+        void javaClassCollectionsSort() {
+            Object result = new Nova().compileToBytecode(
+                    "val ArrayList = javaClass(\"java.util.ArrayList\")\n" +
+                    "val Collections = javaClass(\"java.util.Collections\")\n" +
+                    "val list = ArrayList()\n" +
+                    "list.add(3)\n" +
+                    "list.add(1)\n" +
+                    "list.add(2)\n" +
+                    "Collections.sort(list)\n" +
+                    "list.get(0)", "test.nova").run();
+            assertEquals(1, ((Number) result).intValue());
         }
     }
 

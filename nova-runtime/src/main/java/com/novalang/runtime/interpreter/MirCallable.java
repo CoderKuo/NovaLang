@@ -79,28 +79,29 @@ final class MirCallable extends AbstractNovaValue implements com.novalang.runtim
         // 递归深度检查 + 惰性调用帧（参数摘要仅在异常时计算）
         String funcName = function.getName();
         // async 线程传入子 Interpreter，使用其 mirInterpreter 保证线程安全
-        MirInterpreter targetMirInterp = ctx.getMirInterpreter() != null
+        // ctx 为 null 时（编译路径的 LambdaUtils）使用创建时的 mirInterp
+        MirInterpreter targetMirInterp = (ctx != null && ctx.getMirInterpreter() != null)
                 ? (MirInterpreter) ctx.getMirInterpreter() : mirInterp;
-        if (!"<init>".equals(funcName) && !"<clinit>".equals(funcName)) {
-            int maxDepth = ctx.getMaxRecursionDepth();
-            if (maxDepth > 0 && ctx.getCallDepth() >= maxDepth) {
-                throw new NovaRuntimeException("Maximum recursion depth exceeded (" + maxDepth + ")");
-            }
-            String displayName = "invoke".equals(funcName) ? "<lambda>" : funcName;
-            ctx.pushCallFrame(displayName, args);
-            ctx.incrementCallDepth();
-            try {
-                return targetMirInterp.executeFunction(function, allArgs);
-            } catch (NovaRuntimeException e) {
-                List<String> stackList = ctx.captureStackTrace();
-                e.setNovaStackTrace(stackList != null ? String.join("\n", stackList) : null);
-                throw e;
-            } finally {
-                ctx.decrementCallDepth();
-                ctx.popCallFrame();
-            }
+        if (ctx == null || "<init>".equals(funcName) || "<clinit>".equals(funcName)) {
+            return targetMirInterp.executeFunction(function, allArgs);
         }
-        return targetMirInterp.executeFunction(function, allArgs);
+        int maxDepth = ctx.getMaxRecursionDepth();
+        if (maxDepth > 0 && ctx.getCallDepth() >= maxDepth) {
+            throw new NovaRuntimeException("Maximum recursion depth exceeded (" + maxDepth + ")");
+        }
+        String displayName = "invoke".equals(funcName) ? "<lambda>" : funcName;
+        ctx.pushCallFrame(displayName, args);
+        ctx.incrementCallDepth();
+        try {
+            return targetMirInterp.executeFunction(function, allArgs);
+        } catch (NovaRuntimeException e) {
+            List<String> stackList = ctx.captureStackTrace();
+            e.setNovaStackTrace(stackList != null ? String.join("\n", stackList) : null);
+            throw e;
+        } finally {
+            ctx.decrementCallDepth();
+            ctx.popCallFrame();
+        }
     }
 
     /**

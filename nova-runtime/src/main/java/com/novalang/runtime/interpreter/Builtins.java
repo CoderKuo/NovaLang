@@ -26,6 +26,20 @@ public final class Builtins {
 
     private Builtins() {}
 
+    /**
+     * 确保 javaClass 注册到 StdlibRegistry（编译路径需要）。
+     * 幂等，多次调用无副作用。
+     */
+    public static void ensureJavaClassRegistered() {
+        if (StdlibRegistry.getNativeFunction("javaClass") == null) {
+            StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+                "javaClass", 1,
+                "com/novalang/runtime/interpreter/JavaInterop", "javaClassImpl",
+                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                args -> JavaInterop.javaClassImpl(args[0])));
+        }
+    }
+
     /** 检查 NovaValue 是否可调用（支持 NovaCallable 和 MIR lambda NovaObject with invoke） */
     private static boolean isCallableValue(NovaValue val) {
         if (val instanceof NovaCallable) return true;
@@ -48,28 +62,24 @@ public final class Builtins {
     public static void register(Environment env, NovaSecurityPolicy policy) {
         // ============ I/O 函数 ============
 
+        if (!policy.isStdioAllowed()) {
+            NovaPrint.mute(); // 禁止 NovaPrint 输出（编译路径也通过 NovaPrint 输出）
+        }
         if (policy.isStdioAllowed()) {
-        // println(...) - 打印并换行
+        // println(...) / print(...) - 统一通过 NovaPrint 输出（支持 stdout 重定向）
         env.defineVal("println", new NovaNativeFunction("println", -1,
             (interp, args) -> {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < args.size(); i++) {
-                    if (i > 0) sb.append(" ");
-                    sb.append(args.get(i).asString());
-                }
-                interp.getStdout().println(sb.toString());
+                Object[] javaArgs = new Object[args.size()];
+                for (int i = 0; i < args.size(); i++) javaArgs[i] = args.get(i);
+                NovaPrint.printlnVarargs(javaArgs);
                 return NovaNull.UNIT;
             }));
 
-        // print(...) - 打印不换行
         env.defineVal("print", new NovaNativeFunction("print", -1,
             (interp, args) -> {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < args.size(); i++) {
-                    if (i > 0) sb.append(" ");
-                    sb.append(args.get(i).asString());
-                }
-                interp.getStdout().print(sb.toString());
+                Object[] javaArgs = new Object[args.size()];
+                for (int i = 0; i < args.size(); i++) javaArgs[i] = args.get(i);
+                NovaPrint.printVarargs(javaArgs);
                 return NovaNull.UNIT;
             }));
 
@@ -99,72 +109,8 @@ public final class Builtins {
             }));
         } // end if (policy.isStdioAllowed())
 
-        // ============ 类型转换函数 ============
-
-        // toInt(value) - 转换为整数
-        env.defineVal("toInt", NovaNativeFunction.create("toInt", (value) -> {
-            if (value.isNumber()) {
-                return NovaInt.of(value.asInt());
-            }
-            if (value.isString()) {
-                try {
-                    return NovaInt.of(Integer.parseInt(value.asString().trim()));
-                } catch (NumberFormatException e) {
-                    throw new NovaRuntimeException("Cannot convert to Int: " + value.asString());
-                }
-            }
-            throw new NovaRuntimeException("Cannot convert " + value.getTypeName() + " to Int");
-        }));
-
-        // toLong(value) - 转换为长整数
-        env.defineVal("toLong", NovaNativeFunction.create("toLong", (value) -> {
-            if (value.isNumber()) {
-                return NovaLong.of(value.asLong());
-            }
-            if (value.isString()) {
-                try {
-                    return NovaLong.of(Long.parseLong(value.asString().trim()));
-                } catch (NumberFormatException e) {
-                    throw new NovaRuntimeException("Cannot convert to Long: " + value.asString());
-                }
-            }
-            throw new NovaRuntimeException("Cannot convert " + value.getTypeName() + " to Long");
-        }));
-
-        // toDouble(value) - 转换为浮点数
-        env.defineVal("toDouble", NovaNativeFunction.create("toDouble", (value) -> {
-            if (value.isNumber()) {
-                return NovaDouble.of(value.asDouble());
-            }
-            if (value.isString()) {
-                try {
-                    return NovaDouble.of(Double.parseDouble(value.asString().trim()));
-                } catch (NumberFormatException e) {
-                    throw new NovaRuntimeException("Cannot convert to Double: " + value.asString());
-                }
-            }
-            throw new NovaRuntimeException("Cannot convert " + value.getTypeName() + " to Double");
-        }));
-
-        // toString(value) - 转换为字符串
-        env.defineVal("toString", NovaNativeFunction.create("toString",
-            (value) -> NovaString.of(value.asString())));
-
-        // toBoolean(value) - 转换为布尔值
-        env.defineVal("toBoolean", NovaNativeFunction.create("toBoolean",
-            (value) -> NovaBoolean.of(value.isTruthy())));
-
-        // ============ 类型检查函数（依赖 NovaValue 的留在此处） ============
-
-        // typeof(value) - 获取类型名（依赖 NovaValue.getTypeName()）
-        env.defineVal("typeof", NovaNativeFunction.create("typeof",
-            (value) -> NovaString.of(value.getTypeName())));
-
-        // isCallable(value) - 依赖 NovaCallable JVM 类型检查
-        env.defineVal("isCallable", NovaNativeFunction.create("isCallable",
-            (value) -> NovaBoolean.of(value.isCallable())));
-
-        // isNull / isNumber / isString / isList / isMap → StdlibTypeChecks
+        // typeof / isCallable / toInt / toLong / toDouble / toString / toBoolean / toChar / toFloat
+        // → StdlibRegistry（rawNovaArgs=true，自动注册循环处理）
 
         // ============ 集合函数 ============
 
@@ -291,6 +237,8 @@ public final class Builtins {
                 throw new NovaRuntimeException("Java class not found: " + name);
             }
         }));
+        // 同时注册到 StdlibRegistry（编译路径通过 NovaBootstrap 查找）
+        ensureJavaClassRegistered();
         } // end if (policy.isJavaInteropAllowed())
 
         // ============ stdlib 注册表函数 ============
@@ -311,29 +259,32 @@ public final class Builtins {
             }));
         }
 
-        // 原生函数（min / max / abs …）
-        // pairOf 需要解释器特有的 NovaPair 实现，跳过 StdlibRegistry 版本（返回 Object[]）
-        // coroutineScope / supervisorScope 在下方显式注册（需要 Interpreter 访问权 + 多参数支持）
+        // 原生函数（min / max / abs / typeof / toInt …）— 从 StdlibRegistry 自动注册
+        // 跳过已在上方手动注册的、以及需要 Interpreter 的并发函数
         for (StdlibRegistry.NativeFunctionInfo nf : StdlibRegistry.getNativeFunctions()) {
-            if ("pairOf".equals(nf.name)) continue;
+            if (env.tryGet(nf.name) != null) continue; // 已手动注册
             if ("coroutineScope".equals(nf.name) || "supervisorScope".equals(nf.name)) continue;
-            if ("schedule".equals(nf.name) || "scheduleRepeat".equals(nf.name)) continue; // 解释器需要子 Interpreter 执行 block
-            if ("scope".equals(nf.name) || "sync".equals(nf.name)) continue; // 同上
-            if ("launch".equals(nf.name) || "parallel".equals(nf.name) || "withTimeout".equals(nf.name)) continue; // 同上
+            if ("schedule".equals(nf.name) || "scheduleRepeat".equals(nf.name)) continue;
+            if ("scope".equals(nf.name) || "sync".equals(nf.name)) continue;
+            if ("launch".equals(nf.name) || "parallel".equals(nf.name) || "withTimeout".equals(nf.name)) continue;
             if ("AtomicInt".equals(nf.name) || "AtomicLong".equals(nf.name) || "AtomicRef".equals(nf.name)
-                    || "Channel".equals(nf.name) || "Mutex".equals(nf.name)) continue; // 解释器需要 NovaMap 包装
-            if ("awaitAll".equals(nf.name) || "awaitFirst".equals(nf.name) || "withContext".equals(nf.name)) continue; // 同上
-            if ("typeof".equals(nf.name) || "isCallable".equals(nf.name)) continue; // 解释器保留 NovaValue 原生实现
-            if ("Pair".equals(nf.name) || "arrayOf".equals(nf.name)) continue; // 解释器需要 NovaPair/NovaArray 类型
-            if ("readLine".equals(nf.name) || "input".equals(nf.name)) continue; // 解释器需要安全策略 + 自定义 stdin
+                    || "Channel".equals(nf.name) || "Mutex".equals(nf.name)) continue;
+            if ("awaitAll".equals(nf.name) || "awaitFirst".equals(nf.name) || "withContext".equals(nf.name)) continue;
             final StdlibRegistry.NativeFunctionInfo capturedNf = nf;
-            env.defineVal(nf.name, new NovaNativeFunction(nf.name, nf.arity, (interp, args) -> {
-                Object[] javaArgs = new Object[args.size()];
-                for (int i = 0; i < args.size(); i++) {
-                    javaArgs[i] = args.get(i).toJavaValue();
-                }
-                return AbstractNovaValue.fromJava(capturedNf.impl.apply(javaArgs));
-            }));
+            if (nf.rawNovaArgs) {
+                // rawNovaArgs: 直接传递 NovaValue（不做 toJavaValue 转换）
+                env.defineVal(nf.name, new NovaNativeFunction(nf.name, nf.arity, (interp, args) -> {
+                    Object[] rawArgs = new Object[args.size()];
+                    for (int i = 0; i < args.size(); i++) rawArgs[i] = args.get(i);
+                    return AbstractNovaValue.fromJava(capturedNf.impl.apply(rawArgs));
+                }));
+            } else {
+                env.defineVal(nf.name, new NovaNativeFunction(nf.name, nf.arity, (interp, args) -> {
+                    Object[] javaArgs = new Object[args.size()];
+                    for (int i = 0; i < args.size(); i++) javaArgs[i] = args.get(i).toJavaValue();
+                    return AbstractNovaValue.fromJava(capturedNf.impl.apply(javaArgs));
+                }));
+            }
         }
 
         // Supplier Lambda 函数（async）
@@ -429,31 +380,8 @@ public final class Builtins {
             return handle;
         }));
 
-        // ============ 额外顶层函数 ============
-
-        // toChar(value) - 转换为字符
-        env.defineVal("toChar", NovaNativeFunction.create("toChar", (value) -> {
-            if (value instanceof NovaChar) return value;
-            if (value instanceof NovaInt) return NovaChar.of((char) ((NovaInt) value).getValue());
-            if (value instanceof NovaString) {
-                String s = value.asString();
-                if (s.length() == 1) return NovaChar.of(s.charAt(0));
-                throw new NovaRuntimeException("Cannot convert multi-char string to Char");
-            }
-            throw new NovaRuntimeException("Cannot convert " + value.getTypeName() + " to Char");
-        }));
-
-        // toFloat(value) - 转换为浮点数
-        env.defineVal("toFloat", NovaNativeFunction.create("toFloat", (value) -> {
-            if (value.isNumber()) return NovaFloat.of((float) value.asDouble());
-            if (value.isString()) {
-                try { return NovaFloat.of(Float.parseFloat(value.asString().trim())); }
-                catch (NumberFormatException e) { throw new NovaRuntimeException("Cannot convert to Float: " + value.asString()); }
-            }
-            throw new NovaRuntimeException("Cannot convert " + value.getTypeName() + " to Float");
-        }));
-
-        // emptyList / emptyMap / emptySet 已由 StdlibRegistry NativeFunctions 循环注册
+        // toChar / toFloat → StdlibRegistry（rawNovaArgs=true，自动注册循环处理）
+        // emptyList / emptyMap / emptySet → StdlibRegistry NativeFunctions 循环注册
 
         // pairOf(a, b) - 解释器需要 NovaPair（StdlibRegistry 版本返回 Object[]，不兼容）
         env.defineVal("pairOf", NovaNativeFunction.create("pairOf", (a, b) -> new NovaPair(a, b)));
@@ -922,4 +850,5 @@ public final class Builtins {
         }
         return java.util.concurrent.ForkJoinPool.commonPool();
     }
+
 }

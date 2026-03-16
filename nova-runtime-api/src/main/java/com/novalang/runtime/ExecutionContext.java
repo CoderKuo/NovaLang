@@ -187,6 +187,51 @@ public interface ExecutionContext {
      */
     void unregisterAnnotationProcessor(NovaAnnotationProcessor processor);
 
+    // ============ 并发作用域 ============
+
+    /**
+     * 获取异步执行器（用于 launch/parallel/withTimeout）
+     *
+     * @return 异步执行器，默认 ForkJoinPool.commonPool()
+     */
+    default java.util.concurrent.Executor getAsyncExecutor() {
+        return java.util.concurrent.ForkJoinPool.commonPool();
+    }
+
+    /**
+     * 在结构化并发作用域中执行 block。
+     *
+     * <p>Interpreter 实现使用 NovaScope 管理子任务，编译路径回退到简单调用。</p>
+     *
+     * @param block 要执行的 lambda
+     * @param supervisor 是否为 supervisor 模式（忽略子任务异常）
+     * @return block 的返回值
+     */
+    default Object runInScope(Object block, boolean supervisor) {
+        // 默认实现：直接调用（编译路径无结构化并发支持）
+        if (block instanceof NovaCallable) {
+            NovaValue result = ((NovaCallable) block).call(this, java.util.Collections.emptyList());
+            return result != null ? result.toJavaValue() : null;
+        }
+        return null;
+    }
+
+    // ============ 通用函数调用 ============
+
+    /**
+     * 调用 Interpreter 环境中注册的函数（Builtins 等）。
+     *
+     * <p>用于 StdlibCore/ConcurrencyHelper 等 nova-runtime-api 层的函数实现
+     * 需要调用 Interpreter 环境中的函数时。消除 interpreterBuiltin 双注册。</p>
+     *
+     * @param name 函数名
+     * @param args 参数列表
+     * @return 返回值，函数不存在时返回 null
+     */
+    default NovaValue callFunction(String name, List<NovaValue> args) {
+        return null;
+    }
+
     // ============ MIR 支持 ============
 
     /**

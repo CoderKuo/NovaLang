@@ -29,11 +29,13 @@ import java.util.concurrent.TimeUnit;
 @Measurement(iterations = 8, time = 500, timeUnit = TimeUnit.MILLISECONDS)
 @Fork(value = 1, jvmArgsAppend = {"-Xms512m", "-Xmx512m"})
 @Threads(1)
-public class ScriptEngineComparisonJmhBenchmark {
+public class JavaInteropJmhBenchmark {
 
     @State(Scope.Benchmark)
     public static class ScenarioState {
-        @Param({"arith_loop", "call_loop", "object_loop", "branch_loop", "string_concat", "list_sum", "fib_recursion"})
+        @Param({"java_static_call", "java_object_create", "java_field_access",
+                "java_string_builder", "java_collection_sort", "java_type_convert",
+                "java_hashmap_ops", "java_string_methods", "java_exception_handle", "java_mixed_compute"})
         public String scenario;
 
         ScriptScenario scriptScenario;
@@ -44,33 +46,34 @@ public class ScriptEngineComparisonJmhBenchmark {
         Script groovyScript;
         JexlScript jexlScript;
         com.caoccao.javet.interop.V8Runtime javetRuntime;
+        String javetSource;
 
         @Setup(Level.Trial)
         public void setUp() throws Exception {
-            scriptScenario = ScriptScenarios.byName(scenario);
+            scriptScenario = JavaInteropScenarios.byName(scenario);
             expectedResult = scriptScenario.runJavaNative();
 
             // Nova eval 验证
             int novaEval = ScriptBenchSupport.toInt(ScriptBenchSupport.evalNova(scriptScenario.getNovaSource()));
             if (novaEval != expectedResult) {
-                throw new IllegalStateException("Nova eval result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + novaEval);
-            }
-
-            // Nashorn eval 验证
-            int nashornEval = ScriptBenchSupport.toInt(
-                    ScriptBenchSupport.newNashornEngine().eval(scriptScenario.getJsSource()));
-            if (nashornEval != expectedResult) {
-                throw new IllegalStateException("Nashorn eval result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + nashornEval);
+                throw new IllegalStateException("Nova eval mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + novaEval);
             }
 
             // Nova 编译 + 验证
             novaCompiled = ScriptBenchSupport.compileNova(scriptScenario.getNovaSource());
             int novaCompiledResult = ScriptBenchSupport.toInt(novaCompiled.run());
             if (novaCompiledResult != expectedResult) {
-                throw new IllegalStateException("Nova compiled result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + novaCompiledResult);
+                throw new IllegalStateException("Nova compiled mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + novaCompiledResult);
+            }
+
+            // Nashorn eval 验证
+            int nashornEval = ScriptBenchSupport.toInt(
+                    ScriptBenchSupport.newNashornEngine().eval(scriptScenario.getJsSource()));
+            if (nashornEval != expectedResult) {
+                throw new IllegalStateException("Nashorn eval mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + nashornEval);
             }
 
             // Nashorn 编译 + 验证
@@ -78,41 +81,41 @@ public class ScriptEngineComparisonJmhBenchmark {
             int nashornCompiledResult = ScriptBenchSupport.toInt(
                     ScriptBenchSupport.evalCompiledScript(nashornCompiled));
             if (nashornCompiledResult != expectedResult) {
-                throw new IllegalStateException("Nashorn compiled result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + nashornCompiledResult);
+                throw new IllegalStateException("Nashorn compiled mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + nashornCompiledResult);
             }
 
-            // GraalJS 预热 Context + 验证
-            graalJsContext = ScriptBenchSupport.newGraalJsContext();
+            // GraalJS 预热 + 验证（需启用 Java 互操作）
+            graalJsContext = ScriptBenchSupport.newGraalJsInteropContext();
             int graalResult = graalJsContext.eval("js", scriptScenario.getJsSource()).asInt();
             if (graalResult != expectedResult) {
-                throw new IllegalStateException("GraalJS result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + graalResult);
+                throw new IllegalStateException("GraalJS mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + graalResult);
             }
 
             // Groovy 解析 + 验证
             groovyScript = ScriptBenchSupport.parseGroovy(scriptScenario.getGroovySource());
-            int groovyParsedResult = ScriptBenchSupport.toInt(
-                    ScriptBenchSupport.runGroovyScript(groovyScript));
-            if (groovyParsedResult != expectedResult) {
-                throw new IllegalStateException("Groovy parsed result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + groovyParsedResult);
+            int groovyResult = ScriptBenchSupport.toInt(ScriptBenchSupport.runGroovyScript(groovyScript));
+            if (groovyResult != expectedResult) {
+                throw new IllegalStateException("Groovy mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + groovyResult);
             }
 
-            // JEXL 脚本编译 + 验证
+            // JEXL 编译 + 验证
             jexlScript = ScriptBenchSupport.createJexlScript(scriptScenario.getJexlSource());
             int jexlResult = ScriptBenchSupport.toInt(ScriptBenchSupport.evalJexlScript(jexlScript));
             if (jexlResult != expectedResult) {
-                throw new IllegalStateException("JEXL result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + jexlResult);
+                throw new IllegalStateException("JEXL mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + jexlResult);
             }
 
-            // Javet (V8) 预热 + 验证
-            javetRuntime = ScriptBenchSupport.newJavetRuntime();
-            int javetResult = ScriptBenchSupport.evalJavetWarmed(javetRuntime, scriptScenario.getJsSource());
+            // Javet 预热 + 验证（通过 proxy 注入 Java 类）
+            javetSource = resolveJavetSource(scenario);
+            javetRuntime = ScriptBenchSupport.newJavetInteropRuntime();
+            int javetResult = ScriptBenchSupport.evalJavetWarmed(javetRuntime, javetSource);
             if (javetResult != expectedResult) {
-                throw new IllegalStateException("Javet result mismatch for " + scenario + ": expected="
-                        + expectedResult + ", actual=" + javetResult);
+                throw new IllegalStateException("Javet mismatch for " + scenario
+                        + ": expected=" + expectedResult + ", actual=" + javetResult);
             }
         }
 
@@ -127,6 +130,22 @@ public class ScriptEngineComparisonJmhBenchmark {
                 javetRuntime = null;
             }
         }
+
+        private static String resolveJavetSource(String scenario) {
+            switch (scenario) {
+                case "java_static_call":    return JavaInteropScenarios.javetStaticCall();
+                case "java_object_create":  return JavaInteropScenarios.javetObjectCreate();
+                case "java_field_access":   return JavaInteropScenarios.javetFieldAccess();
+                case "java_string_builder": return JavaInteropScenarios.javetStringBuilder();
+                case "java_collection_sort":return JavaInteropScenarios.javetCollectionSort();
+                case "java_type_convert":   return JavaInteropScenarios.javetTypeConvert();
+                case "java_hashmap_ops":    return JavaInteropScenarios.javetHashMapOps();
+                case "java_string_methods": return JavaInteropScenarios.javetStringMethods();
+                case "java_exception_handle":return JavaInteropScenarios.javetExceptionHandle();
+                case "java_mixed_compute":  return JavaInteropScenarios.javetMixedCompute();
+                default: throw new IllegalArgumentException("No javet source for: " + scenario);
+            }
+        }
     }
 
     // ---- Nova ----
@@ -134,11 +153,6 @@ public class ScriptEngineComparisonJmhBenchmark {
     @Benchmark
     public Object novaEval(ScenarioState state) {
         return ScriptBenchSupport.evalNova(state.scriptScenario.getNovaSource());
-    }
-
-    @Benchmark
-    public Object novaCompileOnly(ScenarioState state) {
-        return ScriptBenchSupport.compileNova(state.scriptScenario.getNovaSource());
     }
 
     @Benchmark
@@ -154,11 +168,6 @@ public class ScriptEngineComparisonJmhBenchmark {
     }
 
     @Benchmark
-    public Object nashornCompileOnly(ScenarioState state) throws Exception {
-        return ScriptBenchSupport.compileNashorn(state.scriptScenario.getJsSource());
-    }
-
-    @Benchmark
     public Object nashornCompiledRun(ScenarioState state) throws Exception {
         return ScriptBenchSupport.evalCompiledScript(state.nashornCompiled);
     }
@@ -167,7 +176,7 @@ public class ScriptEngineComparisonJmhBenchmark {
 
     @Benchmark
     public int graalJsEval(ScenarioState state) {
-        return ScriptBenchSupport.evalGraalJs(state.scriptScenario.getJsSource());
+        return ScriptBenchSupport.evalGraalJsInterop(state.scriptScenario.getJsSource());
     }
 
     @Benchmark
@@ -199,16 +208,16 @@ public class ScriptEngineComparisonJmhBenchmark {
         return ScriptBenchSupport.evalJexlScript(state.jexlScript);
     }
 
-    // ---- Javet (V8) ----
+    // ---- Javet (V8 + proxy interop) ----
 
     @Benchmark
     public int javetEval(ScenarioState state) {
-        return ScriptBenchSupport.evalJavet(state.scriptScenario.getJsSource());
+        return ScriptBenchSupport.evalJavetInterop(state.javetSource);
     }
 
     @Benchmark
     public int javetWarmed(ScenarioState state) {
-        return ScriptBenchSupport.evalJavetWarmed(state.javetRuntime, state.scriptScenario.getJsSource());
+        return ScriptBenchSupport.evalJavetWarmed(state.javetRuntime, state.javetSource);
     }
 
     // ---- Java baseline ----

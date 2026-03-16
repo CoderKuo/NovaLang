@@ -222,8 +222,31 @@ public final class JavaInterop {
     /**
      * 包装 Java 类，使其可以作为构造函数调用
      */
-    public static class NovaJavaClass extends AbstractNovaValue implements com.novalang.runtime.NovaCallable {
+    /**
+     * 编译路径的 javaClass() 静态入口（StdlibRegistry 调用）。
+     */
+    public static Object javaClassImpl(Object classNameObj) {
+        String name = classNameObj instanceof NovaValue
+                ? ((NovaValue) classNameObj).asString()
+                : String.valueOf(classNameObj);
+        NovaSecurityPolicy policy = NovaSecurityPolicy.current();
+        if (policy != null && !policy.isClassAllowed(name)) {
+            throw NovaSecurityPolicy.denied("Cannot access Java class: " + name);
+        }
+        try {
+            return new NovaJavaClass(Class.forName(name));
+        } catch (ClassNotFoundException e) {
+            throw new NovaException("Java class not found: " + name);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static class NovaJavaClass extends AbstractNovaValue implements com.novalang.runtime.NovaCallable,
+            com.novalang.runtime.Function0 {
         private final Class<?> javaClass;
+        /** 绑定静态方法缓存：方法名 → NovaNativeFunction（避免热循环重复分配） */
+        private final java.util.concurrent.ConcurrentHashMap<String, NovaNativeFunction> boundMethodCache
+                = new java.util.concurrent.ConcurrentHashMap<>();
 
         public NovaJavaClass(Class<?> javaClass) {
             this.javaClass = javaClass;
@@ -248,25 +271,9 @@ public final class JavaInterop {
             return javaClass;
         }
 
-        @Override
-        public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
-            Interpreter interpreter = ctx != null ? (Interpreter) ctx : null;
-            // 类级安全检查
-            if (interpreter != null) {
-                NovaSecurityPolicy policy = interpreter.getSecurityPolicy();
-                if (!policy.isClassAllowed(javaClass.getName())) {
-                    throw NovaSecurityPolicy.denied(
-                            "Cannot instantiate Java class: " + javaClass.getName());
-                }
-            }
+        private NovaExternalObject newInstance(Object[] javaArgs) {
             try {
-                Object[] javaArgs = new Object[args.size()];
-                for (int i = 0; i < args.size(); i++) {
-                    javaArgs[i] = args.get(i).toJavaValue();
-                }
-
-                Object instance = cache.newInstance(javaClass, javaArgs);
-                return new NovaExternalObject(instance);
+                return new NovaExternalObject(cache.newInstance(javaClass, javaArgs));
             } catch (Throwable e) {
                 throw new NovaRuntimeException("Failed to create instance of " +
                         javaClass.getName() + ": " + e.getMessage(), e);
@@ -274,8 +281,45 @@ public final class JavaInterop {
         }
 
         @Override
+        public NovaValue call(ExecutionContext ctx, List<NovaValue> args) {
+            Interpreter interpreter = ctx != null ? (Interpreter) ctx : null;
+            if (interpreter != null) {
+                NovaSecurityPolicy policy = interpreter.getSecurityPolicy();
+                if (!policy.isClassAllowed(javaClass.getName())) {
+                    throw NovaSecurityPolicy.denied(
+                            "Cannot instantiate Java class: " + javaClass.getName());
+                }
+            }
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) {
+                javaArgs[i] = args.get(i).toJavaValue();
+            }
+            return newInstance(javaArgs);
+        }
+
+        @Override
+        public NovaValue dynamicInvoke(NovaValue[] args) {
+            Object[] javaArgs = new Object[args.length];
+            for (int i = 0; i < args.length; i++) {
+                javaArgs[i] = args[i].toJavaValue();
+            }
+            return newInstance(javaArgs);
+        }
+
+        @Override
+        public Object invoke() {
+            // Function0: 零参构造快速路径（跳过数组分配）
+            return newInstance(EMPTY_JAVA_ARGS).toJavaValue();
+        }
+
+        @Override
+        public boolean isCallable() {
+            return true;
+        }
+
+        @Override
         public int getArity() {
-            return -1;  // 可变参数
+            return -1;
         }
 
         /**
@@ -289,7 +333,6 @@ public final class JavaInterop {
          * 调用静态方法（带解释器引用，支持 SAM 自动转换）
          */
         public NovaValue invokeStatic(String methodName, List<NovaValue> args, Interpreter interpreter) {
-            // 方法级安全检查
             if (interpreter != null) {
                 NovaSecurityPolicy policy = interpreter.getSecurityPolicy();
                 if (!policy.isMethodAllowed(javaClass.getName(), methodName)) {
@@ -303,7 +346,6 @@ public final class JavaInterop {
                     javaArgs[i] = args.get(i).toJavaValue();
                 }
 
-                // SAM 自动转换
                 if (interpreter != null) {
                     Class<?>[] argTypes = new Class<?>[javaArgs.length];
                     for (int i = 0; i < javaArgs.length; i++) {
@@ -327,32 +369,51 @@ public final class JavaInterop {
             }
         }
 
-        /**
-         * 获取静态字段或静态方法
-         */
         public NovaValue getStaticField(String memberName) {
-            // 先尝试获取静态字段（通过 MethodHandle 缓存）
+            return resolveMember(memberName);
+        }
+
+        public NovaNativeFunction getBoundStaticMethod(String methodName) {
+            return boundMethodCache.computeIfAbsent(methodName,
+                    name -> new NovaNativeFunction(name, -1, (interp, args) ->
+                            invokeStatic(name, args, (Interpreter) interp)));
+        }
+
+        /** 综合成员缓存：字段值 + 绑定方法，避免热循环重复解析 */
+        private final java.util.concurrent.ConcurrentHashMap<String, NovaValue> memberCache
+                = new java.util.concurrent.ConcurrentHashMap<>();
+        private static final NovaValue MEMBER_MISS = new AbstractNovaValue() {
+            @Override public String getTypeName() { return "$miss"; }
+            @Override public Object toJavaValue() { return null; }
+        };
+
+        @Override
+        public NovaValue resolveMember(String memberName) {
+            NovaValue cached = memberCache.get(memberName);
+            if (cached == MEMBER_MISS) {
+                // 已知不是字段，直接返回绑定方法
+                return boundMethodCache.computeIfAbsent(memberName,
+                        name -> new NovaNativeFunction(name, -1, (interp, args) ->
+                                invokeStatic(name, args, (Interpreter) interp)));
+            }
+            if (cached != null) return cached;
+
+            // 首次解析：先尝试静态字段
             try {
                 java.lang.invoke.MethodHandle getter = cache.findStaticGetter(javaClass, memberName);
                 if (getter != null) {
-                    Object value = getter.invoke();
-                    return AbstractNovaValue.fromJava(value);
+                    NovaValue val = AbstractNovaValue.fromJava(getter.invoke());
+                    memberCache.put(memberName, val);
+                    return val;
                 }
             } catch (Throwable e) {
-                // 获取失败，继续尝试静态方法
+                // 不是字段
             }
-
-            // 返回绑定的静态方法
-            return getBoundStaticMethod(memberName);
-        }
-
-        /**
-         * 获取绑定的静态方法
-         */
-        public NovaNativeFunction getBoundStaticMethod(String methodName) {
-            return new NovaNativeFunction(methodName, -1, (interp, args) -> {
-                return invokeStatic(methodName, args, (Interpreter) interp);
-            });
+            // 标记为非字段，后续直接走方法缓存
+            memberCache.put(memberName, MEMBER_MISS);
+            return boundMethodCache.computeIfAbsent(memberName,
+                    name -> new NovaNativeFunction(name, -1, (interp, args) ->
+                            invokeStatic(name, args, (Interpreter) interp)));
         }
 
         @Override
@@ -360,4 +421,6 @@ public final class JavaInterop {
             return "class " + javaClass.getName();
         }
     }
+
+    private static final Object[] EMPTY_JAVA_ARGS = new Object[0];
 }

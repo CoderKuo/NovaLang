@@ -64,6 +64,16 @@ class ScriptEngineComparisonSmokeTest {
             int jexlScriptResult = ScriptBenchSupport.toInt(
                     ScriptBenchSupport.evalJexlScript(jexlScript));
             assertEquals(expected, jexlScriptResult, scenario.getName() + " jexl script");
+
+            // Javet (V8) eval
+            int javetEval = ScriptBenchSupport.evalJavet(scenario.getJsSource());
+            assertEquals(expected, javetEval, scenario.getName() + " javet eval");
+
+            // Javet (V8) warmed
+            try (com.caoccao.javet.interop.V8Runtime v8 = ScriptBenchSupport.newJavetRuntime()) {
+                int javetWarmed = ScriptBenchSupport.evalJavetWarmed(v8, scenario.getJsSource());
+                assertEquals(expected, javetWarmed, scenario.getName() + " javet warmed");
+            }
         }
     }
 }

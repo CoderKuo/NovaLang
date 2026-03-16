@@ -413,12 +413,9 @@ final class MemberResolver {
         NovaCallable ext = interp.findExtension(obj, memberName);
         if (ext != null) return new NovaBoundMethod(obj, ext);
 
-        // Map: 键查找逻辑独立保留
-        if (obj instanceof NovaMap) {
-            NovaMap map = (NovaMap) obj;
-            NovaValue key = NovaString.of(memberName);
-            if (map.containsKey(key)) return map.get(key);
-        }
+        // resolveMember 统一分派（Map 键查找、Result 属性、Pair 别名等）
+        NovaValue memberVal = obj.resolveMember(memberName);
+        if (memberVal != null) return memberVal;
         // componentN 解构支持（统一委托 NovaValue.componentN）
         if (memberName.startsWith("component") && memberName.length() > 9) {
             try {
@@ -1032,17 +1029,11 @@ final class MemberResolver {
      * 从原 NovaResult.getMember() 迁移到此处。
      */
     private NovaValue resolveResultMember(NovaResult result, String name) {
+        // 属性访问委托 resolveMember（value/error/isOk/isErr）
+        NovaValue prop = result.resolveMember(name);
+        if (prop != null) return prop;
+        // 方法（需要 Interpreter 的 lambda 参数处理）
         switch (name) {
-            case "value":
-                if (result.isErr()) throw new NovaRuntimeException("Cannot access 'value' on Err result");
-                return result.getInner();
-            case "error":
-                if (result.isOk()) throw new NovaRuntimeException("Cannot access 'error' on Ok result");
-                return result.getInner();
-            case "isOk":
-                return NovaBoolean.of(result.isOk());
-            case "isErr":
-                return NovaBoolean.of(result.isErr());
             case "map":
                 return new NovaNativeFunction("map", 1, (ctx, args) -> {
                     if (result.isErr()) return result;

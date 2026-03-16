@@ -1,5 +1,7 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.stdlib.StdlibRegistry;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -386,5 +388,57 @@ public final class NovaRuntime {
         public NovaRuntime register() {
             return parent.register();
         }
+    }
+
+    // ============ ExecutionContext ThreadLocal ============
+
+    /** 当前线程的 ExecutionContext（Interpreter 在执行 MIR 前设置） */
+    private static final ThreadLocal<ExecutionContext> CURRENT_CONTEXT = new ThreadLocal<>();
+
+    /** 获取当前 ExecutionContext（LambdaUtils 等统一路径调用） */
+    public static ExecutionContext currentContext() {
+        return CURRENT_CONTEXT.get();
+    }
+
+    /** 设置当前 ExecutionContext（Interpreter 在 eval 前调用） */
+    public static void setCurrentContext(ExecutionContext ctx) {
+        CURRENT_CONTEXT.set(ctx);
+    }
+
+    /** 清除当前 ExecutionContext */
+    public static void clearCurrentContext() {
+        CURRENT_CONTEXT.remove();
+    }
+
+    // ============ 静态内置函数调用（内部运行时统一入口） ============
+
+    /**
+     * 调用内置函数（静态入口）。
+     *
+     * <p>解释器路径（StaticMethodDispatcher）和编译路径（NovaScriptContext/NovaBootstrap）
+     * 统一通过此方法调用 StdlibRegistry 中注册的内置函数。</p>
+     *
+     * @param name 函数名
+     * @param args 参数（raw Java Object）
+     * @return 返回值（raw Java Object），未找到时返回 null
+     */
+    /** 未找到函数的 sentinel 值 */
+    public static final Object NOT_FOUND = new Object();
+
+    public static Object callBuiltin(String name, Object... args) {
+        StdlibRegistry.NativeFunctionInfo nf = StdlibRegistry.getNativeFunction(name);
+        if (nf != null) return nf.impl.apply(args); // 可能返回 null（void 函数），这是有效返回值
+        if (args.length == 0) {
+            StdlibRegistry.ConstantInfo ci = StdlibRegistry.getConstant(name);
+            if (ci != null) return ci.value;
+        }
+        return NOT_FOUND; // 函数未找到
+    }
+
+    /**
+     * 检查内置函数是否已注册。
+     */
+    public static boolean hasBuiltin(String name) {
+        return StdlibRegistry.get(name) != null;
     }
 }

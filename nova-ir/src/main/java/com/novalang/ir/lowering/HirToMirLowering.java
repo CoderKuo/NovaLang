@@ -27,6 +27,16 @@ import java.util.*;
  */
 public class HirToMirLowering {
 
+    /** Object 类的方法名集合（scopeReceiver 上总是可用，不应被 StdlibRegistry 全局函数遮蔽） */
+    private static final Set<String> OBJECT_METHOD_NAMES;
+    static {
+        Set<String> names = new HashSet<>();
+        for (java.lang.reflect.Method m : Object.class.getMethods()) {
+            names.add(m.getName());
+        }
+        OBJECT_METHOD_NAMES = Collections.unmodifiableSet(names);
+    }
+
     private final Set<String> topLevelFunctionNames = new HashSet<>();
     private final Set<String> classNames = new HashSet<>();
     private final Set<String> objectNames = new HashSet<>();
@@ -118,10 +128,13 @@ public class HirToMirLowering {
 
     // JSR-223 脚本模式：未解析变量通过 NovaScriptContext 读取，main() 返回 Object
     private boolean scriptMode = false;
-    // scriptMode main 函数中通过 defineVar 导出到 $ENV 的 var 名称
-    // main 中这些变量读写都走 $ENV（和顶层函数共享同一份数据）
+    // scriptMode main 函数中通过 defineVar 导出到 $ENV 的 var 名称（兼容旧路径）
     private final Set<String> scriptExportedVars = new HashSet<>();
+    // 顶层变量 → $Module 静态字段（名称 → 是否 val）
+    private final Map<String, Boolean> topLevelFieldNames = new LinkedHashMap<>();
     // 解释器模式：生成解释器友好的 MIR（不做方法别名转换、不生成 NovaDynamic 等 JVM 辅助类调用）
+    /** @deprecated interpreterMode 已统一消除，所有 MIR 生成路径不再区分解释器/编译器 */
+    @Deprecated
     private boolean interpreterMode = false;
 
     public void setScriptMode(boolean scriptMode) {
@@ -132,9 +145,9 @@ public class HirToMirLowering {
         this.interpreterMode = interpreterMode;
     }
 
-    /** 脚本上下文 owner：interpreterMode 下用 $ENV 标记，编译路径用 JVM 类名 */
+    /** 脚本上下文 owner（统一使用 JVM 类名，StaticMethodDispatcher 已处理两种格式） */
     private String scriptContextOwner() {
-        return interpreterMode ? "$ENV" : "com/novalang/runtime/NovaScriptContext";
+        return "com/novalang/runtime/NovaScriptContext";
     }
 
     private static final class LoopContext {
@@ -159,7 +172,6 @@ public class HirToMirLowering {
      * Nova 方法名 → Java 方法名别名解析。
      */
     private String resolveMethodAlias(String methodName) {
-        if (interpreterMode) return methodName;
         return MethodNameCanonicalizer.canonicalName(methodName);
     }
 
@@ -225,7 +237,7 @@ public class HirToMirLowering {
                 novaMethodDescs.put(hc.getName(), methodDescs);
             }
             // 记录字段名（用于 lowerVarRef 区分 this.field 和全局变量）
-            // 始终注册（即使为空），使 interpreterMode 保护逻辑能正确区分字段和外部变量
+            // 始终注册（即使为空），使字段保护逻辑能正确区分字段和外部变量
             Set<String> fieldSet = new HashSet<>();
             for (HirField f : hc.getFields()) {
                 fieldSet.add(f.getName());
@@ -248,7 +260,7 @@ public class HirToMirLowering {
         moduleClassName = packagePrefix + "$Module";
 
         // 收集 Java import 映射 + Nova import 类名
-        // interpreterMode: 同时收集用于运行时注册的 import 元数据
+        // 收集用于运行时注册的 import 元数据
         Map<String, String> javaImportsMeta = new HashMap<>();
         Map<String, String> staticImportsMeta = new HashMap<>();
         List<String> wildcardImportsMeta = new ArrayList<>();
@@ -290,7 +302,7 @@ public class HirToMirLowering {
 
                 // 检查是否为内置模块（nova.time, nova.io 等）
                 String builtinModule = BuiltinModuleExports.resolveModuleName(qn);
-                if (builtinModule != null && BuiltinModuleExports.has(builtinModule) && !interpreterMode) {
+                if (builtinModule != null && BuiltinModuleExports.has(builtinModule)) {
                     // 编译模式：将命名空间注册为 javaImports，将函数通过反射自动发现
                     String symbol = imp.isWildcard() ? null
                             : (imp.hasAlias() ? imp.getAlias() : qn.substring(qn.lastIndexOf('.') + 1));
@@ -307,12 +319,14 @@ public class HirToMirLowering {
                     if (moduleClass != null) {
                         discoverModuleFunctions(moduleClass, symbol);
                     }
-                } else if (!imp.isWildcard() && !interpreterMode) {
-                    // 编译模式：将导入符号加入 classNames（假定为类名）
-                    // interpreterMode 下跳过：运行时 $ENV|get 能正确处理函数和类
+                } else if (!imp.isWildcard() && externalTypeNames.isEmpty()) {
+                    // 非 evalRepl 场景：首字母大写的符号假定为类名
+                    // evalRepl 场景完全跳过（运行时 NovaScriptContext/Environment 动态解析）
                     String symbolName = imp.hasAlias() ? imp.getAlias()
                             : qn.substring(qn.lastIndexOf('.') + 1);
-                    classNames.add(symbolName);
+                    if (symbolName.length() > 0 && Character.isUpperCase(symbolName.charAt(0))) {
+                        classNames.add(symbolName);
+                    }
                 }
                 novaImportInfos.add(new MirModule.NovaImportInfo(
                         qn, imp.hasAlias() ? imp.getAlias() : null, imp.isWildcard()));
@@ -323,6 +337,23 @@ public class HirToMirLowering {
         hoistNestedClasses(hirModule.getDeclarations());
 
         // 第一遍：收集顶层函数名、类名、方法描述符、类型别名
+        // 预扫描 main() 体内的顶层字段（scriptMode 下 var/val 声明被合成到 main 中）
+        if (scriptMode) {
+            for (HirDecl decl : hirModule.getDeclarations()) {
+                if (decl instanceof HirFunction && "main".equals(decl.getName())) {
+                    HirFunction mainFn = (HirFunction) decl;
+                    if (mainFn.getBody() instanceof Block) {
+                        for (Statement stmt : ((Block) mainFn.getBody()).getStatements()) {
+                            if (stmt instanceof HirDeclStmt && ((HirDeclStmt) stmt).getDeclaration() instanceof HirField) {
+                                HirField hf = (HirField) ((HirDeclStmt) stmt).getDeclaration();
+                                topLevelFieldNames.put(hf.getName(), hf.isVal());
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
         for (HirDecl decl : hirModule.getDeclarations()) {
             if (decl instanceof HirTypeAlias) {
                 typeAliasMap.put(((HirTypeAlias) decl).getName(), ((HirTypeAlias) decl).getTargetType());
@@ -377,7 +408,7 @@ public class HirToMirLowering {
                     classConstructorDecls.put(hc.getName(), hc.getConstructors().get(0));
                 }
                 // 记录字段名（用于区分字段调用和方法调用）
-                // 始终注册（即使为空），使 interpreterMode 保护逻辑能正确区分字段和外部变量
+                // 始终注册（即使为空），使字段保护逻辑能正确区分字段和外部变量
                 Set<String> fieldSet = new HashSet<>();
                 for (HirField f : hc.getFields()) {
                     fieldSet.add(f.getName());
@@ -486,6 +517,18 @@ public class HirToMirLowering {
         javaTypeCache.clear();
 
         MirModule module = new MirModule(hirModule.getPackageName(), classes, topLevel);
+        // 顶层变量 → $Module 静态字段
+        if (!topLevelFieldNames.isEmpty()) {
+            List<MirField> tlFields = new ArrayList<>();
+            for (Map.Entry<String, Boolean> e : topLevelFieldNames.entrySet()) {
+                Set<Modifier> mods = new HashSet<>();
+                mods.add(Modifier.STATIC);
+                mods.add(Modifier.PUBLIC);
+                if (Boolean.TRUE.equals(e.getValue())) mods.add(Modifier.FINAL);
+                tlFields.add(new MirField(e.getKey(), MirType.ofObject("java/lang/Object"), mods));
+            }
+            module.setTopLevelFields(tlFields);
+        }
         if (!extensionPropertyInfos.isEmpty()) {
             module.setExtensionProperties(extensionPropertyInfos);
         }
@@ -1558,20 +1601,20 @@ public class HirToMirLowering {
                     builder.emitMoveTo(builder.emitConstBool(false, field.getLocation()), doneLocal, field.getLocation());
                     lazyVarLocals.put(field.getName(), new int[]{local, cacheLocal, doneLocal});
                 }
-                // 脚本模式: 导出变量到 NovaScriptContext（区分 val/var）
-                // 块作用域内（while/if/for/try）的变量仅通过寄存器访问，跳过 ENV 注册
+                // 顶层变量 → $Module 静态字段（PUTSTATIC 初始化）
+                // 块作用域内（while/if/for/try）的变量仅通过寄存器访问，跳过静态字段注册
                 if (scriptMode && blockScopeDepth == 0
                         && "main".equals(builder.getFunction().getName())) {
+                    topLevelFieldNames.put(field.getName(), field.isVal());
+                    builder.emitPutStatic(moduleClassName, field.getName(),
+                            "Ljava/lang/Object;", local, field.getLocation());
+                    // 同步到 NovaScriptContext（REPL 跨 eval 共享 + JSR-223 兼容）
                     int nameConst = builder.emitConstString(field.getName(), field.getLocation());
                     String defineOp = field.isVal() ? "defineVal" : "defineVar";
                     builder.emitInvokeStatic(
                             scriptContextOwner() + "|" + defineOp + "|(Ljava/lang/String;Ljava/lang/Object;)V",
                             new int[]{nameConst, local},
                             MirType.ofVoid(), field.getLocation());
-                    // main 函数的顶层 var: 记录导出，后续读写走 $ENV（和顶层函数共享）
-                    if (!field.isVal()) {
-                        scriptExportedVars.add(field.getName());
-                    }
                 }
                 return local;
             }
@@ -1881,22 +1924,14 @@ public class HirToMirLowering {
             return lowerForRange(node, (RangeExpr) node.getIterable(), builder);
         }
 
-        // 通用路径：iterator 模式
+        // 通用路径：NovaCollections.toIterable() 桥接 + Iterator 接口
         int iterable = lowerExpr(node.getIterable(), builder);
-        int iter;
-        if (interpreterMode) {
-            // 解释器模式：直接调用 iterator()，MirInterpreter 根据运行时类型分派
-            iter = builder.emitInvokeVirtual(iterable, "iterator", new int[0],
-                    MirType.ofObject("java/lang/Object"), loc);
-        } else {
-            // Map 不实现 Iterable，通过 NovaCollections.toIterable() 桥接
-            int iterableObj = builder.emitInvokeStatic(
-                    "com/novalang/runtime/NovaCollections|toIterable|(Ljava/lang/Object;)Ljava/lang/Iterable;",
-                    new int[]{iterable}, MirType.ofObject("java/lang/Iterable"), loc);
-            iter = builder.emitInvokeInterfaceDesc(iterableObj, "iterator", new int[0],
-                    "java/lang/Iterable", "()Ljava/util/Iterator;",
-                    MirType.ofObject("java/util/Iterator"), loc);
-        }
+        int iterableObj = builder.emitInvokeStatic(
+                "com/novalang/runtime/NovaCollections|toIterable|(Ljava/lang/Object;)Ljava/lang/Iterable;",
+                new int[]{iterable}, MirType.ofObject("java/lang/Iterable"), loc);
+        int iter = builder.emitInvokeInterfaceDesc(iterableObj, "iterator", new int[0],
+                "java/lang/Iterable", "()Ljava/util/Iterator;",
+                MirType.ofObject("java/util/Iterator"), loc);
 
         BasicBlock headerBlock = builder.newBlock();
         BasicBlock bodyBlock = builder.newBlock();
@@ -1906,28 +1941,16 @@ public class HirToMirLowering {
 
         // header: hasNext() check
         builder.switchToBlock(headerBlock);
-        int hasNext;
-        if (interpreterMode) {
-            hasNext = builder.emitInvokeVirtual(iter, "hasNext", new int[0],
-                    MirType.ofBoolean(), loc);
-        } else {
-            hasNext = builder.emitInvokeInterfaceDesc(iter, "hasNext", new int[0],
-                    "java/util/Iterator", "()Z",
-                    MirType.ofBoolean(), loc);
-        }
+        int hasNext = builder.emitInvokeInterfaceDesc(iter, "hasNext", new int[0],
+                "java/util/Iterator", "()Z",
+                MirType.ofBoolean(), loc);
         builder.emitBranch(hasNext, bodyBlock.getId(), exitBlock.getId(), loc);
 
         // body: next() + loop body
         builder.switchToBlock(bodyBlock);
-        int next;
-        if (interpreterMode) {
-            next = builder.emitInvokeVirtual(iter, "next", new int[0],
-                    MirType.ofObject("java/lang/Object"), loc);
-        } else {
-            next = builder.emitInvokeInterfaceDesc(iter, "next", new int[0],
-                    "java/util/Iterator", "()Ljava/lang/Object;",
-                    MirType.ofObject("java/lang/Object"), loc);
-        }
+        int next = builder.emitInvokeInterfaceDesc(iter, "next", new int[0],
+                "java/util/Iterator", "()Ljava/lang/Object;",
+                MirType.ofObject("java/lang/Object"), loc);
 
         // 绑定循环变量
         List<String> vars = node.getVariables();
@@ -1939,17 +1962,10 @@ public class HirToMirLowering {
             for (int vi = 0; vi < vars.size(); vi++) {
                 String varName = vars.get(vi);
                 if ("_".equals(varName)) continue;
-                int comp;
-                if (interpreterMode) {
-                    // 解释器模式：直接调用 componentN 方法
-                    comp = builder.emitInvokeVirtual(next, "component" + (vi + 1), new int[0],
-                            MirType.ofObject("java/lang/Object"), loc);
-                } else {
-                    int nConst = builder.emitConstInt(vi + 1, loc);
-                    comp = builder.emitInvokeStatic(
-                            "com/novalang/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
-                            new int[]{next, nConst}, MirType.ofObject("java/lang/Object"), loc);
-                }
+                int nConst = builder.emitConstInt(vi + 1, loc);
+                int comp = builder.emitInvokeStatic(
+                        "com/novalang/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
+                        new int[]{next, nConst}, MirType.ofObject("java/lang/Object"), loc);
                 int varLocal = builder.newLocal(varName, MirType.ofObject("java/lang/Object"));
                 builder.emitMoveTo(comp, varLocal, loc);
             }
@@ -2365,21 +2381,18 @@ public class HirToMirLowering {
         }
         if (expr instanceof NotNullExpr) {
             int operand = lowerExpr(((NotNullExpr) expr).getOperand(), builder);
-            if (!interpreterMode) {
-                // 编译模式: null 时抛出 NullPointerException
-                int nullConst = builder.emitConstNull(expr.getLocation());
-                int isNull = builder.emitBinary(BinaryOp.EQ, operand, nullConst,
-                        MirType.ofBoolean(), expr.getLocation());
-                BasicBlock throwBlock = builder.newBlock();
-                BasicBlock passBlock = builder.newBlock();
-                builder.emitBranch(isNull, throwBlock.getId(), passBlock.getId(), expr.getLocation());
-                builder.switchToBlock(throwBlock);
-                // new NullPointerException("!!") + ATHROW
-                int msgConst = builder.emitConstString("Value is null but non-null was asserted", expr.getLocation());
-                int npe = builder.emitNewObject("java/lang/NullPointerException", new int[]{msgConst}, expr.getLocation());
-                builder.emitThrow(npe, expr.getLocation());
-                builder.switchToBlock(passBlock);
-            }
+            // null 时抛出 NullPointerException
+            int nullConst = builder.emitConstNull(expr.getLocation());
+            int isNull = builder.emitBinary(BinaryOp.EQ, operand, nullConst,
+                    MirType.ofBoolean(), expr.getLocation());
+            BasicBlock throwBlock = builder.newBlock();
+            BasicBlock passBlock = builder.newBlock();
+            builder.emitBranch(isNull, throwBlock.getId(), passBlock.getId(), expr.getLocation());
+            builder.switchToBlock(throwBlock);
+            int msgConst = builder.emitConstString("Value is null but non-null was asserted", expr.getLocation());
+            int npe = builder.emitNewObject("java/lang/NullPointerException", new int[]{msgConst}, expr.getLocation());
+            builder.emitThrow(npe, expr.getLocation());
+            builder.switchToBlock(passBlock);
             return operand;
         }
         if (expr instanceof AwaitExpr) {
@@ -2405,9 +2418,7 @@ public class HirToMirLowering {
             int startVal = lowerExpr(range.getStart(), builder);
             int endVal = lowerExpr(range.getEnd(), builder);
             int inclusive = builder.emitConstBool(!range.isEndExclusive(), loc);
-            String extra = interpreterMode
-                    ? "$RANGE|create|(IIZ)Ljava/lang/Object;"
-                    : "com/novalang/runtime/NovaCollections|createRange|(IIZ)Ljava/util/List;";
+            String extra = "com/novalang/runtime/NovaCollections|createRange|(IIZ)Ljava/util/List;";
             return builder.emitInvokeStatic(extra, new int[]{startVal, endVal, inclusive},
                     MirType.ofObject("java/util/ArrayList"), loc);
         }
@@ -2746,8 +2757,8 @@ public class HirToMirLowering {
             // 全局函数引用 ::funcName → 生成 FunctionN 包装类，invoke 转发到 $Module.funcName
             String desc = topLevelFuncDescs.get(methodName);
 
-            // 解释器模式 + 跨 evalRepl（desc 为 null）：直接从环境获取函数引用
-            if (interpreterMode && desc == null) {
+            // 跨 evalRepl（desc 为 null）：直接从环境获取函数引用
+            if (desc == null) {
                 int nameConst = builder.emitConstString(methodName, loc);
                 return builder.emitInvokeStatic(
                         scriptContextOwner() + "|get|(Ljava/lang/String;)Ljava/lang/Object;",
@@ -2873,15 +2884,6 @@ public class HirToMirLowering {
         if (expr.hasTarget()) {
             // obj::method → 捕获 obj，invoke 中调用 obj.method(args)
             int targetObj = lowerExpr(expr.getTarget(), builder);
-
-            // 解释器模式：直接在运行时绑定方法（不生成 MethodRef 包装类）
-            if (interpreterMode) {
-                int nameConst = builder.emitConstString(methodName, loc);
-                return builder.emitInvokeStatic(
-                        "$BIND_METHOD|bind|(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
-                        new int[]{targetObj, nameConst},
-                        MirType.ofObject("java/lang/Object"), loc);
-            }
 
             // 默认参数数量 1（单参方法最常见）
             int paramCount = 1;
@@ -3063,15 +3065,31 @@ public class HirToMirLowering {
                         MirType.ofObject("java/lang/Object"), ref.getLocation());
             }
         }
-        // scriptMode main 导出的 var: 走 $ENV 读取（和顶层函数共享同一份数据）
-        if (scriptExportedVars.contains(ref.getName())
-                && !boxedMutableCaptures.containsKey(ref.getName())
-                && "main".equals(builder.getFunction().getName())) {
-            int nameConst = builder.emitConstString(ref.getName(), ref.getLocation());
-            return builder.emitInvokeStatic(
-                    scriptContextOwner() + "|get|(Ljava/lang/String;)Ljava/lang/Object;",
-                    new int[]{nameConst},
-                    MirType.ofObject("java/lang/Object"), ref.getLocation());
+        // 顶层 var → GETSTATIC（可能被其他函数/闭包修改，不能用局部变量缓存）
+        // 但 main() 内如果 blockScopeDepth > 0 且存在同名的块级局部变量（如 for 循环变量），
+        // 需要跳过 GETSTATIC 让局部变量查找优先（避免同名冲突）
+        if (topLevelFieldNames.containsKey(ref.getName())
+                && !Boolean.TRUE.equals(topLevelFieldNames.get(ref.getName()))
+                && !boxedMutableCaptures.containsKey(ref.getName())) {
+            // 在 main() 内块作用域中，检查是否有更近的同名局部变量（如 for 循环变量）
+            if ("main".equals(builder.getFunction().getName()) && blockScopeDepth > 0) {
+                // 检查最近声明的同名 local 数量是否 > 1（即除了顶层声明外还有块级声明）
+                int count = 0;
+                for (MirLocal l : builder.getFunction().getLocals()) {
+                    if (ref.getName().equals(l.getName())) count++;
+                }
+                if (count == 0) {
+                    // 无同名局部变量，走 GETSTATIC
+                    return builder.emitGetStatic(moduleClassName, ref.getName(),
+                            "Ljava/lang/Object;",
+                            MirType.ofObject("java/lang/Object"), ref.getLocation());
+                }
+                // 有同名局部变量 → 走局部变量查找（让 for 循环变量等优先匹配）
+            } else {
+                return builder.emitGetStatic(moduleClassName, ref.getName(),
+                        "Ljava/lang/Object;",
+                        MirType.ofObject("java/lang/Object"), ref.getLocation());
+            }
         }
         // 查找已存在的局部变量（逆序查找，优先匹配最近声明的同名变量）
         List<MirLocal> locals = builder.getFunction().getLocals();
@@ -3088,19 +3106,12 @@ public class HirToMirLowering {
                     BasicBlock mergeBlock = builder.newBlock();
                     builder.emitBranch(doneLocal, mergeBlock.getId(), initBlock.getId(), loc);
                     builder.switchToBlock(initBlock);
-                    // 调用 lambda: 通过方法调用分派（$PipeCall 或 invokedynamic）
-                    int result;
-                    if (interpreterMode) {
-                        result = builder.emitInvokeStatic("$PipeCall|invoke",
-                                new int[]{lambdaLocal}, MirType.ofObject("java/lang/Object"), loc);
-                    } else {
-                        // 编译模式: invokedynamic 分派 invoke()
-                        InvokeDynamicInfo dynInfo = new InvokeDynamicInfo(
-                                "invoke", "com/novalang/runtime/NovaBootstrap", "bootstrapInvoke",
-                                "(Ljava/lang/Object;)Ljava/lang/Object;");
-                        result = builder.emitInvokeDynamic(dynInfo, new int[]{lambdaLocal},
-                                MirType.ofObject("java/lang/Object"), loc);
-                    }
+                    // 调用 lambda: invokedynamic bootstrapInvoke 分派 invoke()
+                    InvokeDynamicInfo dynInfo = new InvokeDynamicInfo(
+                            "invoke", "com/novalang/runtime/NovaBootstrap", "bootstrapInvoke",
+                            "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    int result = builder.emitInvokeDynamic(dynInfo, new int[]{lambdaLocal},
+                            MirType.ofObject("java/lang/Object"), loc);
                     builder.emitMoveTo(result, cacheLocal, loc);
                     builder.emitMoveTo(builder.emitConstBool(true, loc), doneLocal, loc);
                     builder.emitGoto(mergeBlock.getId(), loc);
@@ -3109,6 +3120,13 @@ public class HirToMirLowering {
                 }
                 return idx;
             }
+        }
+        // 顶层 val → GETSTATIC（从顶层函数访问时，无同名局部变量）
+        if (topLevelFieldNames.containsKey(ref.getName())
+                && !boxedMutableCaptures.containsKey(ref.getName())) {
+            return builder.emitGetStatic(moduleClassName, ref.getName(),
+                    "Ljava/lang/Object;",
+                    MirType.ofObject("java/lang/Object"), ref.getLocation());
         }
         // 接收者 Lambda 上下文：this 引用返回接收者对象
         if ("this".equals(ref.getName()) && currentReceiverLambda != null) {
@@ -3141,11 +3159,14 @@ public class HirToMirLowering {
                             thisType.getClassName(), desc,
                             MirType.ofObject("java/lang/Object"), ref.getLocation());
                 }
-                // interpreterMode：对已知 Nova 类，检查是否有该字段/方法，避免把全局变量当成 this.field
-                // Lambda 匿名类的捕获字段不在 classFieldNames 中，跳过此检查
-                if (interpreterMode && thisType.getKind() == MirType.Kind.OBJECT
-                        && thisType.getClassName() != null
-                        && classFieldNames.containsKey(thisType.getClassName())) {
+                // 对已知用户定义类，检查是否有该字段/方法，避免把全局变量当成 this.field
+                // 跳过: Lambda 匿名类（捕获字段不在 classFieldNames）、$Module 容器类
+                String thisClassName = thisType.getClassName();
+                if (thisType.getKind() == MirType.Kind.OBJECT
+                        && thisClassName != null
+                        && !thisClassName.contains("$Lambda$")
+                        && !thisClassName.equals(moduleClassName)
+                        && classFieldNames.containsKey(thisClassName)) {
                     String className = thisType.getClassName();
                     // 沿继承链查找字段（子类 → 父类）
                     boolean hasField = false;
@@ -3171,14 +3192,22 @@ public class HirToMirLowering {
                     }
                     // chainComplete=false 时，可能是继承的字段 → fall through 到 GET_FIELD
                 }
-                // scriptMode + lambda 类（编译模式）：非捕获变量应通过 NovaScriptContext.get() 读取，而非 this.field
-                // interpreterMode 下保留 GET_FIELD this.field：MIR 解释器通过 scopeReceiver 机制重定向
-                if (scriptMode && !interpreterMode && thisType.getKind() == MirType.Kind.OBJECT
+                // Lambda 类：非捕获变量通过 scopeReceiver 访问
+                // MirInterpreter: GET_FIELD this.name → executeGetField 回退到 scopeReceiver
+                // MirCodeGenerator: invokedynamic getMember（lambda 类没有该字段，需运行时分派）
+                if (thisType.getKind() == MirType.Kind.OBJECT
                         && thisType.getClassName() != null
                         && thisType.getClassName().contains("$Lambda$")
                         && !lambdaCaptureStack.isEmpty()
                         && !lambdaCaptureStack.peek().contains(ref.getName())) {
-                    break; // fall through → NovaScriptContext.get(name)
+                    // 生成 GET_FIELD（MirInterpreter 通过 scopeReceiver 重定向）
+                    // MirCodeGenerator 对 Lambda 类的 GET_FIELD 不会生成 GETFIELD（见下方 break 条件）
+                    // 改为直接生成 INVOKE_DYNAMIC bootstrapGetMember
+                    InvokeDynamicInfo getInfo = new InvokeDynamicInfo(
+                            ref.getName(), "com/novalang/runtime/NovaBootstrap", "bootstrapGetMember",
+                            "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    return builder.emitInvokeDynamic(getInfo, new int[]{local.getIndex()},
+                            MirType.ofObject("java/lang/Object"), ref.getLocation());
                 }
                 int fieldVal = builder.emitGetField(local.getIndex(), ref.getName(),
                         MirType.ofObject("java/lang/Object"), ref.getLocation());
@@ -3316,9 +3345,13 @@ public class HirToMirLowering {
                 int newVal = builder.emitInvokeVirtualDesc(operand, methodName, new int[0],
                         owner, desc, retType, loc);
                 builder.emitMoveTo(newVal, operand, loc);
-                // 脚本模式: 写回变量到 NovaScriptContext
-                if (scriptMode && expr.getOperand() instanceof Identifier) {
-                    emitScriptContextSet(builder, ((Identifier) expr.getOperand()).getName(), operand, loc);
+                // 写回变量到 $Module 静态字段 + NovaScriptContext
+                if (expr.getOperand() instanceof Identifier) {
+                    String vn = ((Identifier) expr.getOperand()).getName();
+                    if (topLevelFieldNames.containsKey(vn) && !Boolean.TRUE.equals(topLevelFieldNames.get(vn))) {
+                        builder.emitPutStatic(moduleClassName, vn, "Ljava/lang/Object;", operand, loc);
+                    }
+                    if (scriptMode) emitScriptContextSet(builder, vn, operand, loc);
                 }
                 return expr.isPostfix() ? oldVal : operand;
             }
@@ -3334,21 +3367,27 @@ public class HirToMirLowering {
             // 隐式 this.field 写回：++count 中 count 可能是 this.count
             if (expr.getOperand() instanceof Identifier) {
                 String varName = ((Identifier) expr.getOperand()).getName();
-                boolean isLocal = false;
-                for (MirLocal local : builder.getFunction().getLocals()) {
-                    if (local.getName().equals(varName)) { isLocal = true; break; }
-                }
-                if (!isLocal) {
+                // 顶层 var → PUTSTATIC + ScriptContext
+                if (topLevelFieldNames.containsKey(varName) && !Boolean.TRUE.equals(topLevelFieldNames.get(varName))) {
+                    builder.emitPutStatic(moduleClassName, varName, "Ljava/lang/Object;", operand, loc);
+                    if (scriptMode) emitScriptContextSet(builder, varName, operand, loc);
+                } else {
+                    boolean isLocal = false;
                     for (MirLocal local : builder.getFunction().getLocals()) {
-                        if ("this".equals(local.getName()) || "$this".equals(local.getName())) {
-                            builder.emitSetField(local.getIndex(), varName, operand, loc);
-                            break;
+                        if (local.getName().equals(varName)) { isLocal = true; break; }
+                    }
+                    if (!isLocal) {
+                        for (MirLocal local : builder.getFunction().getLocals()) {
+                            if ("this".equals(local.getName()) || "$this".equals(local.getName())) {
+                                builder.emitSetField(local.getIndex(), varName, operand, loc);
+                                break;
+                            }
                         }
                     }
-                }
-                // 脚本模式: 写回变量到 NovaScriptContext
-                if (scriptMode) {
-                    emitScriptContextSet(builder, varName, operand, loc);
+                    // 脚本模式: 写回变量到 NovaScriptContext
+                    if (scriptMode) {
+                        emitScriptContextSet(builder, varName, operand, loc);
+                    }
                 }
             }
             return expr.isPostfix() ? oldVal : operand;
@@ -3385,7 +3424,7 @@ public class HirToMirLowering {
         if (hasPlaceholderArg(expr)) return lowerPartialApplicationCall(expr, builder);
         if (expr.getCallee() instanceof Identifier) {
             String name = ((Identifier) expr.getCallee()).getName();
-            if (!interpreterMode && ("println".equals(name) || "print".equals(name)))
+            if ("println".equals(name) || "print".equals(name))
                 return lowerPrintCall(name, expr, builder);
             if ("classOf".equals(name) && expr.getArgs().size() == 1)
                 return lowerClassOfCall(expr, builder);
@@ -3457,12 +3496,8 @@ public class HirToMirLowering {
     private int lowerStdlibNativeFunctionCall(String name, HirCall expr, MirBuilder builder) {
         StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(name);
         if (nfInfo != null) {
-            // scriptMode: 非 interpreterBuiltin 函数走动态解析（允许用户 Nova.define 覆盖 stdlib）
-            // interpreterBuiltin 函数必须走 INVOKESTATIC（动态路径无法正确传递编译 lambda）
-            // 模块函数（now/sleep 等）由 lowerBuiltinModuleFunction 兜底处理
-            if (scriptMode && !nfInfo.interpreterBuiltin) return -1;
-            // interpreterMode: interpreterBuiltin 函数走 $PipeCall → Builtins
-            if (interpreterMode && nfInfo.interpreterBuiltin) nfInfo = null;
+            // scriptMode: 所有 stdlib 函数走动态解析（允许用户 Nova.define 覆盖）
+            if (scriptMode) return -1;
         }
         if (nfInfo != null && (expr.getArgs().size() == nfInfo.arity || nfInfo.arity == -1)) {
             String extra = nfInfo.jvmOwner + "|" + nfInfo.jvmMethodName + "|" + nfInfo.jvmDescriptor;
@@ -3581,26 +3616,10 @@ public class HirToMirLowering {
             if (local.getName().equals(name)) { isLocalVar = true; break; }
         }
         if (thisLocal != null && !isLocalVar) {
-            // 安全检查: StdlibRegistry 全局函数优先走 INVOKESTATIC，不要误判为自方法调用
-            StdlibRegistry.NativeFunctionInfo nf = StdlibRegistry.getNativeFunction(name);
-            if (interpreterMode && nf != null && nf.interpreterBuiltin) nf = null;
-            if (nf != null && (expr.getArgs().size() == nf.arity || nf.arity == -1)) {
-                String extra = nf.jvmOwner + "|" + nf.jvmMethodName + "|" + nf.jvmDescriptor;
-                String retDescStr = nf.jvmDescriptor.substring(nf.jvmDescriptor.indexOf(')') + 1);
-                MirType retType = descriptorToMirType(retDescStr);
-                if (nf.arity == -1) {
-                    SourceLocation loc2 = expr.getLocation();
-                    int sizeConst = builder.emitConstInt(expr.getArgs().size(), loc2);
-                    int arrLocal = builder.emitNewArray(sizeConst, loc2);
-                    for (int i = 0; i < expr.getArgs().size(); i++) {
-                        int argVal = lowerExpr(expr.getArgs().get(i), builder);
-                        int idxConst = builder.emitConstInt(i, loc2);
-                        builder.emitIndexSet(arrLocal, idxConst, argVal, loc2);
-                    }
-                    return builder.emitInvokeStatic(extra, new int[]{arrLocal}, retType, loc2);
-                }
-                int[] args = lowerArgs(expr.getArgs(), builder);
-                return builder.emitInvokeStatic(extra, args, retType, expr.getLocation());
+            // 安全检查: StdlibRegistry 已知全局函数不是 this.method，跳过自方法调用
+            // 但 Object 通用方法（toString 等）在 scopeReceiver 上总是可用，保留自方法调用
+            if (StdlibRegistry.get(name) != null && !OBJECT_METHOD_NAMES.contains(name)) {
+                return -1;
             }
             StdlibRegistry.ReceiverLambdaInfo rl = StdlibRegistry.getReceiverLambda(name);
             if (rl != null && expr.getArgs().size() == 1) {
@@ -3636,31 +3655,29 @@ public class HirToMirLowering {
                         funcInterface, funcDesc,
                         MirType.ofObject("java/lang/Object"), expr.getLocation());
             }
-            // interpreterMode/scriptMode: 真实类中，仅对已知类方法生成自调用，未知函数回退到 $PipeCall
+            // 真实类中，仅对已知类方法生成自调用，未知函数回退到 invokedynamic
             // Lambda 类保留自调用：scopeReceiver 在运行时重定向 this（apply/run/with 依赖此机制）
             // 继承链不完整时保留自调用：父类方法可能在之前的 evalRepl 中注册
             boolean isLambdaClass = owner != null && owner.contains("$Lambda$");
-            // scriptMode + lambda 类（编译模式）：脚本绑定函数不是 lambda 类的方法，回退到 $PipeCall → NovaScriptContext.call()
-            // interpreterMode 下保留自方法调用：MIR 解释器通过 scopeReceiver 机制正确重定向
-            if (scriptMode && !interpreterMode && isLambdaClass) {
-                // fall through → 返回 -1
-            } else {
-                boolean canCheckInherited = !isLambdaClass && isInheritanceChainComplete(owner);
-                if ((interpreterMode || scriptMode) && canCheckInherited && lookupNovaMethodDescInherited(owner, name) == null) {
-                    // 不是已知类方法，fall through → 返回 -1 让主方法继续到 $PipeCall
-                } else {
-                    int[] args = lowerArgs(expr.getArgs(), builder);
-                    String desc = lookupNovaMethodDesc(owner, name, args.length);
-                    String retDescStr = desc.substring(desc.indexOf(')') + 1);
-                    MirType retType = inferReturnType(retDescStr, owner);
-                    // 接口方法自调用：INVOKEINTERFACE
-                    if (interfaceNames.contains(owner)) {
-                        return builder.emitInvokeInterfaceDesc(thisLocal.getIndex(), name, args,
-                                owner, desc, retType, expr.getLocation());
-                    }
-                    return builder.emitInvokeVirtualDesc(thisLocal.getIndex(), name, args,
+            // Lambda 类始终自调用（MirInterpreter scopeReceiver 重定向）
+            // MirCodeGenerator 对 Lambda 类的 INVOKE_VIRTUAL 生成 invokedynamic
+            boolean shouldSelfCall = isLambdaClass;
+            if (!isLambdaClass) {
+                boolean canCheckInherited = isInheritanceChainComplete(owner);
+                // 已知方法 或 继承链不完整 → 生成自调用
+                shouldSelfCall = !(canCheckInherited && lookupNovaMethodDescInherited(owner, name) == null);
+            }
+            if (shouldSelfCall) {
+                int[] args = lowerArgs(expr.getArgs(), builder);
+                String desc = lookupNovaMethodDesc(owner, name, args.length);
+                String retDescStr = desc.substring(desc.indexOf(')') + 1);
+                MirType retType = inferReturnType(retDescStr, owner);
+                if (interfaceNames.contains(owner)) {
+                    return builder.emitInvokeInterfaceDesc(thisLocal.getIndex(), name, args,
                             owner, desc, retType, expr.getLocation());
                 }
+                return builder.emitInvokeVirtualDesc(thisLocal.getIndex(), name, args,
+                        owner, desc, retType, expr.getLocation());
             }
         }
         return -1;
@@ -3676,10 +3693,10 @@ public class HirToMirLowering {
                 || (expr.getTypeArgs() != null && !expr.getTypeArgs().isEmpty()))) {
             int[] args = lowerArgs(expr.getArgs(), builder);
 
-            // 编译模式 + 无 spread + 无 typeArgs → invokedynamic bootstrapStaticInvoke
+            // 无 spread + 无 typeArgs → invokedynamic bootstrapStaticInvoke
             boolean hasSpread = expr.hasSpread();
             boolean hasTypeArgs = expr.getTypeArgs() != null && !expr.getTypeArgs().isEmpty();
-            if (!interpreterMode && !hasSpread && !hasTypeArgs) {
+            if (!hasSpread && !hasTypeArgs) {
                 StringBuilder descBuilder = new StringBuilder("(");
                 for (int i = 0; i < args.length; i++) {
                     descBuilder.append("Ljava/lang/Object;");
@@ -3692,7 +3709,7 @@ public class HirToMirLowering {
                         MirType.ofObject("java/lang/Object"), expr.getLocation());
             }
 
-            // interpreterMode 或带 spread/typeArgs → 保持 $PipeCall
+            // 带 spread/typeArgs → 保持 $PipeCall（运行时展开）
             String extra = "$PipeCall|" + name;
             // spread 参数: 编码 spread 索引到 methodName 中供运行时展开
             if (hasSpread) {
@@ -3738,8 +3755,9 @@ public class HirToMirLowering {
 
     /** Java.type()/限定Java类名构造器/方法调用。返回 -1 表示不匹配 */
     private int tryJavaTypeOrQualifiedCall(HirCall expr, MirBuilder builder) {
-        // Java.type("className")(...) → NEW_OBJECT（仅编译模式）
-        if (!interpreterMode && expr.getCallee() instanceof HirCall) {
+        // Java.type("className")(...) → NEW_OBJECT
+        // 安全策略方法黑名单在 MirInterpreter 的 NEW_OBJECT 处理中守卫（hasMethodRestrictions 时跳过集合快捷转换）
+        if (expr.getCallee() instanceof HirCall) {
             String javaClassName = extractJavaTypeClassName((HirCall) expr.getCallee());
             if (javaClassName != null) {
                 String internalName = javaClassName.replace('.', '/');
@@ -3806,10 +3824,10 @@ public class HirToMirLowering {
         SourceLocation loc = expr.getLocation();
         Expression arg = expr.getArgs().get(0);
 
-        // interpreterMode: 统一走表达式路径（运行时根据 NovaClass/NovaObject/NovaExternalObject 分派）
-        // 编译模式: Identifier 走 CONST_CLASS 路径（类名在编译期解析为 Java Class）
-        if (!interpreterMode && arg instanceof Identifier) {
-            // classOf(ClassName) — 参数是类名标识符
+        // 已知类名 Identifier 走 CONST_CLASS 路径（编译期解析）
+        // 变量 Identifier 走表达式路径（运行时解析）
+        if (arg instanceof Identifier && (classNames.contains(((Identifier) arg).getName())
+                || resolveJavaClass(((Identifier) arg).getName()) != null)) {
             String className = ((Identifier) arg).getName();
             // 解析类名
             String internalName = className;
@@ -3823,20 +3841,10 @@ public class HirToMirLowering {
                     MirType.ofObject("com/novalang/runtime/interpreter/reflect/NovaClassInfo"), loc);
         }
 
-        // classOf(expr) — 参数是表达式（interpreterMode 下所有 classOf 走此路径）
+        // classOf(expr) — 直接传 NovaValue，StaticMethodDispatcher 处理 NovaClass/NovaObject/NovaExternalObject
         int objLocal = lowerExpr(arg, builder);
-        if (interpreterMode) {
-            // interpreterMode: 直接传 NovaValue，MirInterpreter handler 处理 NovaClass/NovaObject/NovaExternalObject
-            String extra = "com/novalang/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lcom/novalang/runtime/interpreter/reflect/NovaClassInfo;";
-            return builder.emitInvokeStatic(extra, new int[]{objLocal},
-                    MirType.ofObject("com/novalang/runtime/interpreter/reflect/NovaClassInfo"), loc);
-        }
-        // codegen 路径: 需要 obj.getClass() 获取 Java Class 对象
-        int classLocal = builder.emitInvokeVirtualDesc(objLocal, "getClass", new int[]{},
-                "java/lang/Object", "()Ljava/lang/Class;",
-                MirType.ofObject("java/lang/Class"), loc);
         String extra = "com/novalang/runtime/interpreter/reflect/NovaClassInfo|fromJavaClass|(Ljava/lang/Class;)Lcom/novalang/runtime/interpreter/reflect/NovaClassInfo;";
-        return builder.emitInvokeStatic(extra, new int[]{classLocal},
+        return builder.emitInvokeStatic(extra, new int[]{objLocal},
                 MirType.ofObject("com/novalang/runtime/interpreter/reflect/NovaClassInfo"), loc);
     }
 
@@ -4164,16 +4172,8 @@ public class HirToMirLowering {
             if (javaClass != null) {
                 return lowerJavaStaticCall(javaClass, fieldAccess.getMember(), expr, builder);
             }
-            // Java.type("className")
-            if ("Java".equals(targetName) && "type".equals(fieldAccess.getMember())) {
-                if (interpreterMode) {
-                    // interpreterMode: 保留运行时调用，使安全策略检查生效
-                    // 回退到通用方法调用路径（下方的 lowerExpr(target) + INVOKE_VIRTUAL）
-                } else {
-                    // JVM 编译路径: 不需要运行时调用
-                    return builder.emitConstNull(expr.getLocation());
-                }
-            }
+            // Java.type("className") → fall through 到通用方法调用路径，运行时处理
+            // 安全策略检查在 VirtualMethodDispatcher / NovaDynamic 中统一生效
         }
 
         // 限定 Java 类名的静态方法调用: java.lang.Math.max(a, b)
@@ -4288,11 +4288,6 @@ public class HirToMirLowering {
                     String owner = targetType != null && targetType.getKind() == MirType.Kind.OBJECT
                             ? targetType.getClassName() : null;
                     if (owner == null || !classNames.contains(owner)) {
-                        if (interpreterMode) {
-                            // 解释器模式：直接调用 componentN 方法
-                            return builder.emitInvokeVirtual(target, methodName, new int[0],
-                                    MirType.ofObject("java/lang/Object"), loc);
-                        }
                         int nConst = builder.emitConstInt(n, loc);
                         return builder.emitInvokeStatic(
                                 "com/novalang/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
@@ -4446,19 +4441,13 @@ public class HirToMirLowering {
     /**
      * 未知类型对象的动态方法调用。
      * <ul>
-     *   <li>interpreterMode：INVOKE_VIRTUAL（MirInterpreter 根据运行时类型分派）</li>
+     *   <li>MirInterpreter：executeInvokeDynamic → bootstrapInvoke 分派</li>
      *   <li>编译模式：INVOKE_DYNAMIC（通过 NovaBootstrap 的 CallSite 分派）</li>
      * </ul>
      */
     private int emitDynamicInvoke(int target, String methodName, int[] args,
                                   MirBuilder builder, SourceLocation loc) {
-        // 解释器模式：直接 INVOKE_VIRTUAL，MirInterpreter 根据运行时类型正确分派
-        if (interpreterMode) {
-            return builder.emitInvokeVirtual(target, methodName, args,
-                    MirType.ofObject("java/lang/Object"), loc);
-        }
-
-        // 编译模式：生成 INVOKE_DYNAMIC（通过 NovaBootstrap.bootstrapInvoke 分派）
+        // 统一生成 INVOKE_DYNAMIC（MirInterpreter 通过 executeInvokeDynamic 分派，MirCodeGenerator 生成 invokedynamic 字节码）
         int[] allOps = new int[args.length + 1];
         allOps[0] = target;
         System.arraycopy(args, 0, allOps, 1, args.length);
@@ -4559,17 +4548,29 @@ public class HirToMirLowering {
 
     private int lowerPrintCall(String name, HirCall expr, MirBuilder builder) {
         SourceLocation loc = expr.getLocation();
-        // GETSTATIC java/lang/System.out
-        int sysOut = builder.emitGetStatic("java/lang/System", "out",
-                "Ljava/io/PrintStream;", MirType.ofObject("java/io/PrintStream"), loc);
+        String owner = "com/novalang/runtime/NovaPrint";
         if (expr.getArgs().isEmpty()) {
             // println() 无参
-            return builder.emitInvokeVirtualDesc(sysOut, name, new int[0],
-                    "java/io/PrintStream", "()V", MirType.ofVoid(), loc);
-        } else {
+            return builder.emitInvokeStatic(owner + "|println|()V",
+                    new int[0], MirType.ofVoid(), loc);
+        } else if (expr.getArgs().size() == 1) {
+            // println(value) / print(value) 单参
             int[] args = lowerArgs(expr.getArgs(), builder);
-            return builder.emitInvokeVirtualDesc(sysOut, name, args,
-                    "java/io/PrintStream", "(Ljava/lang/Object;)V", MirType.ofVoid(), loc);
+            return builder.emitInvokeStatic(owner + "|" + name + "|(Ljava/lang/Object;)V",
+                    args, MirType.ofVoid(), loc);
+        } else {
+            // println(a, b, c) 多参 → varargs
+            int sizeConst = builder.emitConstInt(expr.getArgs().size(), loc);
+            int arrLocal = builder.emitNewArray(sizeConst, loc);
+            for (int i = 0; i < expr.getArgs().size(); i++) {
+                int argVal = lowerExpr(expr.getArgs().get(i), builder);
+                int idxConst = builder.emitConstInt(i, loc);
+                builder.emitIndexSet(arrLocal, idxConst, argVal, loc);
+            }
+            String varargMethod = "println".equals(name) ? "printlnVarargs" : "printVarargs";
+            return builder.emitInvokeStatic(
+                    owner + "|" + varargMethod + "|([Ljava/lang/Object;)V",
+                    new int[]{arrLocal}, MirType.ofVoid(), loc);
         }
     }
 
@@ -4669,13 +4670,7 @@ public class HirToMirLowering {
             }
             // 字段不在声明类型及其父类上 → 回退到下方的动态解析路径
         }
-        // 未知类型 → 动态成员解析
-        if (interpreterMode) {
-            // 解释器模式：直接 GET_FIELD，executeGetField 已委托 MemberResolver
-            return builder.emitGetField(target, fieldName,
-                    MirType.ofObject("java/lang/Object"), expr.getLocation());
-        }
-        // 编译模式：invokedynamic bootstrapGetMember（fieldName 编码在 invokedynamic name 中）
+        // 未知类型 → 动态成员解析（invokedynamic bootstrapGetMember）
         InvokeDynamicInfo getInfo = new InvokeDynamicInfo(
                 fieldName, "com/novalang/runtime/NovaBootstrap", "bootstrapGetMember",
                 "(Ljava/lang/Object;)Ljava/lang/Object;");
@@ -4736,25 +4731,11 @@ public class HirToMirLowering {
         SourceLocation loc = expr.getLocation();
         int target = lowerExpr(expr.getTarget(), builder);
 
-        // Range 切片：target[start..end]
+        // Range 切片：target[start..end] → INDEX_GET + NovaRange
         if (expr.getIndex() instanceof RangeExpr) {
-            if (interpreterMode) {
-                // 解释器：lower Range 为 NovaRange → INDEX_GET，由 performIndex 统一处理
-                int rangeIndex = lowerExpr(expr.getIndex(), builder);
-                return builder.emitIndexGet(target, rangeIndex,
-                        MirType.ofObject("java/lang/Object"), loc);
-            }
-            // 编译路径：手动拆解为 List.subList(start, exclusiveEnd)
-            RangeExpr range = (RangeExpr) expr.getIndex();
-            int start = lowerExpr(range.getStart(), builder);
-            int end = lowerExpr(range.getEnd(), builder);
-            if (!range.isEndExclusive()) {
-                int one = builder.emitConstInt(1, loc);
-                end = builder.emitBinary(BinaryOp.ADD, end, one, MirType.ofInt(), loc);
-            }
-            return builder.emitInvokeInterfaceDesc(target, "subList", new int[]{start, end},
-                    "java/util/List", "(II)Ljava/util/List;",
-                    MirType.ofObject("java/util/List"), loc);
+            int rangeIndex = lowerExpr(expr.getIndex(), builder);
+            return builder.emitIndexGet(target, rangeIndex,
+                    MirType.ofObject("java/lang/Object"), loc);
         }
 
         int index = lowerExpr(expr.getIndex(), builder);
@@ -4799,8 +4780,11 @@ public class HirToMirLowering {
                         && locals.get(boxLocal).getName().equals(varName + "$box")) {
                     int zeroConst = builder.emitConstInt(0, expr.getLocation());
                     builder.emitIndexSet(boxLocal, zeroConst, value, expr.getLocation());
-                    // scriptExportedVar + boxing: 同步到 $ENV（供顶层函数读取）
-                    if (scriptExportedVars.contains(varName)) {
+                    // 顶层 var + boxing: 同步到 $Module 静态字段 + ScriptContext
+                    if (topLevelFieldNames.containsKey(varName)
+                            && !Boolean.TRUE.equals(topLevelFieldNames.get(varName))) {
+                        builder.emitPutStatic(moduleClassName, varName,
+                                "Ljava/lang/Object;", value, expr.getLocation());
                         emitScriptContextSet(builder, varName, value, expr.getLocation());
                     }
                     return value;
@@ -4812,8 +4796,11 @@ public class HirToMirLowering {
                                 MirType.ofObject("java/lang/Object"), expr.getLocation());
                         int zeroConst = builder.emitConstInt(0, expr.getLocation());
                         builder.emitIndexSet(fieldVal, zeroConst, value, expr.getLocation());
-                        // scriptExportedVar + boxing: 同步到 $ENV（供顶层函数读取）
-                        if (scriptExportedVars.contains(varName)) {
+                        // 顶层 var + boxing: 同步到 $Module 静态字段 + ScriptContext
+                        if (topLevelFieldNames.containsKey(varName)
+                                && !Boolean.TRUE.equals(topLevelFieldNames.get(varName))) {
+                            builder.emitPutStatic(moduleClassName, varName,
+                                    "Ljava/lang/Object;", value, expr.getLocation());
                             emitScriptContextSet(builder, varName, value, expr.getLocation());
                         }
                         return value;
@@ -4824,12 +4811,12 @@ public class HirToMirLowering {
             for (int i = locals.size() - 1; i >= 0; i--) {
                 if (locals.get(i).getName().equals(varName)) {
                     builder.emitMoveTo(value, locals.get(i).getIndex(), expr.getLocation());
-                    // scriptMode main 导出的 var: 双写 — 局部变量 + $ENV
-                    // 局部变量用于 exportSlots 回写和后续本地访问
-                    // $ENV 用于和顶层函数共享
-                    if (scriptExportedVars.contains(varName)
-                            && !boxedMutableCaptures.containsKey(varName)
-                            && "main".equals(builder.getFunction().getName())) {
+                    // 顶层 var → 同步写入 $Module 静态字段 + ScriptContext（REPL 兼容）
+                    if (topLevelFieldNames.containsKey(varName)
+                            && !Boolean.TRUE.equals(topLevelFieldNames.get(varName))
+                            && !boxedMutableCaptures.containsKey(varName)) {
+                        builder.emitPutStatic(moduleClassName, varName,
+                                "Ljava/lang/Object;", value, expr.getLocation());
                         emitScriptContextSet(builder, varName, value, expr.getLocation());
                     }
                     return locals.get(i).getIndex();
@@ -4840,11 +4827,14 @@ public class HirToMirLowering {
                 if ("this".equals(local.getName())) {
                     MirType thisType = local.getType();
                     if (thisType.getKind() == MirType.Kind.OBJECT && thisType.getClassName() != null) {
-                        // interpreterMode：检查是否真的是类字段，避免将外部变量赋值误当成 this.field
-                        if (interpreterMode && classFieldNames.containsKey(thisType.getClassName())) {
+                        // 检查是否真的是类字段，避免将外部变量赋值误当成 this.field
+                        // 跳过: Lambda 类（捕获字段不在 classFieldNames）、$Module 容器类
+                        if (!thisType.getClassName().contains("$Lambda$")
+                                && !thisType.getClassName().equals(moduleClassName)
+                                && classFieldNames.containsKey(thisType.getClassName())) {
                             Set<String> fields = classFieldNames.get(thisType.getClassName());
                             if (fields == null || !fields.contains(varName)) {
-                                break; // 不是类字段 → 走 $ENV|set 路径
+                                break; // 不是类字段 → 走 NovaScriptContext.set 路径
                             }
                         }
                         // 自定义 setter → 调用 set$fieldName(value)
@@ -4860,6 +4850,14 @@ public class HirToMirLowering {
                     }
                     break;
                 }
+            }
+            // 顶层 var → PUTSTATIC + ScriptContext（从顶层函数内赋值的情况）
+            if (topLevelFieldNames.containsKey(varName)
+                    && !Boolean.TRUE.equals(topLevelFieldNames.get(varName))) {
+                builder.emitPutStatic(moduleClassName, varName,
+                        "Ljava/lang/Object;", value, expr.getLocation());
+                emitScriptContextSet(builder, varName, value, expr.getLocation());
+                return value;
             }
             // 脚本模式: 外部变量赋值 → NovaScriptContext.set(name, value)
             if (scriptMode) {
@@ -4894,13 +4892,7 @@ public class HirToMirLowering {
                     return value;
                 }
             }
-            // 未知类型 → 动态成员赋值
-            if (interpreterMode) {
-                // 解释器模式：直接 SET_FIELD，executeSetField 已处理各种类型
-                builder.emitSetField(target, fieldName, value, expr.getLocation());
-                return value;
-            }
-            // 编译模式：invokedynamic bootstrapSetMember（fieldName 编码在 invokedynamic name 中）
+            // 未知类型 → 动态成员赋值（invokedynamic bootstrapSetMember）
             InvokeDynamicInfo setInfo = new InvokeDynamicInfo(
                     fieldName, "com/novalang/runtime/NovaBootstrap", "bootstrapSetMember",
                     "(Ljava/lang/Object;Ljava/lang/Object;)V");

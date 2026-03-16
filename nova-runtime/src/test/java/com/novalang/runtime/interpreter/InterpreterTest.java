@@ -9366,4 +9366,38 @@ class InterpreterTest {
             assertEquals(20, child.shared);
         }
     }
+
+    // ============ 跨 evalRepl 方法调用回归测试 ============
+
+    @Nested
+    @DisplayName("跨 evalRepl 方法调用")
+    class CrossEvalReplTests {
+
+        @Test
+        @DisplayName("跨 evalRepl 类定义 + 方法调用")
+        void testCrossEvalMethodCall() {
+            // Step 1: 定义类
+            interpreter.evalRepl("class Vector(val x: Int, val y: Int) { fun sum() = x + y }");
+            // Step 2: 在新的 eval 上下文中使用该类
+            NovaValue result = interpreter.evalRepl("val v = Vector(3, 4)\nv.sum()");
+            assertEquals(7, result.asInt());
+        }
+
+        @Test
+        @DisplayName("跨 evalRepl 类构造 + 字段访问")
+        void testCrossEvalFieldAccess() {
+            interpreter.evalRepl("class Point(val x: Int, val y: Int)");
+            NovaValue result = interpreter.evalRepl("val p = Point(10, 20)\np.x + p.y");
+            assertEquals(30, result.asInt());
+        }
+
+        @Test
+        @DisplayName("单次 eval 类定义 + 方法调用")
+        void testSingleEvalCustomMethod() {
+            NovaValue result = interpreter.evalRepl(
+                "class Vector(val x: Int, val y: Int) { fun total() = x + y }\n" +
+                "val v = Vector(3, 4)\nv.total()");
+            assertEquals(7, result.asInt());
+        }
+    }
 }

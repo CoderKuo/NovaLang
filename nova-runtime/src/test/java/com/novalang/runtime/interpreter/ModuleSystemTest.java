@@ -254,13 +254,13 @@ class ModuleSystemTest {
         void testDeepModuleImport() throws Exception {
             writeNovaFile(tempDir, "utils" + File.separator + "math.nova",
                 "class Vector(val x: Int, val y: Int) {\n" +
-                "    fun sum() = x + y\n" +
+                "    fun total() = x + y\n" +
                 "}"
             );
             writeNovaFile(tempDir, "app.nova",
                 "import utils.math.Vector\n" +
                 "val v = Vector(3, 4)\n" +
-                "println(v.sum())"
+                "println(v.total())"
             );
 
             interpreter.setScriptBasePath(tempDir);

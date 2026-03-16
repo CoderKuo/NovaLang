@@ -19,13 +19,42 @@ public final class ConcurrencyHelper {
 
     private ConcurrencyHelper() {}
 
-    private static final ConcurrentHashMap<Class<?>, Method> invokeCache = new ConcurrentHashMap<>();
+    // invoke 缓存已迁移到 LambdaUtils
+
+    /** 递归守卫：避免 delegateToInterpreter → callFunction → impl → delegateToInterpreter 无限循环 */
+    private static final ThreadLocal<Boolean> DELEGATE_GUARD = new ThreadLocal<>();
+
+    /**
+     * 统一代理：如果有 Interpreter 上下文且 Builtins 有独立实现，委托给它。
+     * 递归守卫防止 callFunction → StdlibRegistry impl → delegateToInterpreter 无限循环。
+     */
+    static Object delegateToInterpreter(String funcName, Object[] args) {
+        if (Boolean.TRUE.equals(DELEGATE_GUARD.get())) return null;
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx == null) return null;
+        DELEGATE_GUARD.set(Boolean.TRUE);
+        try {
+            java.util.List<com.novalang.runtime.NovaValue> novaArgs = new java.util.ArrayList<>(args.length);
+            for (Object arg : args) {
+                novaArgs.add(arg instanceof com.novalang.runtime.NovaValue
+                    ? (com.novalang.runtime.NovaValue) arg
+                    : com.novalang.runtime.AbstractNovaValue.fromJava(arg));
+            }
+            com.novalang.runtime.NovaValue result = ctx.callFunction(funcName, novaArgs);
+            if (result != null) return result.toJavaValue();
+        } finally {
+            DELEGATE_GUARD.remove();
+        }
+        return null;
+    }
 
     /**
      * launch(block) — fire-and-forget 异步执行，返回 CompileJob。
      * vararg 入口：args[0]=block
      */
     public static Object launch(Object[] args) {
+        Object delegated = delegateToInterpreter("launch", args);
+        if (delegated != null) return delegated;
         if (args.length != 1) {
             throw new RuntimeException("launch expects 1 argument (block), got " + args.length);
         }
@@ -56,6 +85,8 @@ public final class ConcurrencyHelper {
      * vararg 入口：args[0..n]=blocks
      */
     public static Object parallel(Object[] args) {
+        Object delegated = delegateToInterpreter("parallel", args);
+        if (delegated != null) return delegated;
         if (args.length == 0) {
             return new ArrayList<>();
         }
@@ -105,6 +136,8 @@ public final class ConcurrencyHelper {
      * vararg 入口：args[0]=millis, args[1]=block
      */
     public static Object withTimeout(Object[] args) {
+        Object delegated = delegateToInterpreter("withTimeout", args);
+        if (delegated != null) return delegated;
         if (args.length != 2) {
             throw new RuntimeException("withTimeout expects 2 arguments (millis, block), got " + args.length);
         }
@@ -136,6 +169,8 @@ public final class ConcurrencyHelper {
      * vararg 入口：args[0]=List/Array of futures
      */
     public static Object awaitAll(Object[] args) {
+        Object delegated = delegateToInterpreter("awaitAll", args);
+        if (delegated != null) return delegated;
         if (args.length != 1) {
             throw new RuntimeException("awaitAll expects 1 argument (list of futures), got " + args.length);
         }
@@ -189,6 +224,8 @@ public final class ConcurrencyHelper {
      * vararg 入口：args[0]=List/Array of futures
      */
     public static Object awaitFirst(Object[] args) {
+        Object delegated = delegateToInterpreter("awaitFirst", args);
+        if (delegated != null) return delegated;
         if (args.length != 1) {
             throw new RuntimeException("awaitFirst expects 1 argument (list of futures), got " + args.length);
         }
@@ -217,26 +254,9 @@ public final class ConcurrencyHelper {
         }
     }
 
-    /** 无参调用 lambda 并返回结果 */
+    /** 无参调用 lambda 并返回结果（委托 LambdaUtils，支持 NovaCallable） */
     private static Object invoke0(Object lambda) {
-        try {
-            Method m = invokeCache.computeIfAbsent(lambda.getClass(), cls -> {
-                for (Method method : cls.getMethods()) {
-                    if ("invoke".equals(method.getName()) && method.getParameterCount() == 0) return method;
-                }
-                for (Method method : cls.getMethods()) {
-                    if ("invoke".equals(method.getName())) return method;
-                }
-                throw new RuntimeException("Lambda has no invoke() method: " + cls.getName());
-            });
-            return m.invoke(lambda);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
-        }
+        return LambdaUtils.invoke0(lambda);
     }
 
     /** 获取异步执行器：优先宿主异步调度器，回退 ForkJoinPool */

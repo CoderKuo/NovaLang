@@ -87,8 +87,24 @@ public final class NovaBootstrap {
 
         Class<?> receiverClass = receiver.getClass();
 
+        // 安全策略检查（仅 fallback 首次调用时执行，内联缓存命中后不再经过此路径）
+        NovaSecurityPolicy.checkClass(receiverClass.getName());
+        NovaSecurityPolicy.checkMethod(receiverClass.getName(), methodName);
+
         // 尝试解析直接 MethodHandle
         MethodHandle resolved = NovaDynamic.resolveForCallSite(receiverClass, methodName, arity, methodArgs);
+
+        // NovaJavaClass 穿透：解析底层 Java 类的静态方法并安装缓存
+        // （NovaExternalObject 的实例方法由 NovaDynamic.invokeMethod 精确匹配，不穿透）
+        if (resolved == null && receiver instanceof NovaValue) {
+            Object javaVal = ((NovaValue) receiver).toJavaValue();
+            if (javaVal instanceof Class<?>) {
+                resolved = NovaDynamic.resolveStaticForCallSite((Class<?>) javaVal, methodName, arity, methodArgs);
+                if (resolved != null) {
+                    allArgs[0] = javaVal; // MethodHandle 期望 Class 对象而非 NovaJavaClass
+                }
+            }
+        }
 
         if (resolved != null) {
             // 安装单态内联缓存: guard(classCheck) → resolved ; else → currentTarget (fallback)
@@ -141,6 +157,10 @@ public final class NovaBootstrap {
         }
 
         Class<?> clazz = target.getClass();
+
+        // 安全策略检查
+        NovaSecurityPolicy.checkClass(clazz.getName());
+
         MethodHandle getter = NovaDynamic.resolveGetterForCallSite(clazz, memberName);
 
         if (getter != null) {
@@ -180,6 +200,10 @@ public final class NovaBootstrap {
         }
 
         Class<?> clazz = target.getClass();
+
+        // 安全策略检查
+        NovaSecurityPolicy.checkClass(clazz.getName());
+
         MethodHandle setter = NovaDynamic.resolveSetterForCallSite(clazz, memberName);
 
         if (setter != null) {
@@ -232,8 +256,9 @@ public final class NovaBootstrap {
         if (NovaScriptContext.isActive()) {
             return NovaScriptContext.call(funcName, args);
         }
-        // 1. 尝试 StdlibRegistry（不可变，可永久缓存）
+        // 1. 尝试 StdlibRegistry 内置函数（不可变，可永久缓存）
         StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(funcName);
+        // TODO Phase 1: 这里将改为 NovaRuntime.lookupBuiltin(funcName) 统一查找
         if (nfInfo != null) {
             // 包装 nfInfo.impl.apply(Object[]) 为 MethodHandle
             MethodHandle applyMH = MethodHandles.lookup()

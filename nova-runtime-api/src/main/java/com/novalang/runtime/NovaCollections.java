@@ -101,6 +101,24 @@ public class NovaCollections {
     public static Object getIndex(Object target, Object index) {
         if (target instanceof Map) return ((Map<Object, Object>) target).get(index);
         if (target instanceof NovaList && index instanceof Number) return ((NovaList) target).get(((Number) index).intValue());
+        // Range 切片: target[start..end]
+        if (index instanceof NovaRange) {
+            NovaRange range = (NovaRange) index;
+            int start = range.getStart();
+            int end = range.isInclusive() ? range.getEnd() + 1 : range.getEnd();
+            if (target instanceof NovaList) {
+                NovaList list = (NovaList) target;
+                NovaList result = new NovaList();
+                for (int i = start; i < Math.min(end, list.size()); i++) result.add(list.get(i));
+                return result;
+            }
+            if (target instanceof String) {
+                return ((String) target).substring(start, Math.min(end, ((String) target).length()));
+            }
+            if (target instanceof List) {
+                return new java.util.ArrayList<>(((List<?>) target).subList(start, Math.min(end, ((List<?>) target).size())));
+            }
+        }
         if (index instanceof Number) return getIndex(target, ((Number) index).intValue());
         throw new RuntimeException("Cannot index " + (target == null ? "null" : target.getClass().getName())
                 + " with " + (index == null ? "null" : index.getClass().getName()));

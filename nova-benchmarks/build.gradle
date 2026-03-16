@@ -3,7 +3,7 @@ plugins {
     id 'me.champeau.jmh' version '0.7.2'
 }
 
-description = 'Nova vs Nashorn vs GraalJS vs Groovy vs JEXL vs Java performance benchmarks'
+description = 'Nova vs Nashorn vs GraalJS vs Groovy vs JEXL vs Javet(V8) vs Java performance benchmarks'
 
 def benchmarksEnabled = providers.gradleProperty('enableBenchmarks')
         .map { it.toBoolean() }
@@ -52,13 +52,20 @@ dependencies {
     implementation 'org.graalvm.polyglot:js:24.1.1'
     implementation 'org.apache.groovy:groovy:4.0.23'
     implementation 'org.apache.commons:commons-jexl3:3.4.0'
+    implementation 'com.caoccao.javet:javet:5.0.5'
+    implementation 'com.caoccao.javet:javet-v8-windows-x86_64:5.0.5'
 
     jmh 'org.openjdk.jmh:jmh-core:1.37'
     jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
 }
 
+// JMH includes 支持命令行覆盖: -PjmhFilter=JavaInteropJmhBenchmark
+def jmhFilter = providers.gradleProperty('jmhFilter')
+        .orElse('ScriptEngineComparisonJmhBenchmark|JavaInteropJmhBenchmark')
+        .get()
+
 jmh {
-    includes = ['ScriptEngineComparisonJmhBenchmark']
+    includes = [jmhFilter]
     benchmarkMode = ['avgt']
     warmupIterations = 5
     iterations = 8
@@ -71,8 +78,26 @@ jmh {
 
 tasks.register('jmhScriptComparison') {
     group = 'verification'
-    description = 'Runs the Nova vs Nashorn vs Java JMH benchmarks.'
+    description = 'Runs the script engine comparison JMH benchmarks (~15 min).'
     dependsOn tasks.named('jmh')
+}
+
+tasks.register('jmhInterop') {
+    group = 'verification'
+    description = 'Runs the Java interop JMH benchmarks only (~12 min).'
+    doFirst {
+        jmh.includes = ['JavaInteropJmhBenchmark']
+    }
+    finalizedBy tasks.named('jmh')
+}
+
+tasks.register('jmhScript') {
+    group = 'verification'
+    description = 'Runs the script computation JMH benchmarks only (~15 min).'
+    doFirst {
+        jmh.includes = ['ScriptEngineComparisonJmhBenchmark']
+    }
+    finalizedBy tasks.named('jmh')
 }
 
 tasks.register('compareScriptEngineJmh') {

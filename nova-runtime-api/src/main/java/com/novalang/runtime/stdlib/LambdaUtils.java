@@ -2,6 +2,7 @@ package com.novalang.runtime.stdlib;
 
 import com.novalang.runtime.AbstractNovaValue;
 import com.novalang.runtime.Function1;
+import com.novalang.runtime.NovaValue;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +32,15 @@ final class LambdaUtils {
 
     /** 0 参数调用 */
     static Object invoke0(Object lambda) {
+        // NovaCallable 快速路径（MIR 解释器的 MirCallable + 解释器 NovaNativeFunction）
+        if (lambda instanceof com.novalang.runtime.NovaCallable) {
+            NovaValue result = ((com.novalang.runtime.NovaCallable) lambda).call(com.novalang.runtime.NovaRuntime.currentContext(), java.util.Collections.emptyList());
+            return result != null ? result.toJavaValue() : null;
+        }
+        // NovaValue.dynamicInvoke 快速路径（编译路径的 lambda 包装）
+        if (lambda instanceof NovaValue && ((NovaValue) lambda).isCallable()) {
+            return ((NovaValue) lambda).dynamicInvoke(new NovaValue[0]);
+        }
         try {
             Method m = invoke0Cache.computeIfAbsent(lambda.getClass(), cls -> {
                 for (Method method : cls.getMethods()) {
@@ -53,6 +63,17 @@ final class LambdaUtils {
 
     /** 1 参数调用 */
     static Object invoke1(Object lambda, Object arg) {
+        // NovaCallable 快速路径
+        if (lambda instanceof com.novalang.runtime.NovaCallable) {
+            NovaValue argVal = arg instanceof NovaValue ? (NovaValue) arg : AbstractNovaValue.fromJava(arg);
+            NovaValue result = ((com.novalang.runtime.NovaCallable) lambda).call(com.novalang.runtime.NovaRuntime.currentContext(), java.util.Collections.singletonList(argVal));
+            return result != null ? result.toJavaValue() : null;
+        }
+        // NovaValue.dynamicInvoke 快速路径
+        if (lambda instanceof NovaValue && ((NovaValue) lambda).isCallable()) {
+            NovaValue argVal = arg instanceof NovaValue ? (NovaValue) arg : AbstractNovaValue.fromJava(arg);
+            return ((NovaValue) lambda).dynamicInvoke(new NovaValue[]{argVal});
+        }
         try {
             Method m = invoke1Cache.computeIfAbsent(lambda.getClass(), cls -> {
                 for (Method method : cls.getMethods()) {
@@ -90,6 +111,7 @@ final class LambdaUtils {
 
     /** 是否有 1 参数 invoke（带缓存） */
     static boolean hasInvoke1(Object lambda) {
+        if (lambda instanceof NovaValue && ((NovaValue) lambda).isCallable()) return true;
         return resolveInvoke1OrNull(lambda) != null;
     }
 
@@ -101,6 +123,17 @@ final class LambdaUtils {
     static Object invokeFlexible(Object block, Object arg) {
         if (block instanceof Function1) {
             return ((Function1<Object, Object>) block).invoke(arg);
+        }
+        // NovaCallable 快速路径
+        if (block instanceof com.novalang.runtime.NovaCallable) {
+            NovaValue argVal = arg instanceof NovaValue ? (NovaValue) arg : AbstractNovaValue.fromJava(arg);
+            NovaValue result = ((com.novalang.runtime.NovaCallable) block).call(com.novalang.runtime.NovaRuntime.currentContext(), java.util.Collections.singletonList(argVal));
+            return result != null ? result.toJavaValue() : null;
+        }
+        // NovaValue.dynamicInvoke 快速路径
+        if (block instanceof NovaValue && ((NovaValue) block).isCallable()) {
+            NovaValue argVal = arg instanceof NovaValue ? (NovaValue) arg : AbstractNovaValue.fromJava(arg);
+            return ((NovaValue) block).dynamicInvoke(new NovaValue[]{argVal});
         }
         Method invoke = resolveInvoke1OrNull(block);
         try {

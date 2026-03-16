@@ -62,6 +62,21 @@ public final class NovaResult extends AbstractNovaValue {
     }
 
     @Override
+    public NovaValue resolveMember(String name) {
+        switch (name) {
+            case "value":
+                if (!ok) throw new NovaException("Cannot access .value on Err result");
+                return getInner();
+            case "error":
+                if (ok) throw new NovaException("Cannot access .error on Ok result");
+                return getInner();
+            case "isOk":  return NovaBoolean.of(ok);
+            case "isErr": return NovaBoolean.of(!ok);
+            default: return null;
+        }
+    }
+
+    @Override
     public String getTypeName() {
         return ok ? "Ok" : "Err";
     }

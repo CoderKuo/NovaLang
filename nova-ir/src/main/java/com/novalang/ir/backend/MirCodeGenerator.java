@@ -76,8 +76,8 @@ public class MirCodeGenerator {
             generateClass(cls, packagePrefix);
         }
 
-        // 顶层函数生成到一个 $Module 类中
-        if (!module.getTopLevelFunctions().isEmpty()) {
+        // 顶层函数/字段生成到一个 $Module 类中
+        if (!module.getTopLevelFunctions().isEmpty() || !module.getTopLevelFields().isEmpty()) {
             generateModuleClass(module, packagePrefix);
         }
 
@@ -187,6 +187,13 @@ public class MirCodeGenerator {
         ClassWriter cw = new NovaClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         String className = packagePrefix + "$Module";
         cw.visit(V1_8, ACC_PUBLIC, className, null, "java/lang/Object", null);
+
+        // 顶层变量 → public static 字段
+        for (MirField field : module.getTopLevelFields()) {
+            int fieldAccess = ACC_PUBLIC | ACC_STATIC;
+            if (field.getModifiers().contains(Modifier.FINAL)) fieldAccess |= ACC_FINAL;
+            cw.visitField(fieldAccess, field.getName(), "Ljava/lang/Object;", null, null);
+        }
 
         // 默认构造器
         generateDefaultConstructor(cw, "java/lang/Object");
@@ -476,7 +483,7 @@ public class MirCodeGenerator {
                             br.getFusedLeft(), br.getFusedRight(),
                             br, blockLabels, func, Collections.emptyMap());
                 } else {
-                    generateTerminator(mv, block.getTerminator(), blockLabels, func);
+                    generateTerminator(mv, block.getTerminator(), blockLabels, func, block.getId());
                 }
             }
         }
@@ -535,6 +542,9 @@ public class MirCodeGenerator {
         pushInt(mv, plan.stepValue);
         mv.visitInsn(IADD);
         storeIntLocalValue(mv, plan.counterLocal);
+        // 循环回边安全检查
+        mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaSecurityPolicy",
+                "checkLoop", "()V", false);
         emitStringAccumLoopCondition(mv, plan, bodyLabel, exitLabel);
 
         mv.visitLabel(exitLabel);
@@ -873,6 +883,28 @@ public class MirCodeGenerator {
                     owner = "java/lang/Object";
                     int argCount = inst.getOperands() != null ? inst.getOperands().length - 1 : 0;
                     descriptor = MethodDescriptor.allObjectDesc(argCount);
+                }
+
+                // Lambda 类上的方法调用 → invokedynamic（Lambda 类没有 scopeReceiver 方法，需运行时分派）
+                if (owner.contains("$Lambda$") && !"invoke".equals(methodName) && !"<init>".equals(methodName)) {
+                    int[] ops = inst.getOperands();
+                    // 构建 invokedynamic 描述符
+                    StringBuilder descBuilder = new StringBuilder("(");
+                    for (int k = 0; k < ops.length; k++) descBuilder.append("Ljava/lang/Object;");
+                    descBuilder.append(")Ljava/lang/Object;");
+                    String indyDesc = descBuilder.toString();
+                    // 加载所有操作数
+                    for (int op : ops) loadObject(mv, op);
+                    // 生成 invokedynamic
+                    Handle bsm = new Handle(H_INVOKESTATIC,
+                            "com/novalang/runtime/NovaBootstrap", "bootstrapInvoke",
+                            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+                            false);
+                    mv.visitInvokeDynamicInsn(methodName, indyDesc, bsm);
+                    if (inst.getDest() >= 0 && !descriptor.endsWith(")V")) {
+                        mv.visitVarInsn(ASTORE, inst.getDest());
+                    }
+                    break;
                 }
 
                 // 加载 receiver
@@ -1612,12 +1644,21 @@ public class MirCodeGenerator {
     // ========== 终止指令 ==========
 
     private void generateTerminator(MethodVisitor mv, MirTerminator term,
-                                    Map<Integer, Label> blockLabels, MirFunction func) {
+                                    Map<Integer, Label> blockLabels, MirFunction func,
+                                    int currentBlockId) {
         if (term instanceof MirTerminator.Goto) {
             int target = ((MirTerminator.Goto) term).getTargetBlockId();
+            // 回边检测：跳转目标 block ID <= 当前 block ID → 循环回边，织入安全检查
+            if (target <= currentBlockId) {
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaSecurityPolicy",
+                        "checkLoop", "()V", false);
+            }
             mv.visitJumpInsn(GOTO, blockLabels.get(target));
         } else if (term instanceof MirTerminator.TailCall) {
             int target = ((MirTerminator.TailCall) term).getEntryBlockId();
+            // 尾递归回跳也需要安全检查
+            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaSecurityPolicy",
+                    "checkLoop", "()V", false);
             mv.visitJumpInsn(GOTO, blockLabels.get(target));
         } else if (term instanceof MirTerminator.Branch) {
             MirTerminator.Branch branch = (MirTerminator.Branch) term;

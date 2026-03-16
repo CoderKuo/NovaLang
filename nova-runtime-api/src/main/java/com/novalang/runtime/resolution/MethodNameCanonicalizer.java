@@ -15,6 +15,8 @@ import java.util.Map;
 public final class MethodNameCanonicalizer {
 
     private static final Map<String, String> ALIASES;
+    /** 反向映射：canonical → alias（用于 lookupCandidates 双向查找） */
+    private static final Map<String, String> REVERSE;
 
     static {
         Map<String, String> aliases = new LinkedHashMap<String, String>();
@@ -22,6 +24,11 @@ public final class MethodNameCanonicalizer {
         aliases.put("uppercase", "toUpperCase");
         aliases.put("lowercase", "toLowerCase");
         ALIASES = Collections.unmodifiableMap(aliases);
+        Map<String, String> reverse = new LinkedHashMap<String, String>();
+        for (Map.Entry<String, String> e : aliases.entrySet()) {
+            reverse.put(e.getValue(), e.getKey());
+        }
+        REVERSE = Collections.unmodifiableMap(reverse);
     }
 
     private MethodNameCanonicalizer() {}
@@ -37,9 +44,14 @@ public final class MethodNameCanonicalizer {
 
     public static List<String> lookupCandidates(String methodName) {
         String canonical = canonicalName(methodName);
-        if (canonical.equals(methodName)) {
-            return Collections.singletonList(methodName);
+        if (!canonical.equals(methodName)) {
+            return Arrays.asList(methodName, canonical);
         }
-        return Arrays.asList(methodName, canonical);
+        // 反向查找：toUpperCase → [toUpperCase, uppercase]
+        String alias = REVERSE.get(methodName);
+        if (alias != null) {
+            return Arrays.asList(methodName, alias);
+        }
+        return Collections.singletonList(methodName);
     }
 }

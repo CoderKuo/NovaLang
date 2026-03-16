@@ -62,16 +62,33 @@ public final class StructuredConcurrencyHelper {
     }
 
     public static Object coroutineScope(Object block) {
+        // 优先使用 Interpreter 的结构化并发（NovaScope）
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, false);
         return runScope(block, false, ForkJoinPool.commonPool());
     }
 
     public static Object coroutineScopeWithDispatcher(Object dispatcher, Object block) {
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, false);
         Executor exec = dispatcher instanceof Executor ? (Executor) dispatcher : ForkJoinPool.commonPool();
         return runScope(block, false, exec);
     }
 
     /** vararg 入口：withContext(dispatcher, block) — 在指定 executor 上执行 block 并阻塞等待结果 */
     public static Object withContextVararg(Object[] args) {
+        // 代理到 Interpreter Builtins
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) {
+            java.util.List<com.novalang.runtime.NovaValue> novaArgs = new java.util.ArrayList<>(args.length);
+            for (Object arg : args) {
+                novaArgs.add(arg instanceof com.novalang.runtime.NovaValue
+                    ? (com.novalang.runtime.NovaValue) arg
+                    : com.novalang.runtime.AbstractNovaValue.fromJava(arg));
+            }
+            com.novalang.runtime.NovaValue result = ctx.callFunction("withContext", novaArgs);
+            if (result != null) return result.toJavaValue();
+        }
         if (args.length != 2) throw new RuntimeException("withContext expects 2 arguments (dispatcher, block), got " + args.length);
         Executor exec = args[0] instanceof Executor ? (Executor) args[0] : ForkJoinPool.commonPool();
         Object block = args[1];
@@ -97,10 +114,14 @@ public final class StructuredConcurrencyHelper {
     }
 
     public static Object supervisorScope(Object block) {
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, true);
         return runScope(block, true, ForkJoinPool.commonPool());
     }
 
     public static Object supervisorScopeWithDispatcher(Object dispatcher, Object block) {
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, true);
         Executor exec = dispatcher instanceof Executor ? (Executor) dispatcher : ForkJoinPool.commonPool();
         return runScope(block, true, exec);
     }

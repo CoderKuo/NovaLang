@@ -12,6 +12,7 @@ public class MirModule {
     private final String packageName;
     private final List<MirClass> classes;
     private final List<MirFunction> topLevelFunctions;
+    private List<MirField> topLevelFields = Collections.emptyList();
     private List<ExtensionPropertyInfo> extensionProperties = Collections.emptyList();
 
     public MirModule(String packageName, List<MirClass> classes,
@@ -24,6 +25,9 @@ public class MirModule {
     public String getPackageName() { return packageName; }
     public List<MirClass> getClasses() { return classes; }
     public List<MirFunction> getTopLevelFunctions() { return topLevelFunctions; }
+
+    public List<MirField> getTopLevelFields() { return topLevelFields; }
+    public void setTopLevelFields(List<MirField> fields) { this.topLevelFields = fields; }
 
     public List<ExtensionPropertyInfo> getExtensionProperties() { return extensionProperties; }
     public void setExtensionProperties(List<ExtensionPropertyInfo> props) { this.extensionProperties = props; }

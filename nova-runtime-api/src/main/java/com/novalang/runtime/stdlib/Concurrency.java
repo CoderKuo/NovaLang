@@ -17,12 +17,12 @@ final class Concurrency {
         registerLambda(name, owner, name, impl);
     }
 
-    /** 注册接受 lambda 的 varargs 函数 */
+    /** 注册接受 lambda 的 varargs 函数（通过 delegateToInterpreter 代理，不需要 interpreterBuiltin） */
     private static void registerLambda(String name, String owner, String methodName,
                                         java.util.function.Function<Object[], Object> impl) {
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
             name, -1, owner, methodName,
-            "([Ljava/lang/Object;)Ljava/lang/Object;", impl, true));
+            "([Ljava/lang/Object;)Ljava/lang/Object;", impl));
     }
 
     static void register() {
@@ -35,12 +35,15 @@ final class Concurrency {
             "Future"
         ));
 
-        // coroutineScope(block) 或 coroutineScope(dispatcher, block)
-        registerLambda("coroutineScope", "com/novalang/runtime/stdlib/StructuredConcurrencyHelper",
-            "coroutineScopeVararg", args -> StructuredConcurrencyHelper.coroutineScopeVararg(args));
-        // supervisorScope(block) 或 supervisorScope(dispatcher, block)
-        registerLambda("supervisorScope", "com/novalang/runtime/stdlib/StructuredConcurrencyHelper",
-            "supervisorScopeVararg", args -> StructuredConcurrencyHelper.supervisorScopeVararg(args));
+        // coroutineScope/supervisorScope: 通过 ExecutionContext.runInScope 统一（不需要 interpreterBuiltin）
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "coroutineScope", -1, "com/novalang/runtime/stdlib/StructuredConcurrencyHelper",
+            "coroutineScopeVararg", "([Ljava/lang/Object;)Ljava/lang/Object;",
+            args -> StructuredConcurrencyHelper.coroutineScopeVararg(args)));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "supervisorScope", -1, "com/novalang/runtime/stdlib/StructuredConcurrencyHelper",
+            "supervisorScopeVararg", "([Ljava/lang/Object;)Ljava/lang/Object;",
+            args -> StructuredConcurrencyHelper.supervisorScopeVararg(args)));
 
         // Dispatchers 常量：Dispatchers.IO / Dispatchers.Default / Dispatchers.Unconfined
         StdlibRegistry.register(new StdlibRegistry.ConstantInfo(

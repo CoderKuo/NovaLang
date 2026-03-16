@@ -21,34 +21,43 @@ public final class ConcurrencyPrimitivesHelper {
 
     private static final ConcurrentHashMap<Class<?>, Method> invokeCache = new ConcurrentHashMap<>();
 
+    private static Object delegateToInterpreter(String funcName, Object[] args) {
+        return ConcurrencyHelper.delegateToInterpreter(funcName, args);
+    }
+
     // ============ 工厂方法（vararg 入口） ============
 
     /** AtomicInt(initial) */
     public static Object atomicInt(Object[] args) {
+        Object d = delegateToInterpreter("AtomicInt", args); if (d != null) return d;
         if (args.length != 1) throw new RuntimeException("AtomicInt expects 1 argument, got " + args.length);
         return new CompileAtomicInt(((Number) args[0]).intValue());
     }
 
     /** AtomicLong(initial) */
     public static Object atomicLong(Object[] args) {
+        Object d = delegateToInterpreter("AtomicLong", args); if (d != null) return d;
         if (args.length != 1) throw new RuntimeException("AtomicLong expects 1 argument, got " + args.length);
         return new CompileAtomicLong(((Number) args[0]).longValue());
     }
 
     /** AtomicRef(initial) */
     public static Object atomicRef(Object[] args) {
+        Object d = delegateToInterpreter("AtomicRef", args); if (d != null) return d;
         if (args.length != 1) throw new RuntimeException("AtomicRef expects 1 argument, got " + args.length);
         return new CompileAtomicRef(args[0]);
     }
 
     /** Channel() 或 Channel(capacity) */
     public static Object channel(Object[] args) {
+        Object d = delegateToInterpreter("Channel", args); if (d != null) return d;
         int capacity = args.length == 0 ? Integer.MAX_VALUE : ((Number) args[0]).intValue();
         return new CompileChannel(capacity);
     }
 
     /** Mutex() */
     public static Object mutex(Object[] args) {
+        Object d = delegateToInterpreter("Mutex", args); if (d != null) return d;
         if (args.length != 0) throw new RuntimeException("Mutex expects 0 arguments, got " + args.length);
         return new CompileMutex();
     }

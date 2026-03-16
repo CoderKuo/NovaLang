@@ -3,7 +3,7 @@ package com.novalang.playground;
 import io.javalin.http.Context;
 import io.javalin.http.Handler;
 import com.novalang.runtime.Nova;
-import com.novalang.runtime.interpreter.NovaSecurityPolicy;
+import com.novalang.runtime.NovaSecurityPolicy;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.ByteArrayOutputStream;

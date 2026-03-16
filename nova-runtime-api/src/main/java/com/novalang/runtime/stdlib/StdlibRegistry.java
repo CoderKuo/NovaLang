@@ -59,24 +59,35 @@ public final class StdlibRegistry {
         public final String jvmDescriptor;
         /** 解释器直接调用的实现（无反射） */
         public final Function<Object[], Object> impl;
-        /** 解释器中需要走 Builtins 路径（lambda 参数、并发原语等 INVOKESTATIC 不兼容解释器的函数） */
+        /** @deprecated 已通过 ExecutionContext.callFunction + delegateToInterpreter 统一消除 */
+        @Deprecated
         public final boolean interpreterBuiltin;
+        /** impl 接受 NovaValue 参数（不做 toJavaValue 转换）。用于 typeof/isCallable/len 等需要保留类型信息的函数 */
+        public final boolean rawNovaArgs;
 
         public NativeFunctionInfo(String name, int arity,
                                    String jvmOwner, String jvmMethodName, String jvmDescriptor,
                                    Function<Object[], Object> impl) {
-            this(name, arity, jvmOwner, jvmMethodName, jvmDescriptor, impl, false);
+            this(name, arity, jvmOwner, jvmMethodName, jvmDescriptor, impl, false, false);
         }
 
         public NativeFunctionInfo(String name, int arity,
                                    String jvmOwner, String jvmMethodName, String jvmDescriptor,
                                    Function<Object[], Object> impl, boolean interpreterBuiltin) {
+            this(name, arity, jvmOwner, jvmMethodName, jvmDescriptor, impl, interpreterBuiltin, false);
+        }
+
+        public NativeFunctionInfo(String name, int arity,
+                                   String jvmOwner, String jvmMethodName, String jvmDescriptor,
+                                   Function<Object[], Object> impl, boolean interpreterBuiltin,
+                                   boolean rawNovaArgs) {
             super(name, arity);
             this.jvmOwner = jvmOwner;
             this.jvmMethodName = jvmMethodName;
             this.jvmDescriptor = jvmDescriptor;
             this.impl = impl;
             this.interpreterBuiltin = interpreterBuiltin;
+            this.rawNovaArgs = rawNovaArgs;
         }
     }
 

@@ -3,6 +3,7 @@ package com.novalang.runtime.stdlib;
 import com.novalang.runtime.NovaArray;
 import com.novalang.runtime.NovaPair;
 import com.novalang.runtime.NovaResult;
+import com.novalang.runtime.NovaValue;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -62,6 +63,22 @@ public final class StdlibCore {
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
             "CharArray", 1, OWNER, "charArray", O_O, args -> charArray(args[0]), true));
 
+        // ---- 类型转换函数（rawNovaArgs：接受 NovaValue 参数） ----
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "toInt", 1, OWNER, "toInt", O_O, args -> toInt(args[0]), false, true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "toLong", 1, OWNER, "toLong", O_O, args -> toLong(args[0]), false, true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "toDouble", 1, OWNER, "toDouble", O_O, args -> toDouble(args[0]), false, true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "toFloat", 1, OWNER, "toFloat", O_O, args -> toFloat(args[0]), false, true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "toString", 1, OWNER, "toStr", O_O, args -> toStr(args[0]), false, true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "toBoolean", 1, OWNER, "toBoolean", O_O, args -> toBoolean(args[0]), false, true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "toChar", 1, OWNER, "toChar", O_O, args -> toChar(args[0]), false, true));
+
         // ---- vararg ----
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
             "arrayOf", -1, OWNER, "arrayOf", VARARG_DESC, StdlibCore::arrayOf));
@@ -111,6 +128,78 @@ public final class StdlibCore {
     public static Object floatArray(Object size) { return new NovaArray(NovaArray.ElementType.FLOAT, ((Number) size).intValue()); }
     public static Object booleanArray(Object size) { return new NovaArray(NovaArray.ElementType.BOOLEAN, ((Number) size).intValue()); }
     public static Object charArray(Object size) { return new NovaArray(NovaArray.ElementType.CHAR, ((Number) size).intValue()); }
+
+    // ---- 类型转换（rawNovaArgs：接受 NovaValue 或 raw Object） ----
+
+    public static Object toInt(Object value) {
+        if (value instanceof NovaValue) {
+            NovaValue nv = (NovaValue) value;
+            if (nv.isNumber()) return nv.asInt();
+            if (nv.isString()) return Integer.parseInt(nv.asString().trim());
+        }
+        if (value instanceof Number) return ((Number) value).intValue();
+        if (value instanceof String) return Integer.parseInt(((String) value).trim());
+        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Int");
+    }
+
+    public static Object toLong(Object value) {
+        if (value instanceof NovaValue) {
+            NovaValue nv = (NovaValue) value;
+            if (nv.isNumber()) return nv.asLong();
+            if (nv.isString()) return Long.parseLong(nv.asString().trim());
+        }
+        if (value instanceof Number) return ((Number) value).longValue();
+        if (value instanceof String) return Long.parseLong(((String) value).trim());
+        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Long");
+    }
+
+    public static Object toDouble(Object value) {
+        if (value instanceof NovaValue) {
+            NovaValue nv = (NovaValue) value;
+            if (nv.isNumber()) return nv.asDouble();
+            if (nv.isString()) return Double.parseDouble(nv.asString().trim());
+        }
+        if (value instanceof Number) return ((Number) value).doubleValue();
+        if (value instanceof String) return Double.parseDouble(((String) value).trim());
+        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Double");
+    }
+
+    public static Object toFloat(Object value) {
+        if (value instanceof NovaValue) {
+            NovaValue nv = (NovaValue) value;
+            if (nv.isNumber()) return (float) nv.asDouble();
+            if (nv.isString()) return Float.parseFloat(nv.asString().trim());
+        }
+        if (value instanceof Number) return ((Number) value).floatValue();
+        if (value instanceof String) return Float.parseFloat(((String) value).trim());
+        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Float");
+    }
+
+    public static Object toStr(Object value) {
+        if (value instanceof NovaValue) return ((NovaValue) value).asString();
+        return String.valueOf(value);
+    }
+
+    public static Object toBoolean(Object value) {
+        if (value instanceof NovaValue) return ((NovaValue) value).isTruthy();
+        if (value instanceof Boolean) return value;
+        return value != null;
+    }
+
+    public static Object toChar(Object value) {
+        if (value instanceof NovaValue) {
+            NovaValue nv = (NovaValue) value;
+            if (nv.isInteger()) return (char) nv.asInt();
+            if (nv.isString()) {
+                String s = nv.asString();
+                if (s.length() == 1) return s.charAt(0);
+            }
+        }
+        if (value instanceof Character) return value;
+        if (value instanceof Number) return (char) ((Number) value).intValue();
+        if (value instanceof String && ((String) value).length() == 1) return ((String) value).charAt(0);
+        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Char");
+    }
 
     public static Object arrayOf(Object... args) {
         return new NovaArray(NovaArray.ElementType.OBJECT, args.clone(), args.length);
