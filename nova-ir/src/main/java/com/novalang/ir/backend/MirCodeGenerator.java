@@ -1453,9 +1453,43 @@ public class MirCodeGenerator {
         }
 
         // 非数值 Object 类型的 LT/GT/LE/GE: Comparable.compareTo 回退（Character, String 等）
+        // Int/Double 混合比较：统一转为 double 避免 Integer.compareTo(Double) ClassCastException
         if ((op == BinaryOp.LT || op == BinaryOp.GT || op == BinaryOp.LE || op == BinaryOp.GE)
                 && (lk == MirType.Kind.OBJECT || rk == MirType.Kind.OBJECT
                     || lk == MirType.Kind.CHAR || rk == MirType.Kind.CHAR)) {
+            boolean leftMaybeNum = lk == MirType.Kind.INT || lk == MirType.Kind.DOUBLE
+                    || lk == MirType.Kind.LONG || lk == MirType.Kind.FLOAT || lk == MirType.Kind.OBJECT;
+            boolean rightMaybeNum = rk == MirType.Kind.INT || rk == MirType.Kind.DOUBLE
+                    || rk == MirType.Kind.LONG || rk == MirType.Kind.FLOAT || rk == MirType.Kind.OBJECT;
+            if (leftMaybeNum && rightMaybeNum
+                    && (lk == MirType.Kind.INT || lk == MirType.Kind.DOUBLE || lk == MirType.Kind.LONG || lk == MirType.Kind.FLOAT
+                        || rk == MirType.Kind.INT || rk == MirType.Kind.DOUBLE || rk == MirType.Kind.LONG || rk == MirType.Kind.FLOAT)) {
+                // 至少一边是已知数值类型 → 通过 Number.doubleValue 统一比较
+                loadObject(mv, left);
+                mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+                loadObject(mv, right);
+                mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+                mv.visitInsn(DCMPG);
+                Label trueLabel = new Label();
+                Label endLabel = new Label();
+                switch (op) {
+                    case LT: mv.visitJumpInsn(IFLT, trueLabel); break;
+                    case GT: mv.visitJumpInsn(IFGT, trueLabel); break;
+                    case LE: mv.visitJumpInsn(IFLE, trueLabel); break;
+                    case GE: mv.visitJumpInsn(IFGE, trueLabel); break;
+                    default: break;
+                }
+                mv.visitInsn(ICONST_0);
+                mv.visitJumpInsn(GOTO, endLabel);
+                mv.visitLabel(trueLabel);
+                mv.visitInsn(ICONST_1);
+                mv.visitLabel(endLabel);
+                boxBoolean(mv);
+                mv.visitVarInsn(ASTORE, dest);
+                return;
+            }
             loadObject(mv, left);
             loadObject(mv, right);
             mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable", "compareTo",
@@ -1825,13 +1859,29 @@ public class MirCodeGenerator {
                 mv.visitJumpInsn(op == BinaryOp.EQ ? IFNE : IFEQ, thenLabel);
                 mv.visitJumpInsn(GOTO, elseLabel);
             } else {
-                // 非 EQ/NE 的 Object 比较：通过 Comparable.compareTo 比较
-                loadObject(mv, left);
-                mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
-                loadObject(mv, right);
-                mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable",
-                        "compareTo", "(Ljava/lang/Object;)I", true);
-                emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
+                // 非 EQ/NE 的 Object 比较
+                boolean leftNum = lk == MirType.Kind.INT || lk == MirType.Kind.DOUBLE
+                        || lk == MirType.Kind.LONG || lk == MirType.Kind.FLOAT;
+                boolean rightNum = rk == MirType.Kind.INT || rk == MirType.Kind.DOUBLE
+                        || rk == MirType.Kind.LONG || rk == MirType.Kind.FLOAT;
+                if (leftNum || rightNum) {
+                    // Int/Double 混合：统一转 double 避免 ClassCastException
+                    loadObject(mv, left);
+                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+                    loadObject(mv, right);
+                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+                    mv.visitInsn(DCMPG);
+                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
+                } else {
+                    loadObject(mv, left);
+                    mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
+                    loadObject(mv, right);
+                    mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable",
+                            "compareTo", "(Ljava/lang/Object;)I", true);
+                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
+                }
             }
             return;
         }
@@ -1908,13 +1958,29 @@ public class MirCodeGenerator {
                 mv.visitJumpInsn(op == BinaryOp.EQ ? IFNE : IFEQ, thenLabel);
                 mv.visitJumpInsn(GOTO, elseLabel);
             } else {
-                // 非 EQ/NE 的 Object 比较：通过 Comparable.compareTo 比较
-                loadObject(mv, left);
-                mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
-                loadObject(mv, right);
-                mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable",
-                        "compareTo", "(Ljava/lang/Object;)I", true);
-                emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
+                // 非 EQ/NE 的 Object 比较
+                boolean leftNum = lk == MirType.Kind.INT || lk == MirType.Kind.DOUBLE
+                        || lk == MirType.Kind.LONG || lk == MirType.Kind.FLOAT;
+                boolean rightNum = rk == MirType.Kind.INT || rk == MirType.Kind.DOUBLE
+                        || rk == MirType.Kind.LONG || rk == MirType.Kind.FLOAT;
+                if (leftNum || rightNum) {
+                    // Int/Double 混合：统一转 double 避免 ClassCastException
+                    loadObject(mv, left);
+                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+                    loadObject(mv, right);
+                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+                    mv.visitInsn(DCMPG);
+                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
+                } else {
+                    loadObject(mv, left);
+                    mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
+                    loadObject(mv, right);
+                    mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable",
+                            "compareTo", "(Ljava/lang/Object;)I", true);
+                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
+                }
             }
         }
     }

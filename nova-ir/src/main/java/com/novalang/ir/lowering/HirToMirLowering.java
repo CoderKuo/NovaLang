@@ -2559,6 +2559,7 @@ public class HirToMirLowering {
             if (paramNames.contains(name)) continue;
             if ("this".equals(name)) continue;
             if (topLevelFunctionNames.contains(name)) continue;
+            if (topLevelFieldNames.containsKey(name)) continue; // 顶层变量通过 GETSTATIC 访问，无需捕获
             if (classNames.contains(name)) continue;
             // 检查是否存在于外部作用域的局部变量
             boolean existsOuter = false;
@@ -3066,20 +3067,17 @@ public class HirToMirLowering {
             }
         }
         // 顶层 var → GETSTATIC（可能被其他函数/闭包修改，不能用局部变量缓存）
-        // 但 main() 内如果 blockScopeDepth > 0 且存在同名的块级局部变量（如 for 循环变量），
-        // 需要跳过 GETSTATIC 让局部变量查找优先（避免同名冲突）
+        // main() 内 blockScopeDepth > 0 时需检查同名块级局部变量（如 for 循环变量）避免冲突
         if (topLevelFieldNames.containsKey(ref.getName())
                 && !Boolean.TRUE.equals(topLevelFieldNames.get(ref.getName()))
                 && !boxedMutableCaptures.containsKey(ref.getName())) {
-            // 在 main() 内块作用域中，检查是否有更近的同名局部变量（如 for 循环变量）
+            // main() 内块作用域中，检查是否有更近的同名局部变量（如 for 循环变量）
             if ("main".equals(builder.getFunction().getName()) && blockScopeDepth > 0) {
-                // 检查最近声明的同名 local 数量是否 > 1（即除了顶层声明外还有块级声明）
                 int count = 0;
                 for (MirLocal l : builder.getFunction().getLocals()) {
                     if (ref.getName().equals(l.getName())) count++;
                 }
                 if (count == 0) {
-                    // 无同名局部变量，走 GETSTATIC
                     return builder.emitGetStatic(moduleClassName, ref.getName(),
                             "Ljava/lang/Object;",
                             MirType.ofObject("java/lang/Object"), ref.getLocation());
@@ -4821,6 +4819,14 @@ public class HirToMirLowering {
                     }
                     return locals.get(i).getIndex();
                 }
+            }
+            // 顶层 var → PUTSTATIC（从 lambda/顶层函数内赋值，无同名局部变量）
+            if (topLevelFieldNames.containsKey(varName)
+                    && !Boolean.TRUE.equals(topLevelFieldNames.get(varName))) {
+                builder.emitPutStatic(moduleClassName, varName,
+                        "Ljava/lang/Object;", value, expr.getLocation());
+                emitScriptContextSet(builder, varName, value, expr.getLocation());
+                return value;
             }
             // 隐式 this 字段赋值
             for (MirLocal local : locals) {

@@ -198,7 +198,7 @@ final class MirInterpreter {
         this.cachedMaxRecursionDepth = childInterp.getSecurityPolicy().getMaxRecursionDepth();
         this.mirFunctions.putAll(parent.mirFunctions);
         this.mirClasses.putAll(parent.mirClasses);
-        this.moduleStaticFields.putAll(parent.moduleStaticFields);
+        this.moduleStaticFields = parent.moduleStaticFields; // 共享引用（线程安全 ConcurrentHashMap）
         this.classRegistrar = new MirClassRegistrar(childInterp, mirClasses, mirFunctions, this, parent.classRegistrar);
         this.callDispatcher = new MirCallDispatcher(childInterp, childInterp.memberResolver, this, mirFunctions, mirClasses);
     }
@@ -3075,7 +3075,7 @@ final class MirInterpreter {
     // ============ GET_STATIC / SET_STATIC ============
 
     /** $Module 顶层静态字段存储（MIR 解释器路径） */
-    private final Map<String, NovaValue> moduleStaticFields = new HashMap<>();
+    private Map<String, NovaValue> moduleStaticFields = new java.util.concurrent.ConcurrentHashMap<>();
 
     private void executeGetStatic(MirFrame frame, MirInst inst) {
         String extra = inst.extraAs();

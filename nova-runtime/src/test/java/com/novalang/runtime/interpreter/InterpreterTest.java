@@ -9400,4 +9400,51 @@ class InterpreterTest {
             assertEquals(7, result.asInt());
         }
     }
+
+    // ============ Int/Double 混合比较 ============
+
+    @Nested
+    @DisplayName("Int/Double 混合比较")
+    class MixedNumericComparisonTests {
+
+        @Test
+        @DisplayName("链式比较 Int 字面量 vs Double 变量")
+        void chainedComparisonIntVsDouble() {
+            NovaValue result = interpreter.evalRepl(
+                    "val hp = 5.0\n" +
+                    "0 <= hp < 10");
+            assertTrue(result.asBoolean());
+        }
+
+        @Test
+        @DisplayName("链式比较 Double 超出范围")
+        void chainedComparisonOutOfRange() {
+            NovaValue result = interpreter.evalRepl(
+                    "val hp = 15.0\n" +
+                    "0 <= hp < 10");
+            assertFalse(result.asBoolean());
+        }
+
+        @Test
+        @DisplayName("单比较 Int < Double")
+        void singleComparisonIntLtDouble() {
+            NovaValue result = interpreter.evalRepl("3 < 5.5");
+            assertTrue(result.asBoolean());
+        }
+
+        @Test
+        @DisplayName("单比较 Double >= Int")
+        void singleComparisonDoubleGeInt() {
+            NovaValue result = interpreter.evalRepl("7.0 >= 7");
+            assertTrue(result.asBoolean());
+        }
+
+        @Test
+        @DisplayName("编译路径 链式比较 Int vs Double")
+        void compiledChainedComparison() {
+            Object result = new com.novalang.runtime.Nova().compileToBytecode(
+                    "val hp = 5.0\n0 <= hp < 10", "test.nova").run();
+            assertEquals(true, result);
+        }
+    }
 }

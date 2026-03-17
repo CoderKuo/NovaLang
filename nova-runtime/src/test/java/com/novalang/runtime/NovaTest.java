@@ -563,6 +563,16 @@ class NovaTest {
         }
 
         @Test
+        @DisplayName("用户函数覆盖内置 log（数学对数）")
+        void userFunctionOverridesBuiltinLog() {
+            // log 是 StdlibMath 内置对数函数，defineFunction 应覆盖它
+            nova.defineFunction("log", (msg) -> {
+                return "logged:" + msg;
+            });
+            assertEquals("logged:hello", nova.eval("log(\"hello\")"));
+        }
+
+        @Test
         @DisplayName("2 参数函数")
         void function2() {
             nova.defineFunction("add", (a, b) -> (int) a + (int) b);
