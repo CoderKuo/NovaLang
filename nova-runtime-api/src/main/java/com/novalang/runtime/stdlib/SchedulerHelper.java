@@ -164,6 +164,8 @@ public final class SchedulerHelper {
                 future.complete(invokeAndReturn(block));
             } catch (Exception e) {
                 future.completeExceptionally(e);
+            } finally {
+                NovaScriptContext.clear();
             }
         });
         try {

@@ -31,20 +31,33 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     // 结构化类型系统
     private final TypeResolver typeResolver = new TypeResolver();
     private final SuperTypeRegistry superTypeRegistry = new SuperTypeRegistry();
-    private final Map<Expression, NovaType> exprNovaTypeMap = new HashMap<Expression, NovaType>();
+    private final Map<Expression, NovaType> exprNovaTypeMap;
 
     // 委托
     private final TypeUnifier unifier;
     private final TypeInferenceEngine inference;
     private final SemanticChecker checker;
 
+    /** 诊断专用模式：跳过 exprNovaTypeMap / nodeToScope / scopeRanges 记录，节省内存 */
+    private boolean diagnosticsOnly = false;
+
     public SemanticAnalyzer() {
         this.symbolTable = new SymbolTable();
         this.currentScope = symbolTable.getGlobalScope();
+        this.exprNovaTypeMap = new HashMap<Expression, NovaType>();
         this.unifier = new TypeUnifier(exprNovaTypeMap, superTypeRegistry, typeResolver);
         this.inference = new TypeInferenceEngine(exprNovaTypeMap, unifier);
         this.checker = new SemanticChecker(diagnostics, superTypeRegistry, exprNovaTypeMap);
         registerBuiltins();
+    }
+
+    /**
+     * 设置诊断专用模式。启用后跳过 exprNovaTypeMap / 位置索引记录，
+     * 适用于编译管线只需要诊断输出的场景。
+     */
+    public void setDiagnosticsOnly(boolean diagnosticsOnly) {
+        this.diagnosticsOnly = diagnosticsOnly;
+        symbolTable.setRecordPositionInfo(!diagnosticsOnly);
     }
 
     /** 分析入口 */
@@ -79,6 +92,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     // ============ NovaType 辅助方法 ============
 
     private void setNovaType(Expression expr, NovaType type) {
+        // exprNovaTypeMap 始终写入：SemanticChecker 的类型兼容/实参检查依赖此映射
+        // diagnosticsOnly 只跳过 nodeToScope/scopeRanges（由 SymbolTable.recordPositionInfo 控制）
         if (expr != null && type != null) {
             exprNovaTypeMap.put(expr, type);
         }

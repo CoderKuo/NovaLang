@@ -20,12 +20,28 @@ import java.util.Map;
  * <p>循环依赖采用 Java 式处理：先注册空环境到缓存再填充。</p>
  */
 public final class ModuleLoader {
+    /** 模块缓存上限，防止无限增长 */
+    private static final int MAX_CACHE_SIZE = 256;
+
     private final Path basePath;
     private final Map<Path, Environment> moduleCache = new HashMap<>();
     private final Map<Path, Long> moduleTimestamps = new HashMap<>();
 
     public ModuleLoader(Path basePath) {
         this.basePath = basePath;
+    }
+
+    /** 清空所有已缓存的模块 */
+    public void clear() {
+        moduleCache.clear();
+        moduleTimestamps.clear();
+    }
+
+    /** 使指定模块缓存失效 */
+    public void invalidate(Path modulePath) {
+        Path absolute = modulePath.toAbsolutePath().normalize();
+        moduleCache.remove(absolute);
+        moduleTimestamps.remove(absolute);
     }
 
     /**
@@ -69,6 +85,11 @@ public final class ModuleLoader {
             String source = new String(Files.readAllBytes(absolute), StandardCharsets.UTF_8);
             // 先注册空环境到缓存（允许循环引用拿到同一个环境引用）
             Environment moduleEnv = new Environment(interpreter.getGlobals());
+            // 缓存上限保护：超限时清空旧缓存
+            if (moduleCache.size() >= MAX_CACHE_SIZE) {
+                moduleCache.clear();
+                moduleTimestamps.clear();
+            }
             moduleCache.put(absolute, moduleEnv);
             // 记录文件修改时间
             moduleTimestamps.put(absolute, Files.getLastModifiedTime(absolute).toMillis());

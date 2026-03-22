@@ -1,15 +1,12 @@
 package com.novalang.runtime.stdlib;
 
-import com.novalang.runtime.Function1;
-import com.novalang.runtime.Function2;
 import com.novalang.runtime.NovaDynamic;
 import com.novalang.runtime.NovaResult;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 集合高阶函数（filter/map/forEach/find/reduce 等）。
@@ -27,13 +24,19 @@ public final class CollectionOps {
 
     // ========== 核心方法 ==========
 
+    /** 将任意 Iterable/Collection/List 统一为可迭代对象 */
+    private static Iterable<?> asIterable(Object obj) {
+        if (obj instanceof Iterable) return (Iterable<?>) obj;
+        if (obj instanceof Object[]) return java.util.Arrays.asList((Object[]) obj);
+        throw new ClassCastException("Expected Iterable, got: " + obj.getClass().getName());
+    }
+
     public static Object filter(Object listObj, Object lambda) {
         if (listObj instanceof Map) {
             return MapExtensions.filter(listObj, lambda);
         }
-        List<?> list = (List<?>) listObj;
         List<Object> result = new ArrayList<>();
-        for (Object item : list) {
+        for (Object item : asIterable(listObj)) {
             if (isTruthy(invokeLambda1(lambda, item))) result.add(item);
         }
         return result;
@@ -46,11 +49,10 @@ public final class CollectionOps {
         if (listObj instanceof NovaResult) {
             NovaResult r = (NovaResult) listObj;
             if (r.isOk()) return NovaResult.ok(invokeLambda1(lambda, r.getValue()));
-            return r; // Err 原样返回
+            return r;
         }
-        List<?> list = (List<?>) listObj;
-        List<Object> result = new ArrayList<>(list.size());
-        for (Object item : list) {
+        List<Object> result = new ArrayList<>();
+        for (Object item : asIterable(listObj)) {
             result.add(invokeLambda1(lambda, item));
         }
         return result;
@@ -60,28 +62,25 @@ public final class CollectionOps {
         if (listObj instanceof Map) {
             return MapExtensions.forEach(listObj, lambda);
         }
-        List<?> list = (List<?>) listObj;
-        for (Object item : list) {
+        for (Object item : asIterable(listObj)) {
             invokeLambda1(lambda, item);
         }
         return null;
     }
 
     public static Object find(Object listObj, Object lambda) {
-        if (!(listObj instanceof List)) {
+        if (!(listObj instanceof List) && !(listObj instanceof Collection)) {
             return NovaDynamic.invoke1(listObj, "find", lambda);
         }
-        List<?> list = (List<?>) listObj;
-        for (Object item : list) {
+        for (Object item : asIterable(listObj)) {
             if (isTruthy(invokeLambda1(lambda, item))) return item;
         }
         return null;
     }
 
     public static Object mapNotNull(Object listObj, Object lambda) {
-        List<?> list = (List<?>) listObj;
         List<Object> result = new ArrayList<>();
-        for (Object item : list) {
+        for (Object item : asIterable(listObj)) {
             Object mapped = invokeLambda1(lambda, item);
             if (mapped != null) result.add(mapped);
         }
@@ -89,74 +88,31 @@ public final class CollectionOps {
     }
 
     public static Object reduce(Object listObj, Object lambda) {
-        List<?> list = (List<?>) listObj;
-        if (list.isEmpty()) throw new IllegalArgumentException("Cannot reduce an empty list");
-        Object acc = list.get(0);
-        for (int i = 1; i < list.size(); i++) {
-            acc = invokeLambda2(lambda, acc, list.get(i));
+        java.util.Iterator<?> it = asIterable(listObj).iterator();
+        if (!it.hasNext()) throw new IllegalArgumentException("Cannot reduce an empty list");
+        Object acc = it.next();
+        while (it.hasNext()) {
+            acc = invokeLambda2(lambda, acc, it.next());
         }
         return acc;
     }
 
     public static Object reduce(Object listObj, Object initial, Object lambda) {
-        List<?> list = (List<?>) listObj;
         Object acc = initial;
-        for (Object item : list) {
+        for (Object item : asIterable(listObj)) {
             acc = invokeLambda2(lambda, acc, item);
         }
         return acc;
     }
 
-    // ========== Lambda 调用辅助 ==========
+    // ========== Lambda 调用辅助（委托 LambdaUtils 统一 MethodHandle 缓存） ==========
 
-    /** invoke 方法缓存: lambdaClass → Method（避免重复 getMethods 扫描） */
-    private static final ConcurrentHashMap<Class<?>, Method> invoke1Cache = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<Class<?>, Method> invoke2Cache = new ConcurrentHashMap<>();
-
-    @SuppressWarnings("unchecked")
     private static Object invokeLambda1(Object lambda, Object arg) {
-        if (lambda instanceof Function1) {
-            return ((Function1<Object, Object>) lambda).invoke(arg);
-        }
-        Method invoke = resolveInvoke(lambda, 1);
-        try {
-            return invoke.invoke(lambda, arg);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return LambdaUtils.invoke1(lambda, arg);
     }
 
-    @SuppressWarnings("unchecked")
     private static Object invokeLambda2(Object lambda, Object arg1, Object arg2) {
-        if (lambda instanceof Function2) {
-            return ((Function2<Object, Object, Object>) lambda).invoke(arg1, arg2);
-        }
-        Method invoke = resolveInvoke(lambda, 2);
-        try {
-            return invoke.invoke(lambda, arg1, arg2);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static Method resolveInvoke(Object lambda, int argCount) {
-        Class<?> cls = lambda.getClass();
-        ConcurrentHashMap<Class<?>, Method> cache = argCount == 1 ? invoke1Cache : invoke2Cache;
-        Method cached = cache.get(cls);
-        if (cached != null) return cached;
-
-        for (Method m : cls.getMethods()) {
-            if ("invoke".equals(m.getName()) && m.getParameterCount() == argCount) {
-                m.setAccessible(true);
-                cache.put(cls, m);
-                return m;
-            }
-        }
-        throw new RuntimeException("Lambda object has no invoke method with " + argCount + " parameter(s)");
+        return LambdaUtils.invoke2(lambda, arg1, arg2);
     }
 
     private static boolean isTruthy(Object value) {

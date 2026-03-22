@@ -649,12 +649,19 @@ public final class Nova {
         Builtins.ensureJavaClassRegistered();
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
+        compiler.setEnableSemanticAnalysis(true);
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
         CompiledNova compiled = new CompiledNova(classes, extensionRegistry);
         // 注入已注册的值
         for (Map.Entry<String, Object> entry : valRegistry.entrySet()) {
             compiled.set(entry.getKey(), entry.getValue());
+        }
+        // 注入 Java 命名空间（Java.type/Java.static 等）
+        // 使用 setRaw 保持 NovaMap 类型（不经过 toBindingValue 转换为 LinkedHashMap）
+        NovaValue javaNamespace = interpreter.getGlobals().tryGet("Java");
+        if (javaNamespace != null) {
+            compiled.setRaw("Java", javaNamespace);
         }
         return compiled;
     }
@@ -676,13 +683,27 @@ public final class Nova {
 
     /**
      * 静态便捷版：无预注册值的字节码预编译，指定文件名。
+     * 包含 Java 互操作支持（Java.type 等）。
      */
     public static CompiledNova compileToBytecodeStatic(String code, String fileName) {
+        Builtins.ensureJavaClassRegistered();
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
+        compiler.setEnableSemanticAnalysis(true);
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
-        return new CompiledNova(classes, null);
+        CompiledNova compiled = new CompiledNova(classes, null);
+        // 注入 Java 命名空间（通过临时 Interpreter 构造）
+        try {
+            Interpreter tempInterp = new Interpreter();
+            NovaValue javaNamespace = tempInterp.getGlobals().tryGet("Java");
+            if (javaNamespace != null) {
+                compiled.setRaw("Java", javaNamespace);
+            }
+        } catch (Exception ignored) {
+            // 忽略 — 不阻断编译
+        }
+        return compiled;
     }
 
     /**

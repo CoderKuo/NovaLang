@@ -8123,11 +8123,11 @@ class InterpreterTest {
         }
 
         @Test
-        @DisplayName("条件为整数 → truthy（非零）")
+        @DisplayName("条件为整数 → 非零 truthy, 零 falsy")
         void testTernaryIntConditionTruthy() {
             assertEquals("yes", interpreter.eval("1 ? \"yes\" : \"no\"", "test.nova").asString());
             assertEquals("yes", interpreter.eval("-1 ? \"yes\" : \"no\"", "test.nova").asString());
-            assertEquals("yes", interpreter.eval("0 ? \"yes\" : \"no\"", "test.nova").asString()); // Int 默认 truthy
+            assertEquals("no", interpreter.eval("0 ? \"yes\" : \"no\"", "test.nova").asString()); // 0 = falsy
         }
 
         @Test

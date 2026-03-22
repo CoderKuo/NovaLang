@@ -957,9 +957,31 @@ public final class NovaDynamic {
      * 返回 NOVA_MAP_MISS 表示未命中。
      */
     private static Object invokeNovaValueMember(NovaValue target, String methodName, Object[] args) {
+        // "invoke" 调用且 target 本身可调用 → 直接作为构造器/函数调用（NovaJavaClass 等）
+        if ("invoke".equals(methodName) && target.isCallable()) {
+            NovaValue[] novaArgs = new NovaValue[args.length];
+            for (int i = 0; i < args.length; i++) {
+                novaArgs[i] = args[i] instanceof NovaValue
+                        ? (NovaValue) args[i]
+                        : AbstractNovaValue.fromJava(args[i]);
+            }
+            Object result = target.dynamicInvoke(novaArgs);
+            // 解包 NovaValue → Java 对象（编译路径后续操作期望原生类型）
+            if (result instanceof NovaValue) result = ((NovaValue) result).toJavaValue();
+            return result;
+        }
         NovaValue member = target.resolveMember(methodName);
         if (member == null) return NOVA_MAP_MISS;
-        if (!member.isCallable()) return member;
+        // 方法调用场景：非 callable 成员（字段）不应作为方法返回
+        if (!member.isCallable()) {
+            NovaValue methodMember = target.resolveMethod(methodName);
+            if (methodMember != null && methodMember.isCallable()) {
+                member = methodMember;
+            } else {
+                // 没有同名方法 → 返回 MISS，让后续 Java 反射路径处理
+                return NOVA_MAP_MISS;
+            }
+        }
         if (args.length == 0) return member.dynamicInvoke(EMPTY_NOVA_ARGS);
         NovaValue[] novaArgs = new NovaValue[args.length];
         for (int i = 0; i < args.length; i++) {
@@ -1009,8 +1031,30 @@ public final class NovaDynamic {
                 } catch (RuntimeException e) {
                     throw e;
                 } catch (Exception e) {
-                    throw new RuntimeException(e.getMessage(), e);
+                    throw new RuntimeException(e);
                 }
+            }
+        }
+
+        // shared() 全局扩展注册表回退
+        ExtensionRegistry sharedExtReg = NovaRuntime.shared().getExtensionRegistry();
+        if (sharedExtReg != null && sharedExtReg != extReg) {
+            Class<?>[] argTypes2 = args.length == 0 ? EMPTY_TYPES : new Class<?>[args.length];
+            for (int i = 0; i < args.length; i++) {
+                argTypes2[i] = args[i] != null ? args[i].getClass() : Object.class;
+            }
+            ExtensionRegistry.RegisteredExtension ext2 = sharedExtReg.lookup(clazz, methodName, argTypes2);
+            if (ext2 == null && target instanceof NovaValue) {
+                Object javaVal = ((NovaValue) target).toJavaValue();
+                if (javaVal != null && javaVal.getClass() != clazz) {
+                    ext2 = sharedExtReg.lookup(javaVal.getClass(), methodName, argTypes2);
+                    if (ext2 != null) target = javaVal;
+                }
+            }
+            if (ext2 != null) {
+                try { return ext2.invoke(target, args); }
+                catch (RuntimeException e) { throw e; }
+                catch (Exception e) { throw new RuntimeException(e); }
             }
         }
 
@@ -1018,6 +1062,15 @@ public final class NovaDynamic {
         Object scopeReceiver = com.novalang.runtime.stdlib.NovaScopeFunctions.getScopeReceiver();
         if (scopeReceiver != null && scopeReceiver != target) {
             return invokeMethod(scopeReceiver, methodName, args);
+        }
+
+        // ScriptContext fallback: lambda 内调用宿主注入函数（defineFunction）
+        if (NovaScriptContext.isActive()) {
+            try {
+                return NovaScriptContext.call(methodName, args);
+            } catch (Exception ignored) {
+                // ScriptContext 也找不到，继续抛原始错误
+            }
         }
 
         throw noSuchMethod(clazz, methodName, args.length, args);
@@ -1077,7 +1130,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1087,7 +1140,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1097,7 +1150,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1107,7 +1160,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1117,7 +1170,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1127,7 +1180,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1137,7 +1190,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1147,7 +1200,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1157,7 +1210,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1167,7 +1220,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke static " + methodName, e);
         }
     }
 
@@ -1177,7 +1230,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1187,7 +1240,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1197,7 +1250,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1207,7 +1260,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1217,7 +1270,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1227,7 +1280,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1237,7 +1290,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1247,7 +1300,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1257,7 +1310,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1267,7 +1320,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + ": " + e.getMessage(), e);
+            throw new RuntimeException("Failed to invoke " + methodName, e);
         }
     }
 
@@ -1409,6 +1462,39 @@ public final class NovaDynamic {
         fullArgs[0] = target;
         System.arraycopy(args, 0, fullArgs, 1, args.length);
         return extInfo.impl.apply(fullArgs);
+    }
+
+    /** SamAdapter.adaptSingleArg(Class, Object) 的 MethodHandle，用于 filterArguments */
+    private static final MethodHandle SAM_ADAPT_SINGLE;
+    static {
+        try {
+            SAM_ADAPT_SINGLE = MethodHandles.lookup().findStatic(
+                    SamAdapter.class, "adaptSingleArg",
+                    MethodType.methodType(Object.class, Class.class, Object.class));
+        } catch (Exception e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    /**
+     * 将 SAM 适配过滤器烘焙进 MethodHandle：
+     * 对每个函数式接口参数位插入 filterArguments，缓存命中后自动执行 SAM 适配。
+     */
+    private static MethodHandle wrapSamFilters(MethodHandle handle, Method method) {
+        Class<?>[] paramTypes = method.getParameterTypes();
+        boolean isStatic = java.lang.reflect.Modifier.isStatic(method.getModifiers());
+        int offset = isStatic ? 0 : 1;
+        for (int i = 0; i < paramTypes.length; i++) {
+            Class<?> pt = paramTypes[i];
+            if (pt.isInterface() && SamAdapter.isFunctionalInterface(pt)) {
+                // 绑定 targetType，留下 arg 参数: (Object) -> Object
+                MethodHandle filter = MethodHandles.insertArguments(SAM_ADAPT_SINGLE, 0, pt);
+                // 转换返回类型为目标参数的精确类型
+                filter = filter.asType(MethodType.methodType(pt, Object.class));
+                handle = MethodHandles.filterArguments(handle, offset + i, filter);
+            }
+        }
+        return handle;
     }
 
     private static MethodHandle findOwnStatic(String methodName, MethodType type) {
@@ -1564,8 +1650,10 @@ public final class NovaDynamic {
         if (candidates.isEmpty()) return null;
 
         Method best = candidates.size() == 1 ? candidates.get(0) : selectMostSpecific(candidates);
+        // SAM 适配烘焙进 MethodHandle
         MethodHandle handle = unreflectWithFallback(best);
         if (handle == null) return null;
+        handle = wrapSamFilters(handle, best);
         try {
             MethodType staticType = MethodType.genericMethodType(arity);
             MethodHandle adapted = handle.asType(staticType);
@@ -1846,12 +1934,18 @@ public final class NovaDynamic {
             }
         }
         if (matches.isEmpty()) return null;
-        return toMethodHandle(matches.size() == 1 ? matches.get(0) : selectMostSpecific(matches));
+        Method best = matches.size() == 1 ? matches.get(0) : selectMostSpecific(matches);
+        // SAM 适配烘焙进 MethodHandle：缓存命中后自动执行
+        MethodHandle handle = toMethodHandle(best);
+        if (handle != null) {
+            handle = wrapSamFilters(handle, best);
+        }
+        return handle;
     }
 
     /** setAccessible + unreflect + varargs 适配一体化 */
     private static MethodHandle toMethodHandle(Method best) {
-        try { best.setAccessible(true); } catch (Exception ignored) {}
+        com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(best);
         MethodHandle handle = unreflectWithFallback(best);
         if (handle == null) return null;
         try {
@@ -1961,7 +2055,10 @@ public final class NovaDynamic {
         }
         for (int i = 0; i < args.length; i++) {
             if (args[i] != null && !isAssignable(paramTypes[i], args[i].getClass())) {
-                return false;
+                // SAM 适配：FunctionN/NovaCallable 可以赋值给函数式接口
+                if (!SamAdapter.isSamAssignable(paramTypes[i], args[i])) {
+                    return false;
+                }
             }
         }
         return true;
@@ -2142,5 +2239,144 @@ public final class NovaDynamic {
         public int hashCode() {
             return hash;
         }
+    }
+
+    // ========== 命名参数调用辅助（编译路径） ==========
+
+    /**
+     * 编译模式下带命名参数的方法调用。
+     * @param receiver 接收者对象
+     * @param methodName 方法名
+     * @param allArgs 所有参数（位置参数在前，命名参数值在后）
+     * @param namedInfo 格式 "named:positionalCount:key1,key2"
+     */
+    public static Object invokeWithNamedArgs(Object receiver, String methodName,
+                                              Object[] allArgs, String namedInfo) {
+        // 解析 namedInfo: "named:positionalCount:key1,key2"
+        String[] parts = namedInfo.split(":", 3);
+        int positionalCount = Integer.parseInt(parts[1]);
+        String[] namedKeys = parts.length > 2 && !parts[2].isEmpty()
+                ? parts[2].split(",") : new String[0];
+
+        Class<?> clazz = receiver.getClass();
+        List<Method> candidates = getMethodIndex(clazz).get(methodName);
+        if (candidates == null) {
+            return invokeArray(receiver, methodName, allArgs);
+        }
+
+        // 重载决议：参数数量 → 参数名匹配 → 重排后类型兼容性检查
+        List<Method> sizeMatches = new ArrayList<>();
+        for (Method m : candidates) {
+            if (m.getParameterCount() == allArgs.length) {
+                sizeMatches.add(m);
+            }
+        }
+        if (sizeMatches.isEmpty()) {
+            return invokeArray(receiver, methodName, allArgs);
+        }
+
+        // 对每个候选：先做参数名匹配 + 重排，再做类型兼容性检查
+        Method best = null;
+        Object[] reordered = null;
+        List<Method> compatible = new ArrayList<>();
+        Map<Method, Object[]> reorderedMap = new java.util.HashMap<>();
+        for (Method m : sizeMatches) {
+            java.lang.reflect.Parameter[] ps = m.getParameters();
+            Object[] rArgs = reorderNamedArgs(ps, allArgs, positionalCount, namedKeys);
+            if (rArgs == null) continue;
+            // 用重排后的参数做类型兼容性检查
+            if (isArgsCompatible(m, rArgs)) {
+                compatible.add(m);
+                reorderedMap.put(m, rArgs);
+            }
+        }
+        if (!compatible.isEmpty()) {
+            best = compatible.size() == 1 ? compatible.get(0) : selectMostSpecific(compatible);
+            reordered = reorderedMap.get(best);
+        }
+        // 回退：没有类型兼容的 → 尝试只按名字匹配（可能缺参数名元数据）
+        if (best == null) {
+            for (Method m : sizeMatches) {
+                java.lang.reflect.Parameter[] ps = m.getParameters();
+                Object[] rArgs = reorderNamedArgs(ps, allArgs, positionalCount, namedKeys);
+                if (rArgs != null) {
+                    best = m;
+                    reordered = rArgs;
+                    break;
+                }
+            }
+        }
+        // 仍无匹配
+        if (best == null) {
+            if (namedKeys.length == 0 && sizeMatches.size() == 1) {
+                // 纯位置调用（无命名参数）且只有一个候选 → 按位置传入
+                best = sizeMatches.get(0);
+                reordered = allArgs;
+            } else {
+                throw new RuntimeException("Cannot resolve named-argument call: no matching overload for '"
+                        + methodName + "' with named args [" + String.join(", ", namedKeys) + "]"
+                        + (sizeMatches.size() > 1 ? " among " + sizeMatches.size() + " candidates"
+                                : " (parameter name metadata may be missing)"));
+            }
+        }
+
+        // 走 toMethodHandle + wrapSamFilters 统一路径
+        MethodHandle handle = toMethodHandle(best);
+        if (handle == null) {
+            return invokeArray(receiver, methodName, reordered);
+        }
+        handle = wrapSamFilters(handle, best);
+
+        try {
+            return handle.invokeWithArguments(buildArgs(receiver, reordered));
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new RuntimeException("Failed to invoke " + methodName + " with named args", e);
+        }
+    }
+
+    /** 检查方法的参数名是否包含所有命名键 */
+    private static boolean namedKeysMatch(java.lang.reflect.Parameter[] params,
+                                           int positionalCount, String[] namedKeys) {
+        if (namedKeys.length == 0) return true;
+        for (String key : namedKeys) {
+            boolean found = false;
+            for (int j = positionalCount; j < params.length; j++) {
+                if (params[j].isNamePresent() && params[j].getName().equals(key)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    private static Object[] reorderNamedArgs(java.lang.reflect.Parameter[] params,
+                                              Object[] allArgs, int positionalCount,
+                                              String[] namedKeys) {
+        Object[] result = new Object[allArgs.length];
+        System.arraycopy(allArgs, 0, result, 0, positionalCount);
+        boolean[] filled = new boolean[allArgs.length];
+        for (int i = 0; i < positionalCount; i++) filled[i] = true;
+
+        for (int i = 0; i < namedKeys.length; i++) {
+            boolean matched = false;
+            for (int j = positionalCount; j < params.length; j++) {
+                if (filled[j]) continue;
+                if (params[j].isNamePresent() && params[j].getName().equals(namedKeys[i])) {
+                    result[j] = allArgs[positionalCount + i];
+                    filled[j] = true;
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                // 参数名不匹配 → 此方法不是有效候选
+                return null;
+            }
+        }
+        return result;
     }
 }

@@ -22,6 +22,10 @@ import com.novalang.ir.pass.mir.MirLocalCSE;
 import com.novalang.ir.pass.mir.MirPeepholeOptimization;
 import com.novalang.ir.pass.mir.TailCallElimination;
 
+import com.novalang.compiler.analysis.AnalysisResult;
+import com.novalang.compiler.analysis.SemanticAnalyzer;
+import com.novalang.compiler.analysis.SemanticDiagnostic;
+
 import java.util.*;
 
 
@@ -40,6 +44,10 @@ public class PassPipeline {
     private boolean interpreterMode = false;
     /** 持久化匿名类计数器（跨 evalRepl 调用递增，避免 Lambda 类名冲突） */
     private int anonymousClassCounterBase = 0;
+    /** 是否在 pipeline 中运行语义分析 */
+    private boolean enableSemanticAnalysis = false;
+    /** strict 模式：ERROR 级诊断抛异常中止 */
+    private boolean strictSemanticMode = false;
 
     public void setScriptMode(boolean scriptMode) {
         this.scriptMode = scriptMode;
@@ -47,6 +55,14 @@ public class PassPipeline {
 
     public void setInterpreterMode(boolean interpreterMode) {
         this.interpreterMode = interpreterMode;
+    }
+
+    public void setEnableSemanticAnalysis(boolean enable) {
+        this.enableSemanticAnalysis = enable;
+    }
+
+    public void setStrictSemanticMode(boolean strict) {
+        this.strictSemanticMode = strict;
     }
 
     public PassPipeline() {
@@ -103,6 +119,11 @@ public class PassPipeline {
      * @return className → bytecode 映射
      */
     public Map<String, byte[]> execute(Program program) {
+        // 0. 语义分析（可选）
+        if (enableSemanticAnalysis) {
+            runSemanticAnalysis(program);
+        }
+
         // 1. AST → HIR（AST 之后不再需要，program 由调用方管理）
         AstToHirLowering astLowering = new AstToHirLowering();
         astLowering.setScriptMode(scriptMode);
@@ -145,6 +166,49 @@ public class PassPipeline {
 
         // 5. MIR → 字节码
         return new MirCodeGenerator().generate(mir);
+    }
+
+    /**
+     * 运行语义分析并处理诊断结果。
+     * strict 模式下 ERROR 级诊断会抛出异常中止；宽松模式仅输出到 stderr。
+     */
+    private void runSemanticAnalysis(Program program) {
+        try {
+            SemanticAnalyzer analyzer = new SemanticAnalyzer();
+            // 编译管线只需诊断输出，跳过 exprNovaTypeMap / 位置索引记录以节省内存
+            analyzer.setDiagnosticsOnly(true);
+            AnalysisResult result = analyzer.analyze(program);
+            List<SemanticDiagnostic> diagnostics = result.getDiagnostics();
+            if (diagnostics.isEmpty()) return;
+
+            boolean hasErrors = false;
+            StringBuilder errorMessages = null;
+
+            for (SemanticDiagnostic d : diagnostics) {
+                SemanticDiagnostic.Severity severity = d.getSeverity();
+                if (strictSemanticMode && severity == SemanticDiagnostic.Severity.WARNING) {
+                    severity = SemanticDiagnostic.Severity.ERROR;
+                }
+                System.err.println("[" + severity + "] " + d.getMessage());
+                if (severity == SemanticDiagnostic.Severity.ERROR) {
+                    hasErrors = true;
+                    if (errorMessages == null) errorMessages = new StringBuilder("Semantic analysis errors:\n");
+                    errorMessages.append("  ").append(d.getMessage()).append('\n');
+                }
+            }
+
+            if (hasErrors && strictSemanticMode && errorMessages != null) {
+                throw new RuntimeException(errorMessages.toString());
+            }
+        } catch (RuntimeException e) {
+            if (strictSemanticMode) throw e;
+            // 宽松模式：区分诊断异常和分析器内部 bug
+            // 诊断异常（上面主动抛出的）含 "Semantic analysis errors:" 前缀，静默处理
+            // 其他异常（NPE/状态不一致等）输出到 stderr 以便排查
+            if (e.getMessage() == null || !e.getMessage().startsWith("Semantic analysis errors:")) {
+                System.err.println("[WARN] Semantic analyzer internal error: " + e.getMessage());
+            }
+        }
     }
 
     /**
@@ -191,6 +255,11 @@ public class PassPipeline {
      * 只执行到 HIR 阶段（用于解释器）。
      */
     public HirModule executeToHir(Program program) {
+        // 语义分析（可选）
+        if (enableSemanticAnalysis) {
+            runSemanticAnalysis(program);
+        }
+
         AstToHirLowering astLowering = new AstToHirLowering();
         astLowering.setScriptMode(scriptMode);
         HirModule hir = astLowering.lower(program);

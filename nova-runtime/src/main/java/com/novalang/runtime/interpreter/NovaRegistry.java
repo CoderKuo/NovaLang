@@ -124,7 +124,7 @@ public final class NovaRegistry {
         final boolean finalNeedsInterp = needsInterpreter;
         final boolean finalIsVararg = isVararg;
 
-        method.setAccessible(true);
+        com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(method);
         final MethodHandle mh;
         try {
             mh = MethodHandles.lookup().unreflect(method);

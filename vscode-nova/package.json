@@ -16,6 +16,24 @@
     ],
     "main": "./out/extension.js",
     "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "nova-explorer",
+                    "title": "NovaLang",
+                    "icon": "$(symbol-function)"
+                }
+            ]
+        },
+        "views": {
+            "nova-explorer": [
+                {
+                    "type": "webview",
+                    "id": "nova.apiDocs",
+                    "name": "API 文档"
+                }
+            ]
+        },
         "commands": [
             {
                 "command": "nova.restartLanguageServer",
@@ -144,6 +162,11 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Enable Nova language features inside YAML block scalars marked with # nova or # nova=<namespace>"
+                },
+                "nova.runtime.httpUrl": {
+                    "type": "string",
+                    "default": "http://localhost:9621",
+                    "description": "Nova 运行时 HTTP API 地址，用于获取运行时注册的函数、变量和扩展函数补全"
                 }
             }
         },

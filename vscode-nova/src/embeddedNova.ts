@@ -110,14 +110,39 @@ export class EmbeddedNovaController implements vscode.Disposable {
                         const block = this.findBlockAtPosition(document, position);
                         if (!block) return undefined;
 
+                        // 1. LSP 补全（现有）
                         const result = await this.client.sendRequest<any>('textDocument/completion', {
                             textDocument: { uri: block.virtualUri },
                             position: this.toEmbeddedPosition(block, position),
                         });
 
                         const items = Array.isArray(result) ? result : result?.items;
-                        if (!Array.isArray(items)) return undefined;
-                        return items.map((item: any) => this.toCompletionItem(item));
+                        const completions: vscode.CompletionItem[] = Array.isArray(items)
+                            ? items.map((item: any) => this.toCompletionItem(item))
+                            : [];
+
+                        // 2. 运行时补全（新增）— 从 HTTP API 获取
+                        const { runtimeClient } = await import('./extension');
+                        if (runtimeClient.isConfigured) {
+                            const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_]\w*/);
+                            const prefix = wordRange ? document.getText(wordRange) : '';
+                            try {
+                                const { toVscodeCompletionItem } = await import('./runtimeClient');
+                                // 如果有上下文标识（// nova=key:value），查询特定上下文
+                                const ns = block.namespace;
+                                const runtimeItems = ns && ns.includes(':')
+                                    ? await runtimeClient.getContextCompletions(ns, prefix)
+                                    : await runtimeClient.getCompletions(prefix);
+                                const seen = new Set(completions.map(c => typeof c.label === 'string' ? c.label : c.label.label));
+                                for (const ri of runtimeItems) {
+                                    if (!seen.has(ri.label)) {
+                                        completions.push(toVscodeCompletionItem(ri));
+                                    }
+                                }
+                            } catch { /* 静默：API 不可达不影响 LSP 补全 */ }
+                        }
+
+                        return completions.length > 0 ? completions : undefined;
                     },
                 },
                 '.', '$', ':'

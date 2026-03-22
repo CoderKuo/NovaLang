@@ -1,6 +1,7 @@
 package com.novalang.runtime;
 
 import com.novalang.runtime.interpreter.MethodHandleCache;
+import com.novalang.runtime.interpreter.NovaNativeFunction;
 import com.novalang.runtime.interpreter.NovaRuntimeException;
 import com.novalang.compiler.ast.decl.Program;
 import com.novalang.compiler.lexer.Lexer;
@@ -162,6 +163,106 @@ public final class CompiledNova {
     public CompiledNova set(String name, Object value) {
         if (nova != null) nova.set(name, value);
         else bindings.put(name, NativeFunctionAdapter.toBindingValue(value));
+        return this;
+    }
+
+    // ── 函数注册 ──────────────────────────────────────────
+
+    /** 注入无参函数 */
+    public CompiledNova defineFunction(String name, Function0<Object> func) {
+        return set(name, new NovaNativeFunction(name, 0, (ctx, args) ->
+                AbstractNovaValue.fromJava(func.invoke())));
+    }
+
+    /** 注入单参函数 */
+    public CompiledNova defineFunction(String name, Function1<Object, Object> func) {
+        return set(name, new NovaNativeFunction(name, 1, (ctx, args) ->
+                AbstractNovaValue.fromJava(func.invoke(unwrapArg(args.get(0))))));
+    }
+
+    /** 注入双参函数 */
+    public CompiledNova defineFunction(String name, Function2<Object, Object, Object> func) {
+        return set(name, new NovaNativeFunction(name, 2, (ctx, args) ->
+                AbstractNovaValue.fromJava(func.invoke(unwrapArg(args.get(0)), unwrapArg(args.get(1))))));
+    }
+
+    /** 注入三参函数 */
+    public CompiledNova defineFunction(String name, Function3<Object, Object, Object, Object> func) {
+        return set(name, new NovaNativeFunction(name, 3, (ctx, args) ->
+                AbstractNovaValue.fromJava(func.invoke(unwrapArg(args.get(0)), unwrapArg(args.get(1)), unwrapArg(args.get(2))))));
+    }
+
+    /** 注入变参函数 */
+    public CompiledNova defineFunctionVararg(String name, Function1<Object[], Object> func) {
+        return set(name, new NovaNativeFunction(name, -1, (ctx, args) -> {
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) javaArgs[i] = unwrapArg(args.get(i));
+            return AbstractNovaValue.fromJava(func.invoke(javaArgs));
+        }));
+    }
+
+    // ── 扩展函数注册 ──────────────────────────────────────
+
+    /** 注册扩展方法：receiver → result */
+    public CompiledNova registerExtension(Class<?> type, String name, Function1<Object, Object> func) {
+        return registerExtensionInternal(type, name, 1, func);
+    }
+
+    /** 注册扩展方法：(receiver, arg1) → result */
+    public CompiledNova registerExtension(Class<?> type, String name, Function2<Object, Object, Object> func) {
+        return registerExtensionInternal(type, name, 2, func);
+    }
+
+    /** 注册扩展方法：(receiver, arg1, arg2) → result */
+    public CompiledNova registerExtension(Class<?> type, String name, Function3<Object, Object, Object, Object> func) {
+        return registerExtensionInternal(type, name, 3, func);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private CompiledNova registerExtensionInternal(Class<?> type, String name, int arity, Object func) {
+        if (extensionRegistry == null) return this;
+        int extraParams = Math.max(0, arity - 1);
+        Class<?>[] paramTypes = new Class<?>[extraParams];
+        java.util.Arrays.fill(paramTypes, Object.class);
+        extensionRegistry.register(type, name, paramTypes, Object.class,
+                new ExtensionMethod<Object, Object>() {
+                    @Override
+                    public Object invoke(Object receiver, Object[] args) {
+                        switch (arity) {
+                            case 1: return ((Function1) func).invoke(receiver);
+                            case 2: return ((Function2) func).invoke(receiver, args[0]);
+                            case 3: return ((Function3) func).invoke(receiver, args[0], args[1]);
+                            default: return null;
+                        }
+                    }
+                });
+        // 解释器模式：同时写入 Nova 实例的 extensionRegistry
+        if (nova != null) {
+            NovaNativeFunction nf = new NovaNativeFunction(name, arity, (ctx, a) -> {
+                Object[] javaArgs = new Object[a.size()];
+                for (int i = 0; i < a.size(); i++) javaArgs[i] = unwrapArg(a.get(i));
+                switch (arity) {
+                    case 1: return AbstractNovaValue.fromJava(((Function1) func).invoke(javaArgs[0]));
+                    case 2: return AbstractNovaValue.fromJava(((Function2) func).invoke(javaArgs[0], javaArgs[1]));
+                    case 3: return AbstractNovaValue.fromJava(((Function3) func).invoke(javaArgs[0], javaArgs[1], javaArgs[2]));
+                    default: return NovaNull.NULL;
+                }
+            });
+            nova.registerExtension(type, name, nf);
+        }
+        return this;
+    }
+
+    private static Object unwrapArg(NovaValue v) {
+        return v != null ? v.toJavaValue() : null;
+    }
+
+    /**
+     * 设置变量（不经过类型转换，保持原始对象类型）。
+     * 用于注入 NovaMap 等需要保持 Nova 类型系统语义的对象。
+     */
+    CompiledNova setRaw(String name, Object value) {
+        bindings.put(name, value);
         return this;
     }
 

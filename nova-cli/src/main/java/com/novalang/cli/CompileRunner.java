@@ -50,6 +50,8 @@ public class CompileRunner {
             }
 
             NovaIrCompiler irCompiler = new NovaIrCompiler();
+            irCompiler.setEnableSemanticAnalysis(true);
+            irCompiler.setStrictSemanticMode(strict);
             irCompiler.compileAndSave(source, path.getFileName().toString(), new File(outputPath));
 
             System.out.println("编译成功！");
@@ -73,10 +75,9 @@ public class CompileRunner {
         try {
             String source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
 
-            // 语义分析（类型检查）
-            new ScriptRunner(null, strict).runSemanticAnalysis(source, path.getFileName().toString());
-
             NovaIrCompiler irCompiler = new NovaIrCompiler();
+            irCompiler.setEnableSemanticAnalysis(true);
+            irCompiler.setStrictSemanticMode(strict);
 
             // 解析主文件 AST，提取 import 声明
             Lexer lexer = new Lexer(source, path.getFileName().toString());

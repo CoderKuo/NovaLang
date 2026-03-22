@@ -39,7 +39,7 @@ public final class NovaFieldInfo extends AbstractNovaValue {
     public Object get(Object instance) {
         if (javaField != null) {
             try {
-                javaField.setAccessible(true);
+                com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(javaField);
                 return javaField.get(instance);
             } catch (Exception e) {
                 throw new RuntimeException("Failed to get field " + name + ": " + e.getMessage(), e);
@@ -51,7 +51,7 @@ public final class NovaFieldInfo extends AbstractNovaValue {
     public void set(Object instance, Object value) {
         if (javaField != null) {
             try {
-                javaField.setAccessible(true);
+                com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(javaField);
                 javaField.set(instance, value);
             } catch (Exception e) {
                 throw new RuntimeException("Failed to set field " + name + ": " + e.getMessage(), e);

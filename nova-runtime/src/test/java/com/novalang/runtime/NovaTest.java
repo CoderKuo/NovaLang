@@ -435,6 +435,154 @@ class NovaTest {
         }
 
         @Test
+        @DisplayName("Java.type 在编译路径中可用")
+        void javaTypeInCompiled() {
+            Object result = new Nova().compileToBytecode(
+                    "val Math = Java.type(\"java.lang.Math\")\n" +
+                    "Math.abs(-42)", "test.nova").run();
+            assertEquals(42, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("Java.type 带参构造器（编译路径）")
+        void javaTypeConstructorWithArgs() {
+            // ItemStack(Material) 等价场景：带参数构造
+            Object result = new Nova().compileToBytecode(
+                    "val StringBuilder = Java.type(\"java.lang.StringBuilder\")\n" +
+                    "val sb = StringBuilder(\"hello\")\n" +
+                    "sb.append(\" world\")\n" +
+                    "sb.toString()", "test.nova").run();
+            assertEquals("hello world", result);
+        }
+
+        @Test
+        @DisplayName("javaClass 带参构造器（编译路径）")
+        void javaClassConstructorWithArgs() {
+            Object result = new Nova().compileToBytecode(
+                    "val ArrayList = javaClass(\"java.util.ArrayList\")\n" +
+                    "val list = ArrayList(16)\n" +  // capacity 参数
+                    "list.add(\"a\")\n" +
+                    "list.size()", "test.nova").run();
+            assertEquals(1, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("SAM 适配 — Collections.sort 带 Comparator lambda（编译路径）")
+        void samComparatorCompiled() {
+            Object result = new Nova().compileToBytecode(
+                    "val ArrayList = javaClass(\"java.util.ArrayList\")\n" +
+                    "val Collections = javaClass(\"java.util.Collections\")\n" +
+                    "val list = ArrayList()\n" +
+                    "list.add(5)\nlist.add(1)\nlist.add(3)\n" +
+                    "Collections.sort(list, { a, b -> a - b })\n" +
+                    "list.get(0)", "test.nova").run();
+            assertEquals(1, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("SAM 适配 — Collections.sort 带 Comparator lambda（解释路径）")
+        void samComparatorEval() {
+            Object result = new Nova().eval(
+                    "val ArrayList = javaClass(\"java.util.ArrayList\")\n" +
+                    "val Collections = javaClass(\"java.util.Collections\")\n" +
+                    "val list = ArrayList()\n" +
+                    "list.add(5)\nlist.add(1)\nlist.add(3)\n" +
+                    "Collections.sort(list, { a, b -> a - b })\n" +
+                    "list.get(0)");
+            assertEquals(1, ((Number) result).intValue());
+        }
+
+        @Test
+        @DisplayName("SAM 适配 — List.forEach 带 Consumer lambda（编译路径）")
+        void samConsumerCompiled() {
+            Object result = new Nova().compileToBytecode(
+                    "val ArrayList = javaClass(\"java.util.ArrayList\")\n" +
+                    "val list = ArrayList()\n" +
+                    "list.add(1)\nlist.add(2)\nlist.add(3)\n" +
+                    "val sb = javaClass(\"java.lang.StringBuilder\")()\n" +
+                    "list.forEach({ x -> sb.append(x) })\n" +
+                    "sb.toString()", "test.nova").run();
+            assertEquals("123", result);
+        }
+
+        @Test
+        @DisplayName("SAM 适配 — 反序排序 Comparator lambda（编译路径）")
+        void samReverseComparatorCompiled() {
+            Object result = new Nova().compileToBytecode(
+                    "val ArrayList = javaClass(\"java.util.ArrayList\")\n" +
+                    "val Collections = javaClass(\"java.util.Collections\")\n" +
+                    "val list = ArrayList()\n" +
+                    "list.add(1)\nlist.add(5)\nlist.add(3)\n" +
+                    "Collections.sort(list, { a, b -> b - a })\n" +
+                    "list.get(0)", "test.nova").run();
+            assertEquals(5, ((Number) result).intValue());
+        }
+
+        // ---- 注入 Java 对象通过 getter 访问 ----
+
+        /** 模拟 Kotlin data class */
+        class PlayerInfo {
+            private final String name;
+            private final int level;
+            private final boolean vip;
+            PlayerInfo(String name, int level, boolean vip) { this.name = name; this.level = level; this.vip = vip; }
+            public String getName() { return name; }
+            public int getLevel() { return level; }
+            public boolean isVip() { return vip; }
+        }
+
+        @Test
+        @DisplayName("compiled.set 注入 Java 对象 — getName() 方法调用")
+        void setJavaObjectGetterMethod() {
+            CompiledNova compiled = new Nova().compileToBytecode("player.getName()", "test.nova");
+            compiled.set("player", new PlayerInfo("Steve", 42, true));
+            assertEquals("Steve", compiled.run());
+        }
+
+        @Test
+        @DisplayName("compiled.set 注入 Java 对象 — getLevel() 方法调用")
+        void setJavaObjectGetterInt() {
+            CompiledNova compiled = new Nova().compileToBytecode("player.getLevel()", "test.nova");
+            compiled.set("player", new PlayerInfo("Steve", 42, true));
+            assertEquals(42, ((Number) compiled.run()).intValue());
+        }
+
+        @Test
+        @DisplayName("compiled.set 注入 Java 对象 — isVip() boolean getter")
+        void setJavaObjectBooleanGetter() {
+            CompiledNova compiled = new Nova().compileToBytecode("player.isVip()", "test.nova");
+            compiled.set("player", new PlayerInfo("Steve", 42, true));
+            assertEquals(true, compiled.run());
+        }
+
+        @Test
+        @DisplayName("compiled.set 注入 Java 对象 — 属性风格访问 player.name")
+        void setJavaObjectPropertyAccess() {
+            CompiledNova compiled = new Nova().compileToBytecode("player.name", "test.nova");
+            compiled.set("player", new PlayerInfo("Steve", 42, true));
+            assertEquals("Steve", compiled.run());
+        }
+
+        @Test
+        @DisplayName("compiled.set 注入 Java 对象 — 表达式中使用")
+        void setJavaObjectInExpression() {
+            CompiledNova compiled = new Nova().compileToBytecode(
+                    "\"Hello \" + player.getName() + \" Lv.\" + player.getLevel()", "test.nova");
+            compiled.set("player", new PlayerInfo("Steve", 42, true));
+            assertEquals("Hello Steve Lv.42", compiled.run());
+        }
+
+        @Test
+        @DisplayName("compiled.set 注入 Java 对象 — 多次 set 不同值")
+        void setJavaObjectMultipleTimes() {
+            CompiledNova compiled = new Nova().compileToBytecode("player.getName()", "test.nova");
+            compiled.set("player", new PlayerInfo("Steve", 42, true));
+            assertEquals("Steve", compiled.run());
+            compiled.set("player", new PlayerInfo("Alex", 10, false));
+            assertEquals("Alex", compiled.run());
+        }
+
+        @Test
         @DisplayName("javaClass Collections.sort 排序")
         void javaClassCollectionsSort() {
             Object result = new Nova().compileToBytecode(

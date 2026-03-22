@@ -188,7 +188,8 @@ public class Interpreter implements ExecutionContext {
         this.extensionRegistry = new ExtensionRegistry();
         this.annotationProcessors = new HashMap<String, List<NovaAnnotationProcessor>>();
 
-        // 安全策略：设置 MethodHandleCache 的 setAccessible 守卫
+        // 安全策略：设置 setAccessible 守卫（统一使用 LambdaUtils 的 ThreadLocal）
+        com.novalang.runtime.stdlib.LambdaUtils.setAllowSetAccessible(policy.isSetAccessibleAllowed());
         MethodHandleCache.setAllowSetAccessible(policy.isSetAccessibleAllowed());
 
         // 注册 NovaValue 回退转换器（将未知 Java 对象包装为 NovaExternalObject）
@@ -247,6 +248,7 @@ public class Interpreter implements ExecutionContext {
         this.securityPolicy = parent.securityPolicy;
         this.hasSecurityLimits = parent.hasSecurityLimits;
         // 子线程的 ThreadLocal 需独立初始化
+        com.novalang.runtime.stdlib.LambdaUtils.setAllowSetAccessible(securityPolicy.isSetAccessibleAllowed());
         MethodHandleCache.setAllowSetAccessible(securityPolicy.isSetAccessibleAllowed());
         this.globals = parent.globals;
         this.environment = new Environment(parent.globals);
@@ -272,6 +274,19 @@ public class Interpreter implements ExecutionContext {
         this.hirEvaluator = new HirEvaluator(this);
         this.javaInteropHelper = new JavaInteropHelper(this);
         this.mirInterpreter = new MirInterpreter(this, parent.mirInterpreter);
+    }
+
+    /**
+     * 释放 Interpreter 持有的 ThreadLocal 和缓存资源。
+     * 长期运行场景（服务端、REPL）在 Interpreter 不再使用时应调用此方法。
+     */
+    public void cleanup() {
+        threadLocalChild.remove();
+        hirThreadLocalChild.remove();
+        tlReturnValue.remove();
+        tlHasReturn.remove();
+        // 不重置 MethodHandleCache.setAllowSetAccessible：
+        // 同一线程可能还有其他受限 Interpreter，无条件放宽会破坏安全策略
     }
 
     // ============ I/O 流配置============
@@ -431,7 +446,30 @@ public class Interpreter implements ExecutionContext {
     }
 
     public NovaCallable findExtension(NovaValue receiver, String methodName) {
-        return extensionRegistry.findExtension(receiver, methodName);
+        NovaCallable ext = extensionRegistry.findExtension(receiver, methodName);
+        if (ext != null) return ext;
+        // 回退到 shared() 全局扩展注册表（com.novalang.runtime.ExtensionRegistry）
+        com.novalang.runtime.ExtensionRegistry sharedReg = NovaRuntime.shared().getExtensionRegistry();
+        if (sharedReg != null) {
+            Object javaTarget = receiver.toJavaValue();
+            Class<?> targetClass = javaTarget != null ? javaTarget.getClass() : Object.class;
+            com.novalang.runtime.ExtensionRegistry.RegisteredExtension sharedExt =
+                    sharedReg.lookup(targetClass, methodName, new Class<?>[0]);
+            if (sharedExt != null) {
+                final Object finalTarget = javaTarget;
+                return new NovaNativeFunction(methodName, -1, (ctx, args) -> {
+                    Object[] javaArgs = new Object[args.size() - 1];
+                    for (int i = 1; i < args.size(); i++) javaArgs[i - 1] = args.get(i).toJavaValue();
+                    try {
+                        Object result = sharedExt.invoke(finalTarget, javaArgs);
+                        return AbstractNovaValue.fromJava(result);
+                    } catch (Exception e) {
+                        throw new NovaRuntimeException(e.getMessage(), e);
+                    }
+                });
+            }
+        }
+        return null;
     }
 
     public NovaCallable getExtension(Class<?> targetType, String methodName) {

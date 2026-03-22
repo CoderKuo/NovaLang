@@ -86,6 +86,11 @@ public final class NovaFloat extends Number implements NovaValue, NovaNumber {
     }
 
     @Override
+    public boolean isTruthy() {
+        return value != 0.0f;
+    }
+
+    @Override
     public String toString() {
         return value + "f";
     }

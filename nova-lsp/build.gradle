@@ -31,3 +31,12 @@ jar {
         )
     }
 }
+
+// 将 Fat JAR 复制到 VSCode 扩展的 server/ 目录
+tasks.register('bundleToVscode', Copy) {
+    dependsOn jar
+    from(jar.archiveFile)
+    into(rootProject.file('vscode-nova/server'))
+    group = 'build'
+    description = 'Copy LSP JAR to vscode-nova/server/ for bundled distribution'
+}

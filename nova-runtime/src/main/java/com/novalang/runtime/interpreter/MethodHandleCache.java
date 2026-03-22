@@ -60,11 +60,23 @@ public final class MethodHandleCache {
     /** 按类+方法名索引的方法列表（避免每次 getMethods() 全遍历） */
     private final BoundedCache<Class<?>, Map<String, List<Method>>> methodsByName = new CaffeineCache<>(4096);
 
-    /** 函数式接口判定缓存 */
-    private final Map<Class<?>, Boolean> functionalInterfaceCache = new ConcurrentHashMap<>();
+    /** 函数式接口判定缓存（ClassValue 随 Class 生命周期自动回收，不钉住 ClassLoader） */
+    private final ClassValue<Boolean> functionalInterfaceCache = new ClassValue<Boolean>() {
+        @Override
+        protected Boolean computeValue(Class<?> c) {
+            if (!c.isInterface()) return Boolean.FALSE;
+            int abstractCount = 0;
+            for (Method m : c.getMethods()) {
+                if (Modifier.isAbstract(m.getModifiers()) && !isObjectMethod(m)) {
+                    abstractCount++;
+                    if (abstractCount > 1) return Boolean.FALSE;
+                }
+            }
+            return abstractCount == 1;
+        }
+    };
 
-    /** SAM 方法缓存: interface → SAM Method (使用 Optional 包装以支持 null 结果) */
-    private final Map<Class<?>, java.util.Optional<Method>> samMethodCache = new ConcurrentHashMap<>();
+    // SAM 方法缓存已委托到 SamAdapter.getSamMethod()（消除重复逻辑）
 
     private final MethodHandles.Lookup lookup = MethodHandles.lookup();
 
@@ -74,35 +86,21 @@ public final class MethodHandleCache {
         return INSTANCE;
     }
 
-    // ============ setAccessible 安全守卫 ============
-
-    /**
-     * 当前线程是否允许调用 setAccessible(true)。
-     * 由 Interpreter 根据 NovaSecurityPolicy.isSetAccessibleAllowed() 设置。
-     * 默认 true（无策略时保持原有行为）。
-     */
-    private static final ThreadLocal<Boolean> TL_ALLOW_SET_ACCESSIBLE = ThreadLocal.withInitial(() -> Boolean.TRUE);
+    // ============ setAccessible 安全守卫（委托 LambdaUtils 统一 ThreadLocal） ============
 
     /**
      * 设置当前线程的 setAccessible 策略。
-     * 由 Interpreter 构造器调用。
+     * 由 Interpreter 构造器调用。委托 LambdaUtils 统一管理。
      */
     public static void setAllowSetAccessible(boolean allow) {
-        TL_ALLOW_SET_ACCESSIBLE.set(allow);
+        com.novalang.runtime.stdlib.LambdaUtils.setAllowSetAccessible(allow);
     }
 
     /**
-     * 受策略守卫的 setAccessible 调用。
-     * 策略不允许时静默跳过；setAccessible 失败时也静默跳过（public 方法不需要 setAccessible 即可 unreflect）。
+     * 受策略守卫的 setAccessible 调用。委托 LambdaUtils 统一实现。
      */
     private static void trySetAccessible(java.lang.reflect.AccessibleObject ao) {
-        if (TL_ALLOW_SET_ACCESSIBLE.get()) {
-            try {
-                ao.setAccessible(true);
-            } catch (Exception ignored) {
-                // 模块系统可能阻止 setAccessible，对 public 方法无影响
-            }
-        }
+        com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(ao);
     }
 
     // ============ 方法调用 ============
@@ -161,11 +159,19 @@ public final class MethodHandleCache {
 
         // 构建参数数组：target + args（对数字参数做类型强制转换）
         Object[] coercedArgs = coerceNumericArgs(mh, args, 1);
-        Object[] fullArgs = new Object[coercedArgs.length + 1];
-        fullArgs[0] = target;
-        System.arraycopy(coercedArgs, 0, fullArgs, 1, coercedArgs.length);
 
-        return mh.invokeWithArguments(fullArgs);
+        // 常见 arity 使用精确 invoke，对 JIT 更友好
+        switch (coercedArgs.length) {
+            case 0: return mh.invoke(target);
+            case 1: return mh.invoke(target, coercedArgs[0]);
+            case 2: return mh.invoke(target, coercedArgs[0], coercedArgs[1]);
+            case 3: return mh.invoke(target, coercedArgs[0], coercedArgs[1], coercedArgs[2]);
+            default:
+                Object[] fullArgs = new Object[coercedArgs.length + 1];
+                fullArgs[0] = target;
+                System.arraycopy(coercedArgs, 0, fullArgs, 1, coercedArgs.length);
+                return mh.invokeWithArguments(fullArgs);
+        }
     }
 
     /**
@@ -181,7 +187,14 @@ public final class MethodHandleCache {
             throw new NovaRuntimeException("Static method not found: " + clazz.getName() + "." + name);
         }
 
-        return mh.invokeWithArguments(coerceNumericArgs(mh, args, 0));
+        Object[] coercedArgs = coerceNumericArgs(mh, args, 0);
+        switch (coercedArgs.length) {
+            case 0: return mh.invoke();
+            case 1: return mh.invoke(coercedArgs[0]);
+            case 2: return mh.invoke(coercedArgs[0], coercedArgs[1]);
+            case 3: return mh.invoke(coercedArgs[0], coercedArgs[1], coercedArgs[2]);
+            default: return mh.invokeWithArguments(coercedArgs);
+        }
     }
 
     private MethodHandle lookupMethod(Class<?> clazz, String name, Class<?>[] argTypes) {
@@ -480,18 +493,7 @@ public final class MethodHandleCache {
      * 判断是否为函数式接口（恰好有一个抽象方法）
      */
     private boolean isFunctionalInterface(Class<?> clazz) {
-        return functionalInterfaceCache.computeIfAbsent(clazz, c -> {
-            if (!c.isInterface()) return false;
-            int abstractCount = 0;
-            for (Method m : c.getMethods()) {
-                if (Modifier.isAbstract(m.getModifiers())
-                        && !isObjectMethod(m)) {
-                    abstractCount++;
-                    if (abstractCount > 1) return false;
-                }
-            }
-            return abstractCount == 1;
-        });
+        return functionalInterfaceCache.get(clazz);
     }
 
     /** 判断方法是否是 Object 公共方法的重新声明 */
@@ -527,18 +529,9 @@ public final class MethodHandleCache {
      * @return SAM 方法，若不是函数式接口则返回 null
      */
     public Method getSamMethod(Class<?> interfaceClass) {
-        return samMethodCache.computeIfAbsent(interfaceClass, cls -> {
-            if (!cls.isInterface()) return java.util.Optional.empty();
-            Method sam = null;
-            for (Method m : cls.getMethods()) {
-                if (m.isDefault() || Modifier.isStatic(m.getModifiers())) continue;
-                if (isObjectMethod(m)) continue;
-                if (sam != null) return java.util.Optional.empty(); // 多个抽象方法
-                sam = m;
-            }
-            return java.util.Optional.ofNullable(sam);
-        }).orElse(null);
+        return com.novalang.runtime.SamAdapter.getSamMethod(interfaceClass);
     }
+
 
     // ============ 静态字段访问 ============
 
@@ -581,7 +574,13 @@ public final class MethodHandleCache {
         if (mh == null) {
             throw new NovaRuntimeException("Constructor not found: " + clazz.getName());
         }
-        return mh.invokeWithArguments(args);
+        switch (args.length) {
+            case 0: return mh.invoke();
+            case 1: return mh.invoke(args[0]);
+            case 2: return mh.invoke(args[0], args[1]);
+            case 3: return mh.invoke(args[0], args[1], args[2]);
+            default: return mh.invokeWithArguments(args);
+        }
     }
 
     private MethodHandle lookupConstructor(Class<?> clazz, Class<?>[] argTypes) {
@@ -782,8 +781,7 @@ public final class MethodHandleCache {
         getterCache.clear();
         setterCache.clear();
         methodsByName.clear();
-        functionalInterfaceCache.clear();
-        samMethodCache.clear();
+        // functionalInterfaceCache / samMethodCacheCV 使用 ClassValue，随 Class 生命周期自动回收
     }
 
     /**

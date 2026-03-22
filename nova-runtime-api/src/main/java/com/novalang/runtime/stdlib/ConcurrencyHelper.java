@@ -69,6 +69,8 @@ public final class ConcurrencyHelper {
                 throw e;
             } catch (Exception e) {
                 throw new RuntimeException(e);
+            } finally {
+                NovaScriptContext.clear();
             }
         }, exec);
         // 未 await 的异常输出到日志，避免静默吞掉
@@ -96,7 +98,11 @@ public final class ConcurrencyHelper {
         for (Object block : args) {
             futures.add(CompletableFuture.supplyAsync(() -> {
                 NovaScriptContext.setCurrent(parentCtx);
-                return invoke0(block);
+                try {
+                    return invoke0(block);
+                } finally {
+                    NovaScriptContext.clear();
+                }
             }, exec));
         }
         List<Object> results = new ArrayList<>(args.length);
@@ -147,7 +153,11 @@ public final class ConcurrencyHelper {
         NovaScriptContext parentCtx = NovaScriptContext.current();
         CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
             NovaScriptContext.setCurrent(parentCtx);
-            return invoke0(block);
+            try {
+                return invoke0(block);
+            } finally {
+                NovaScriptContext.clear();
+            }
         }, exec);
         try {
             return future.get(timeout, TimeUnit.MILLISECONDS);

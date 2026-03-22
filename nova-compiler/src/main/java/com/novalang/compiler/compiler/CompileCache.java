@@ -118,15 +118,38 @@ public class CompileCache {
     /**
      * 计算文件内容的 SHA-256 哈希
      */
+    private static final char[] HEX_CHARS = "0123456789abcdef".toCharArray();
+
     public static String computeHash(String content) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(content.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hash) {
-                sb.append(String.format("%02x", b));
+            char[] hex = new char[hash.length * 2];
+            for (int i = 0; i < hash.length; i++) {
+                int v = hash[i] & 0xFF;
+                hex[i * 2] = HEX_CHARS[v >>> 4];
+                hex[i * 2 + 1] = HEX_CHARS[v & 0x0F];
             }
-            return sb.toString();
+            return new String(hex);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
+    /**
+     * 流式计算文件内容的 SHA-256 哈希（避免将整个文件读入 String）。
+     */
+    public static String computeHashFromBytes(byte[] content) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(content);
+            char[] hex = new char[hash.length * 2];
+            for (int i = 0; i < hash.length; i++) {
+                int v = hash[i] & 0xFF;
+                hex[i * 2] = HEX_CHARS[v >>> 4];
+                hex[i * 2 + 1] = HEX_CHARS[v & 0x0F];
+            }
+            return new String(hex);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }

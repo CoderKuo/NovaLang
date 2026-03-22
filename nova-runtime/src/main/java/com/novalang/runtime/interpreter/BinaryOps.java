@@ -94,6 +94,9 @@ public final class BinaryOps {
 
     // ============ 算术操作 ============
 
+    /**
+     * 通用算术：NovaInt 快速路径保留，通用路径委托 NovaOps（统一语义）。
+     */
     public static NovaValue add(NovaValue left, NovaValue right, Interpreter interp) {
         if (left instanceof NovaInt && right instanceof NovaInt) {
             return NovaInt.of(((NovaInt) left).getValue() + ((NovaInt) right).getValue());
@@ -107,12 +110,12 @@ public final class BinaryOps {
         if (left.isNumber() && right.isNumber()) {
             return numericPromote(left, right, (a, b) -> a + b, (a, b) -> a + b, (a, b) -> a + b, true);
         }
+        // 通用路径：先尝试 Nova 运算符重载，再 inc 回退，最后委托 NovaOps
         NovaValue result = tryOperatorOverload(left, "plus", interp, right);
         if (result != null) return result;
-        // inc 回退：x + 1 → x.inc()
-        result = tryIncDec(left, right, "inc", interp);
+        result = tryIncDecLocal(left, right, "inc", interp);
         if (result != null) return result;
-        throw new NovaRuntimeException("Cannot add " + left.getTypeName() + " and " + right.getTypeName());
+        return wrapResult(com.novalang.runtime.NovaOps.add(left, right));
     }
 
     public static NovaValue sub(NovaValue left, NovaValue right, Interpreter interp) {
@@ -124,10 +127,9 @@ public final class BinaryOps {
         }
         NovaValue result = tryOperatorOverload(left, "minus", interp, right);
         if (result != null) return result;
-        // dec 回退：x - 1 → x.dec()
-        result = tryIncDec(left, right, "dec", interp);
+        result = tryIncDecLocal(left, right, "dec", interp);
         if (result != null) return result;
-        throw new NovaRuntimeException("Cannot subtract " + right.getTypeName() + " from " + left.getTypeName());
+        return wrapResult(com.novalang.runtime.NovaOps.sub(left, right));
     }
 
     public static NovaValue mul(NovaValue left, NovaValue right, Interpreter interp) {
@@ -145,7 +147,7 @@ public final class BinaryOps {
         }
         NovaValue result = tryOperatorOverload(left, "times", interp, right);
         if (result != null) return result;
-        throw new NovaRuntimeException("Cannot multiply " + left.getTypeName() + " and " + right.getTypeName());
+        return wrapResult(com.novalang.runtime.NovaOps.mul(left, right));
     }
 
     public static NovaValue div(NovaValue left, NovaValue right, Interpreter interp) {
@@ -160,7 +162,7 @@ public final class BinaryOps {
         }
         NovaValue result = tryOperatorOverload(left, "div", interp, right);
         if (result != null) return result;
-        throw new NovaRuntimeException("Cannot divide " + left.getTypeName() + " by " + right.getTypeName());
+        return wrapResult(com.novalang.runtime.NovaOps.div(left, right));
     }
 
     public static NovaValue mod(NovaValue left, NovaValue right, Interpreter interp) {
@@ -175,7 +177,7 @@ public final class BinaryOps {
         }
         NovaValue result = tryOperatorOverload(left, "rem", interp, right);
         if (result != null) return result;
-        throw new NovaRuntimeException("Cannot modulo " + left.getTypeName() + " by " + right.getTypeName());
+        return wrapResult(com.novalang.runtime.NovaOps.mod(left, right));
     }
 
     // ============ 比较操作 ============
@@ -193,26 +195,23 @@ public final class BinaryOps {
         if (left instanceof NovaChar && right instanceof NovaChar) {
             return Character.compare(((NovaChar) left).getValue(), ((NovaChar) right).getValue());
         }
-        NovaValue result = tryOperatorOverload(left, "compareTo", interp, right);
-        if (result != null) return result.asInt();
-        throw new NovaRuntimeException("Cannot compare " + left.getTypeName() + " and " + right.getTypeName());
+        // Nova 运算符重载
+        NovaValue cmpResult = tryOperatorOverload(left, "compareTo", interp, right);
+        if (cmpResult != null) return cmpResult.asInt();
+        // 委托 NovaOps（Comparable 回退、Java 互操作）
+        return com.novalang.runtime.NovaOps.compare(left, right);
     }
 
-    // ============ inc/dec 回退 ============
+    /** 将 NovaOps 返回的 Object 包装回 NovaValue */
+    private static NovaValue wrapResult(Object result) {
+        if (result instanceof NovaValue) return (NovaValue) result;
+        return AbstractNovaValue.fromJava(result);
+    }
 
-    /** x + 1 → x.inc()，x - 1 → x.dec() */
-    private static NovaValue tryIncDec(NovaValue left, NovaValue right, String methodName, Interpreter interp) {
+    /** x + 1 → x.inc()，x - 1 → x.dec()（解释器路径，直接方法分派） */
+    private static NovaValue tryIncDecLocal(NovaValue left, NovaValue right, String methodName, Interpreter interp) {
         if (right instanceof NovaInt && ((NovaInt) right).getValue() == 1) {
-            NovaCallable method = null;
-            if (left instanceof NovaObject) {
-                method = ((NovaObject) left).getMethod(methodName);
-            } else if (left instanceof ScalarizedNovaObject) {
-                method = ((ScalarizedNovaObject) left).getMethod(methodName);
-            }
-            if (method != null) {
-                NovaBoundMethod bound = new NovaBoundMethod(left, method);
-                return interp.executeBoundMethod(bound, Collections.emptyList(), null);
-            }
+            return tryOperatorOverload(left, methodName, interp);
         }
         return null;
     }

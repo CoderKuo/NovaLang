@@ -15,9 +15,15 @@ public final class SymbolTable {
     private final Scope globalScope;
     private final Map<AstNode, Scope> nodeToScope = new IdentityHashMap<AstNode, Scope>();
     private final List<ScopeRange> scopeRanges = new ArrayList<ScopeRange>();
+    /** 是否记录位置索引（nodeToScope/scopeRanges）。编译管线只需诊断，可关闭节省内存。 */
+    private boolean recordPositionInfo = true;
 
     public SymbolTable() {
         this.globalScope = new Scope(Scope.ScopeType.GLOBAL, null, null);
+    }
+
+    public void setRecordPositionInfo(boolean record) {
+        this.recordPositionInfo = record;
     }
 
     public Scope getGlobalScope() { return globalScope; }
@@ -81,12 +87,14 @@ public final class SymbolTable {
 
     /** 记录 AST 节点到作用域的映射 */
     public void mapNodeToScope(AstNode node, Scope scope) {
-        nodeToScope.put(node, scope);
+        if (recordPositionInfo) {
+            nodeToScope.put(node, scope);
+        }
     }
 
     /** 记录作用域范围 */
     public void registerScopeRange(Scope scope, SourceLocation start, SourceLocation end) {
-        if (start != null && end != null) {
+        if (recordPositionInfo && start != null && end != null) {
             scopeRanges.add(new ScopeRange(scope, start.getLine(), start.getColumn(),
                     end.getLine(), end.getColumn()));
         }

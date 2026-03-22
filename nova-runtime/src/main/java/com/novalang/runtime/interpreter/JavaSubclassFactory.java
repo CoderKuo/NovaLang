@@ -28,9 +28,6 @@ public final class JavaSubclassFactory {
     /** 缓存：key = 生成参数组合 → 生成的 Class */
     private static final BoundedCache<String, Class<?>> cache = new CaffeineCache<>(1024);
 
-    /** 自定义 ClassLoader，用于加载生成的字节码 */
-    private static final GeneratedClassLoader classLoader = new GeneratedClassLoader();
-
     private JavaSubclassFactory() {}
 
     /**
@@ -95,7 +92,9 @@ public final class JavaSubclassFactory {
         cw.visitEnd();
         byte[] bytecode = cw.toByteArray();
 
-        Class<?> clazz = classLoader.defineClass(generatedName.replace('/', '.'), bytecode);
+        // 每个生成类用独立 ClassLoader，缓存淘汰后 ClassLoader 和类可被 GC 卸载
+        GeneratedClassLoader loader = new GeneratedClassLoader();
+        Class<?> clazz = loader.defineClass(generatedName.replace('/', '.'), bytecode);
         cache.put(cacheKey, clazz);
         return clazz;
     }

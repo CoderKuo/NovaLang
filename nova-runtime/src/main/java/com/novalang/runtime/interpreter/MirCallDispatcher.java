@@ -453,14 +453,28 @@ final class MirCallDispatcher {
         return value.isTruthy();
     }
 
+    /** 预分配的双元素/三元素列表，避免 Arrays.asList 的 varargs 数组分配 */
+    private static final class List2 extends java.util.AbstractList<NovaValue> {
+        private final NovaValue a, b;
+        List2(NovaValue a, NovaValue b) { this.a = a; this.b = b; }
+        @Override public NovaValue get(int i) { return i == 0 ? a : b; }
+        @Override public int size() { return 2; }
+    }
+    private static final class List3 extends java.util.AbstractList<NovaValue> {
+        private final NovaValue a, b, c;
+        List3(NovaValue a, NovaValue b, NovaValue c) { this.a = a; this.b = b; this.c = c; }
+        @Override public NovaValue get(int i) { return i == 0 ? a : i == 1 ? b : c; }
+        @Override public int size() { return 3; }
+    }
+
     /** 从 frame 中收集方法参数，对常见小参数数量避免数组分配 */
     List<NovaValue> collectArgs(MirFrame frame, int[] ops) {
         int argCount = ops.length - 1;
         switch (argCount) {
             case 0: return Collections.emptyList();
             case 1: return Collections.singletonList(frame.get(ops[1]));
-            case 2: return Arrays.asList(frame.get(ops[1]), frame.get(ops[2]));
-            case 3: return Arrays.asList(frame.get(ops[1]), frame.get(ops[2]), frame.get(ops[3]));
+            case 2: return new List2(frame.get(ops[1]), frame.get(ops[2]));
+            case 3: return new List3(frame.get(ops[1]), frame.get(ops[2]), frame.get(ops[3]));
             default:
                 NovaValue[] arr = new NovaValue[argCount];
                 for (int i = 0; i < argCount; i++) arr[i] = frame.get(ops[i + 1]);

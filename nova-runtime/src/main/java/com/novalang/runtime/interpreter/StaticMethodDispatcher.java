@@ -48,6 +48,9 @@ final class StaticMethodDispatcher {
         return internalName.replace("/", ".");
     }
 
+    /** Class.forName 结果缓存，避免重复解析 */
+    private final Map<String, Class<?>> classNameCache = new HashMap<>();
+
     private final Interpreter interp;
     private final MemberResolver resolver;
     private final MirCallDispatcher dispatcher;
@@ -76,6 +79,7 @@ final class StaticMethodDispatcher {
                 this::tryModuleDispatch,
                 this::tryNovaRuntimeDispatchRule,
                 this::tryEnvironmentDispatchRule,
+                this::trySharedRegistryDispatchRule,
                 this::tryClassStaticDispatchRule,
                 this::tryEnumOrJavaStaticDispatchRule
         );
@@ -229,6 +233,26 @@ final class StaticMethodDispatcher {
             // 通配符 Java 导入回退（import java java.util.* 等）
             if (value == null && name != null) {
                 value = dispatcher.resolveWildcardJavaImport(name);
+            }
+            // shared() 全局注册表回退（变量 + 命名空间代理）
+            if (value == null && name != null) {
+                NovaRuntime.RegisteredEntry entry = NovaRuntime.shared().lookup(name);
+                if (entry != null) {
+                    Object v = entry.getValue();
+                    value = v instanceof NovaValue ? (NovaValue) v : AbstractNovaValue.fromJava(v);
+                }
+                if (value == null) {
+                    NovaRuntime.NovaNamespace nsProxy = NovaRuntime.shared().getNamespaceProxy(name);
+                    if (nsProxy != null) value = nsProxy;
+                }
+            }
+            // JVM 全局桥接回退（其他插件注册的变量/函数）
+            if (value == null && name != null) {
+                Object globalResult = NovaRuntime.callGlobal(name);
+                if (globalResult != NovaRuntime.NOT_FOUND) {
+                    value = globalResult instanceof NovaValue
+                            ? (NovaValue) globalResult : AbstractNovaValue.fromJava(globalResult);
+                }
             }
             if (value == null && name != null && !interp.getEnvironment().contains(name)) {
                 throw new NovaRuntimeException("Undefined variable: " + name);
@@ -431,7 +455,10 @@ final class StaticMethodDispatcher {
         if (javaClassVal instanceof NovaCallable) {
             return ((NovaCallable) javaClassVal).call(interp, args);
         }
-        // 4. 回退: args[0].methodName(args[1:])
+        // 4. 回退: shared() 全局注册表
+        NovaValue sharedResult = trySharedRegistryLookup(methodName, args);
+        if (sharedResult != null) return sharedResult;
+        // 5. 回退: args[0].methodName(args[1:])
         if (!args.isEmpty()) {
             NovaValue target = args.get(0);
             List<NovaValue> methodArgs = args.size() > 1 ? args.subList(1, args.size()) : Collections.emptyList();
@@ -606,6 +633,36 @@ final class StaticMethodDispatcher {
         return null;
     }
 
+    /** NovaRuntime.shared() 全局注册表回退 */
+    private NovaValue trySharedRegistryDispatchRule(StaticCall call) {
+        return trySharedRegistryLookup(call.methodName, call.args);
+    }
+
+    private NovaValue trySharedRegistryLookup(String methodName, List<NovaValue> args) {
+        NovaRuntime rt = NovaRuntime.shared();
+        // 短名查找
+        NovaRuntime.RegisteredEntry entry = rt.lookup(methodName);
+        if (entry != null) {
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) javaArgs[i] = args.get(i).toJavaValue();
+            Object result = entry.invoke(javaArgs);
+            return AbstractNovaValue.fromJava(result);
+        }
+        // 命名空间代理
+        NovaRuntime.NovaNamespace ns = rt.getNamespaceProxy(methodName);
+        if (ns != null && args.isEmpty()) {
+            return ns;
+        }
+        // JVM 全局桥接（其他插件 relocate 后的 NovaRuntime 注册的函数）
+        Object[] javaArgs2 = new Object[args.size()];
+        for (int i = 0; i < args.size(); i++) javaArgs2[i] = args.get(i).toJavaValue();
+        Object globalResult = NovaRuntime.callGlobal(methodName, javaArgs2);
+        if (globalResult != NovaRuntime.NOT_FOUND) {
+            return AbstractNovaValue.fromJava(globalResult);
+        }
+        return null;
+    }
+
     /** Nova 类的静态方法/字段/构造器 */
     private NovaValue tryClassStaticDispatch(String owner, String methodName, List<NovaValue> args) {
         MirInterpreter.MirClassInfo classInfo = mirClasses.get(owner);
@@ -652,7 +709,11 @@ final class StaticMethodDispatcher {
         }
         // Java 静态方法调用（通过 MethodHandleCache 缓存）
         try {
-            Class<?> javaClass = Class.forName(toJavaDotName(owner));
+            String dotName = toJavaDotName(owner);
+            Class<?> javaClass = classNameCache.computeIfAbsent(dotName, n -> {
+                try { return Class.forName(n); } catch (ClassNotFoundException e) { return null; }
+            });
+            if (javaClass == null) return null;
             Object[] javaArgs = new Object[args.size()];
             for (int i = 0; i < args.size(); i++) javaArgs[i] = args.get(i).toJavaValue();
             Object result = MethodHandleCache.getInstance().invokeStatic(javaClass, methodName, javaArgs);
@@ -663,8 +724,6 @@ final class StaticMethodDispatcher {
             } else {
                 throw e;
             }
-        } catch (ClassNotFoundException e) {
-            // class not found → fall through
         } catch (Throwable e) {
             // 方法执行时的真实异常，包装后重抛
             throw new NovaRuntimeException(

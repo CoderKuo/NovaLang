@@ -131,4 +131,28 @@ public final class NovaResult extends AbstractNovaValue {
     public static boolean checkIsResult(Object value) {
         return value instanceof NovaResult;
     }
+
+    /**
+     * 编译模式 TYPE_CAST 辅助：将值转换为 Result/Ok/Err。
+     * @param value 被转换的值
+     * @param subtype "Result", "Ok", 或 "Err"
+     * @param safe true = as?（失败返回 null），false = as（失败抛异常）
+     */
+    public static Object castResult(Object value, String subtype, boolean safe) {
+        if (value instanceof NovaResult) {
+            NovaResult r = (NovaResult) value;
+            switch (subtype) {
+                case "Result": return r;
+                case "Ok":
+                    if (r.isOk()) return r;
+                    break;
+                case "Err":
+                    if (r.isErr()) return r;
+                    break;
+            }
+        }
+        if (safe) return null;
+        String actual = value == null ? "null" : value.getClass().getSimpleName();
+        throw new NovaException("Cannot cast " + actual + " to " + subtype);
+    }
 }

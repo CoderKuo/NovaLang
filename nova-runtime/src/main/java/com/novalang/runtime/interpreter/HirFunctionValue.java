@@ -6,7 +6,9 @@ import com.novalang.ir.hir.HirAnnotation;
 import com.novalang.ir.hir.decl.HirFunction;
 import com.novalang.ir.hir.decl.HirParam;
 
-import java.util.HashMap;
+import com.novalang.runtime.interpreter.cache.BoundedCache;
+import com.novalang.runtime.interpreter.cache.CaffeineCache;
+
 import java.util.List;
 import java.util.Map;
 
@@ -20,7 +22,7 @@ public final class HirFunctionValue extends AbstractNovaValue implements com.nov
     private final HirFunction declaration;
     private final Environment closure;
     private final boolean memoized;
-    private Map<MemoKey, NovaValue> memoCache;
+    private BoundedCache<MemoKey, NovaValue> memoCache;
 
     public HirFunctionValue(String name, HirFunction declaration, Environment closure) {
         this.name = name;
@@ -38,8 +40,13 @@ public final class HirFunctionValue extends AbstractNovaValue implements com.nov
 
     boolean isMemoized() { return memoized; }
 
-    Map<MemoKey, NovaValue> getMemoCache() {
-        if (memoCache == null) memoCache = new HashMap<>();
+    /** @memoized 缓存上限，防止高基数输入 OOM */
+    private static final int MEMO_MAX_SIZE = 4096;
+
+    BoundedCache<MemoKey, NovaValue> getMemoCache() {
+        if (memoCache == null) {
+            memoCache = new CaffeineCache<>(MEMO_MAX_SIZE);
+        }
         return memoCache;
     }
 

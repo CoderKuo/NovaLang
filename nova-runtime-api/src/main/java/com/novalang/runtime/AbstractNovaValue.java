@@ -169,6 +169,7 @@ public abstract class AbstractNovaValue implements NovaValue {
         if (value instanceof String) return !((String) value).isEmpty();
         if (value instanceof java.util.Collection) return !((java.util.Collection<?>) value).isEmpty();
         if (value instanceof java.util.Map) return !((java.util.Map<?, ?>) value).isEmpty();
+        if (value instanceof Number) return ((Number) value).doubleValue() != 0;
         return true;
     }
 

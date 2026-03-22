@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -110,8 +111,21 @@ public class MirFunction {
 
     public boolean isMemoized() { return memoized; }
     public void setMemoized(boolean memoized) { this.memoized = memoized; }
+    /** @memoized 缓存上限 */
+    private static final int MEMO_MAX_SIZE = 4096;
+
     public Map<Object, Object> getMemoCache() {
-        if (memoCache == null) memoCache = new HashMap<>();
+        if (memoCache == null) {
+            // synchronizedMap 包装：access-order LinkedHashMap 的 get() 会修改链表，
+            // 子解释器共享 MirFunction 时需要线程安全保护
+            memoCache = java.util.Collections.synchronizedMap(
+                new LinkedHashMap<Object, Object>(64, 0.75f, true) {
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<Object, Object> eldest) {
+                        return size() > MEMO_MAX_SIZE;
+                    }
+                });
+        }
         return memoCache;
     }
     public Object getIntMemoized(int key) {

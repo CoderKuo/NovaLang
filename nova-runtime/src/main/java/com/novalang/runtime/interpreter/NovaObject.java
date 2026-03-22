@@ -180,6 +180,32 @@ public final class NovaObject extends AbstractNovaValue {
 
     // ============ 方法调用 ============
 
+    @Override
+    public NovaValue resolveMember(String name) {
+        // 安全查字段（不抛异常）
+        int idx = novaClass.getFieldIndex(name);
+        if (idx >= 0 && idx < fieldValues.length) {
+            NovaValue val = fieldValues[idx];
+            if (val != null) return val;
+        }
+        if (overflowFields != null) {
+            NovaValue val = overflowFields.get(name);
+            if (val != null) return val;
+        }
+        NovaValue staticField = novaClass.getStaticField(name);
+        if (staticField != null) return staticField;
+        // 查方法（绑定 this）
+        NovaBoundMethod bound = getBoundMethod(name);
+        if (bound != null) return bound;
+        return null;
+    }
+
+    @Override
+    public NovaValue resolveMethod(String name) {
+        NovaBoundMethod bound = getBoundMethod(name);
+        return bound;
+    }
+
     public NovaCallable getMethod(String name) {
         // 先查找 callableMethods（含 HirFunctionValue 等）
         NovaCallable callable = novaClass.findCallableMethod(name);

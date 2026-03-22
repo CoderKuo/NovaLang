@@ -99,6 +99,14 @@ public interface NovaValue {
     }
 
     /**
+     * 仅查找方法绑定（不含字段）。用于动态方法调用场景避免同名字段遮蔽方法。
+     * @return 可调用的方法绑定，未找到返回 null
+     */
+    default NovaValue resolveMethod(String name) {
+        return null;
+    }
+
+    /**
      * 获取 Nova 类型名，用于扩展函数查找的类型映射
      *
      * @return Nova 类型名，默认 null

@@ -99,6 +99,11 @@ public class NovaCollections {
      */
     @SuppressWarnings("unchecked")
     public static Object getIndex(Object target, Object index) {
+        if (target instanceof NovaMap) {
+            NovaValue key = index instanceof NovaValue ? (NovaValue) index : AbstractNovaValue.fromJava(index);
+            NovaValue val = ((NovaMap) target).get(key);
+            return val != null ? val : NovaNull.NULL;
+        }
         if (target instanceof Map) return ((Map<Object, Object>) target).get(index);
         if (target instanceof NovaList && index instanceof Number) return ((NovaList) target).get(((Number) index).intValue());
         // Range 切片: target[start..end]
@@ -118,6 +123,25 @@ public class NovaCollections {
             if (target instanceof List) {
                 return new java.util.ArrayList<>(((List<?>) target).subList(start, Math.min(end, ((List<?>) target).size())));
             }
+        }
+        // NovaPair 索引
+        if (target instanceof NovaPair) {
+            int i = index instanceof Number ? ((Number) index).intValue() : -1;
+            if (i == 0) return ((NovaPair) target).getFirst();
+            if (i == 1) return ((NovaPair) target).getSecond();
+        }
+        // NovaString 索引（返回 char）
+        if (target instanceof NovaString && index instanceof Number) {
+            int i = ((Number) index).intValue();
+            String str = ((NovaString) target).getValue();
+            if (i < 0) i += str.length();
+            return NovaChar.of(str.charAt(i));
+        }
+        // 运算符重载 get()（NovaValue 子类通过 NovaDynamic）
+        if (target instanceof NovaValue) {
+            try {
+                return NovaDynamic.invokeMethod(target, "get", index);
+            } catch (RuntimeException ignored) {}
         }
         if (index instanceof Number) return getIndex(target, ((Number) index).intValue());
         throw new RuntimeException("Cannot index " + (target == null ? "null" : target.getClass().getName())
@@ -141,6 +165,12 @@ public class NovaCollections {
     @SuppressWarnings("unchecked")
     public static void setIndex(Object target, Object index, Object value) {
         if (target instanceof Map) { ((Map<Object, Object>) target).put(index, value); return; }
+        if (target instanceof NovaMap) { ((NovaMap) target).put(index instanceof NovaValue ? (NovaValue) index : AbstractNovaValue.fromJava(index), value instanceof NovaValue ? (NovaValue) value : AbstractNovaValue.fromJava(value)); return; }
+        // 运算符重载 set()
+        if (target instanceof NovaValue) {
+            try { NovaDynamic.invokeMethod(target, "set", index, value); return; }
+            catch (RuntimeException ignored) {}
+        }
         if (index instanceof Number) { setIndex(target, ((Number) index).intValue(), value); return; }
         throw new RuntimeException("Cannot set index on " + (target == null ? "null" : target.getClass().getName())
                 + " with " + (index == null ? "null" : index.getClass().getName()));

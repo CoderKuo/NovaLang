@@ -94,6 +94,11 @@ public final class NovaLong extends Number implements NovaValue, NovaNumber {
     }
 
     @Override
+    public boolean isTruthy() {
+        return value != 0L;
+    }
+
+    @Override
     public String toString() {
         return value + "L";
     }

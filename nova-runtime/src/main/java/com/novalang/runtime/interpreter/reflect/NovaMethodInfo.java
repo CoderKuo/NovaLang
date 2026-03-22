@@ -48,7 +48,7 @@ public final class NovaMethodInfo extends AbstractNovaValue {
     public Object call(Object instance, Object... args) {
         if (javaMethod != null) {
             try {
-                javaMethod.setAccessible(true);
+                com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(javaMethod);
                 return javaMethod.invoke(instance, args);
             } catch (Exception e) {
                 throw new RuntimeException("Failed to call method " + name + ": " + e.getMessage(), e);

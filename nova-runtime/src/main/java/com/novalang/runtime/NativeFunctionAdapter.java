@@ -117,17 +117,30 @@ public final class NativeFunctionAdapter {
      * 由 {@code LambdaInvoker} 通过缓存反射调用。
      * 不实现 FunctionN 接口，避免 {@code andThen} 默认方法冲突。
      */
+    /**
+     * arity 9+ 及 vararg 适配器。提供 invoke 0~8 参数重载，
+     * 由 {@code LambdaInvoker} 通过缓存反射调用，
+     * 或由 {@code NovaScriptContext.call()} 通过 {@link #invokeVarargs(Object[])} 调用。
+     */
     static final class HighArityAdapter {
 
         private final NovaNativeFunction nf;
 
         HighArityAdapter(NovaNativeFunction nf) { this.nf = nf; }
 
+        // 全参数覆盖（0~8），vararg 函数可接受任意参数数
+        public Object invoke() { return callN(); }
+        public Object invoke(Object a1) { return callN(a1); }
+        public Object invoke(Object a1, Object a2) { return callN(a1, a2); }
+        public Object invoke(Object a1, Object a2, Object a3) { return callN(a1, a2, a3); }
         public Object invoke(Object a1, Object a2, Object a3, Object a4) { return callN(a1, a2, a3, a4); }
         public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5) { return callN(a1, a2, a3, a4, a5); }
         public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6) { return callN(a1, a2, a3, a4, a5, a6); }
         public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7) { return callN(a1, a2, a3, a4, a5, a6, a7); }
         public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8) { return callN(a1, a2, a3, a4, a5, a6, a7, a8); }
+
+        /** 供 NovaScriptContext.call() 使用的 varargs 入口 */
+        public Object invokeVarargs(Object[] args) { return callN(args); }
 
         private Object callN(Object... javaArgs) {
             List<NovaValue> args = new ArrayList<>(javaArgs.length);

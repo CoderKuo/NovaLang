@@ -2847,11 +2847,14 @@ final class MirInterpreter {
             }
         }
 
-        // NovaPair / 其他带 resolveMember 的类型
-        NovaValue memberVal = target.resolveMember(fieldName);
-        if (memberVal != null) {
-            frame.locals[inst.getDest()] = memberVal;
-            return;
+        // NovaPair / NovaResult / 其他带 resolveMember 的类型
+        // 注意：NovaObject 跳过此路径，走后面的 MemberResolver（有可见性检查）
+        if (!(target instanceof NovaObject)) {
+            NovaValue memberVal = target.resolveMember(fieldName);
+            if (memberVal != null) {
+                frame.locals[inst.getDest()] = memberVal;
+                return;
+            }
         }
 
         if (target instanceof NovaExternalObject && "message".equals(fieldName)) {
@@ -3366,58 +3369,63 @@ final class MirInterpreter {
         frame.locals[inst.getDest()] = NovaBoolean.of(classRegistrar.isInstanceOf(value,typeName));
     }
 
+    /**
+     * 类型转换（统一使用 SamAdapter/NovaResult —— 与编译路径共享语义）。
+     */
     private void executeTypeCast(MirFrame frame, MirInst inst) {
         NovaValue value = frame.get(inst.operand(0));
         String typeName = (String) inst.getExtra();
-
-        // SAM 杞崲锛歀ambda 鈫?Java 鍑芥暟寮忔帴鍙ｏ紙璺宠繃瀹夊叏杞崲 ?| 鍓嶇紑锛?
-        if (typeName != null && !typeName.startsWith("?|")) {
-            // 鎻愬彇 callable锛氱洿鎺?NovaCallable 鎴?MIR lambda锛圢ovaObject with invoke锛?
-            NovaCallable callable = null;
-            if (value instanceof NovaCallable) {
-                callable = (NovaCallable) value;
-            } else if (value instanceof NovaObject) {
-                NovaBoundMethod bound = ((NovaObject) value).getBoundMethod("invoke");
-                if (bound != null) callable = bound;
-            }
-            if (callable != null) {
-                try {
-                    Class<?> targetClass = Class.forName(toJavaDotName(typeName));
-                    if (targetClass.isInterface()) {
-                        Object proxy = JavaInteropHelper.createSamProxy(targetClass, callable, interp);
-                        frame.locals[inst.getDest()] = new NovaExternalObject(proxy);
-                        return;
-                    }
-                } catch (ClassNotFoundException e) {
-                    // 涓嶆槸 Java 绫伙紝鍥為€€
-                }
-            }
+        if (typeName == null || typeName.isEmpty()) {
+            frame.locals[inst.getDest()] = value;
+            return;
         }
 
-        // 瀹夊叏杞崲 as? 鈥?瀵归潪鍖归厤绫诲瀷杩斿洖 null
-        if (typeName != null && value != null && !(value instanceof NovaNull)) {
-            // 妫€鏌ユ槸鍚︽湁 safe 鏍囪锛坋xtra 鍙兘鍖呭惈 "?|type"锛?
-            if (typeName.startsWith("?|")) {
-                String realType = typeName.substring(2);
-                if (!classRegistrar.isInstanceOf(value, realType)) {
-                    frame.locals[inst.getDest()] = NovaNull.NULL;
-                    return;
-                }
-                // 绉婚櫎瀹夊叏鏍囪锛屽悗缁寜绫诲瀷鍖归厤澶勭悊
-                typeName = realType;
-            }
+        boolean safeCast = typeName.startsWith("?|");
+        String actualType = safeCast ? typeName.substring(2) : typeName;
 
-            // 寮哄埗杞崲锛氶獙璇佺被鍨嬪吋瀹规€?
-            if (!typeName.isEmpty() && !classRegistrar.isInstanceOf(value, typeName)) {
-                String operandType = value.getNovaTypeName();
-                throw new NovaRuntimeException(
-                    "Cannot cast " + operandType + " to " + typeName +
-                    " (use as? for safe cast)"
-                );
-            }
+        // Result/Ok/Err 特殊处理（与编译路径统一使用 NovaResult.castResult）
+        if ("Ok".equals(actualType) || "Err".equals(actualType) || "Result".equals(actualType)) {
+            Object javaVal = value != null ? value.toJavaValue() : null;
+            Object result = com.novalang.runtime.NovaResult.castResult(javaVal, actualType, safeCast);
+            frame.locals[inst.getDest()] = result == null ? NovaNull.NULL : AbstractNovaValue.fromJava(result);
+            return;
         }
 
-        frame.locals[inst.getDest()] = value;
+        // Nova 类类型检查（isInstanceOf 处理 Nova 自定义类）
+        if (classRegistrar.isInstanceOf(value, actualType)) {
+            frame.locals[inst.getDest()] = value;
+            return;
+        }
+
+        // Java 类型转换 + SAM 适配（与编译路径统一使用 SamAdapter）
+        try {
+            Class<?> targetClass = Class.forName(toJavaDotName(actualType));
+            Object javaVal = value != null ? value.toJavaValue() : null;
+            Object result;
+            if (safeCast) {
+                result = com.novalang.runtime.SamAdapter.safeCastOrAdapt(javaVal, targetClass);
+            } else {
+                result = com.novalang.runtime.SamAdapter.castOrAdapt(javaVal, targetClass);
+            }
+            frame.locals[inst.getDest()] = result == null ? NovaNull.NULL : AbstractNovaValue.fromJava(result);
+            return;
+        } catch (ClassNotFoundException e) {
+            // 不是 Java 类
+        } catch (ClassCastException e) {
+            if (safeCast) {
+                frame.locals[inst.getDest()] = NovaNull.NULL;
+                return;
+            }
+            throw new NovaRuntimeException(e.getMessage());
+        }
+
+        if (safeCast) {
+            frame.locals[inst.getDest()] = NovaNull.NULL;
+            return;
+        }
+
+        String operandType = value != null ? value.getNovaTypeName() : "null";
+        throw new NovaRuntimeException("Cannot cast " + operandType + " to " + actualType + " (use as? for safe cast)");
     }
 
     private void executeConstClass(MirFrame frame, MirInst inst) {

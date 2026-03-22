@@ -3619,6 +3619,7 @@ public class HirToMirLowering {
             if (StdlibRegistry.get(name) != null && !OBJECT_METHOD_NAMES.contains(name)) {
                 return -1;
             }
+            // （编译器侧不改动 lambda 方法分派——运行时通过 scopeReceiver/ScriptContext 回退处理）
             StdlibRegistry.ReceiverLambdaInfo rl = StdlibRegistry.getReceiverLambda(name);
             if (rl != null && expr.getArgs().size() == 1) {
                 return lowerReceiverLambdaCall(rl, expr, builder);
@@ -3798,20 +3799,16 @@ public class HirToMirLowering {
                     owner, desc, MirType.ofObject("java/lang/Object"),
                     expr.getLocation());
         }
-        // callee 类型为 Object（如函数类型参数 fn: (Int) -> Int）
-        // Lambda 类实现了 FunctionN 接口 → 使用 INVOKEINTERFACE
-        String funcInterface;
-        switch (args.length) {
-            case 0:  funcInterface = "com/novalang/runtime/Function0"; break;
-            case 1:  funcInterface = "com/novalang/runtime/Function1"; break;
-            case 2:  funcInterface = "com/novalang/runtime/Function2"; break;
-            case 3:  funcInterface = "com/novalang/runtime/Function3"; break;
-            default:
-                return emitLambdaInvokerCall(callee, args, builder, expr.getLocation());
-        }
-        String funcDesc = MethodDescriptor.allObjectDesc(args.length);
-        return builder.emitInvokeInterfaceDesc(callee, "invoke", args,
-                funcInterface, funcDesc,
+        // callee 类型为 Object — 可能是 FunctionN lambda、NovaJavaClass 构造器、NovaCallable 等
+        // 统一走 invokedynamic 分派，由 NovaBootstrap 在运行时根据实际类型选择正确的调用路径
+        // （避免 CHECKCAST FunctionN 对 NovaJavaClass 等非 FunctionN 类型的 ClassCastException）
+        InvokeDynamicInfo dynInfo = new InvokeDynamicInfo(
+                "invoke", "com/novalang/runtime/NovaBootstrap", "bootstrapInvoke",
+                MethodDescriptor.allObjectDesc(args.length + 1));
+        int[] allOps = new int[args.length + 1];
+        allOps[0] = callee;
+        System.arraycopy(args, 0, allOps, 1, args.length);
+        return builder.emitInvokeDynamic(dynInfo, allOps,
                 MirType.ofObject("java/lang/Object"), expr.getLocation());
     }
 

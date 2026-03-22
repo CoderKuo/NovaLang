@@ -899,76 +899,67 @@ final class MemberResolver {
     // ============ HIR performIndex ============
 
     NovaValue performIndex(NovaValue target, NovaValue index, AstNode node) {
-        // Range 索引（切片）
+        // Range slice
         if (index instanceof NovaRange) {
             NovaRange range = (NovaRange) index;
             int start = range.getStart();
-            // getEnd() 已经根据 inclusive 调整：返回最后一个包含的索引
             int exclusiveEnd = range.getEnd() + 1;
-            if (target instanceof NovaList) {
-                NovaList list = (NovaList) target;
-                return list.slice(start, exclusiveEnd);
-            }
+            if (target instanceof NovaList) return ((NovaList) target).slice(start, exclusiveEnd);
             if (target instanceof NovaString) {
                 String str = ((NovaString) target).getValue();
                 return NovaString.of(str.substring(start, Math.min(exclusiveEnd, str.length())));
             }
         }
-        if (target instanceof NovaList) {
-            int i = ((NovaInt) index).getValue();
-            return ((NovaList) target).get(i);
-        }
+        if (target instanceof NovaList) return ((NovaList) target).get(index.asInt());
         if (target instanceof NovaString) {
-            int i = ((NovaInt) index).getValue();
+            int i = index.asInt();
             String str = ((NovaString) target).getValue();
             if (i < 0) i += str.length();
             return NovaChar.of(str.charAt(i));
         }
-        if (target instanceof NovaMap) {
-            return ((NovaMap) target).get(index);
-        }
-        if (target instanceof NovaRange) {
-            int i = ((NovaInt) index).getValue();
-            return ((NovaRange) target).get(i);
-        }
-        if (target instanceof NovaArray) {
-            int i = ((NovaInt) index).getValue();
-            return ((NovaArray) target).get(i);
-        }
+        if (target instanceof NovaMap) return ((NovaMap) target).get(index);
+        if (target instanceof NovaRange) return ((NovaRange) target).get(index.asInt());
+        if (target instanceof NovaArray) return ((NovaArray) target).get(index.asInt());
         if (target instanceof NovaPair) {
-            int i = ((NovaInt) index).getValue();
+            int i = index.asInt();
             NovaPair pair = (NovaPair) target;
             if (i == 0) return AbstractNovaValue.fromJava(pair.getFirst());
             if (i == 1) return AbstractNovaValue.fromJava(pair.getSecond());
             throw interp.hirError("Pair index out of bounds: " + i, node);
         }
-        // 运算符重载 get()
         if (target instanceof NovaObject) {
             com.novalang.runtime.NovaCallable getMethod = ((NovaObject) target).getNovaClass().findCallableMethod("get");
             if (getMethod != null) {
-                return new NovaBoundMethod(target, getMethod).call(interp, Collections.singletonList(index));
+                return new NovaBoundMethod(target, getMethod).call(interp, java.util.Collections.singletonList(index));
             }
         }
-        throw interp.hirError("Cannot index into " + target.getTypeName(), node);
+        // Java types fallback via NovaCollections (shared with compiler path)
+        try {
+            Object result = com.novalang.runtime.NovaCollections.getIndex(target.toJavaValue(), index.toJavaValue());
+            if (result instanceof NovaValue) return (NovaValue) result;
+            return AbstractNovaValue.fromJava(result);
+        } catch (RuntimeException e) {
+            throw interp.hirError("Cannot index into " + target.getTypeName(), node);
+        }
     }
 
     // ============ HIR performIndexSet ============
 
     void performIndexSet(NovaValue target, NovaValue index, NovaValue value, AstNode node) {
-        if (target instanceof NovaList) {
-            ((NovaList) target).set(index.asInt(), value);
-        } else if (target instanceof NovaArray) {
-            ((NovaArray) target).set(index.asInt(), value);
-        } else if (target instanceof NovaMap) {
-            ((NovaMap) target).put(index, value);
-        } else if (target instanceof NovaObject) {
+        if (target instanceof NovaList) { ((NovaList) target).set(index.asInt(), value); return; }
+        if (target instanceof NovaArray) { ((NovaArray) target).set(index.asInt(), value); return; }
+        if (target instanceof NovaMap) { ((NovaMap) target).put(index, value); return; }
+        if (target instanceof NovaObject) {
             NovaCallable setMethod = ((NovaObject) target).getNovaClass().findCallableMethod("set");
             if (setMethod != null) {
-                new NovaBoundMethod(target, setMethod).call(interp, Arrays.asList(index, value));
-            } else {
-                throw new NovaRuntimeException("Cannot index-set on " + target.getTypeName());
+                new NovaBoundMethod(target, setMethod).call(interp, java.util.Arrays.asList(index, value));
+                return;
             }
-        } else {
+        }
+        // Java types fallback via NovaCollections (shared with compiler path)
+        try {
+            com.novalang.runtime.NovaCollections.setIndex(target.toJavaValue(), index.toJavaValue(), value.toJavaValue());
+        } catch (RuntimeException e) {
             throw new NovaRuntimeException("Cannot index-set on " + target.getTypeName());
         }
     }

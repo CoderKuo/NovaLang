@@ -107,6 +107,9 @@ public final class NovaBootstrap {
         }
 
         if (resolved != null) {
+            // SAM 适配后的参数回写到 allArgs（resolveMethod 内部可能已做 Proxy 包装）
+            System.arraycopy(methodArgs, 0, allArgs, 1, methodArgs.length);
+
             // 安装单态内联缓存: guard(classCheck) → resolved ; else → currentTarget (fallback)
             MethodHandle adaptedResolved = resolved.asType(site.type());
 

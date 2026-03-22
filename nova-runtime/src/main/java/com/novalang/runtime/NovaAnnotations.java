@@ -2,10 +2,10 @@ package com.novalang.runtime;
 
 import com.novalang.runtime.interpreter.reflect.NovaClassInfo;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
 /**
@@ -30,7 +30,7 @@ public class NovaAnnotations {
     @SuppressWarnings("rawtypes")
     public static NovaProcessorHandle register(String name, BiConsumer handler) {
         NovaProcessorHandle handle = new NovaProcessorHandle(name, handler);
-        processors.computeIfAbsent(name, k -> new ArrayList<>()).add(handle);
+        processors.computeIfAbsent(name, k -> new CopyOnWriteArrayList<>()).add(handle);
         return handle;
     }
 
@@ -38,7 +38,7 @@ public class NovaAnnotations {
      * 重新注册已有的句柄。
      */
     public static void register(String name, NovaProcessorHandle handle) {
-        processors.computeIfAbsent(name, k -> new ArrayList<>()).add(handle);
+        processors.computeIfAbsent(name, k -> new CopyOnWriteArrayList<>()).add(handle);
     }
 
     /**

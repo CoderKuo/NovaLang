@@ -16,7 +16,9 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.novalang.compiler.compiler.NovaCompilerApi;
@@ -52,6 +54,20 @@ public class NovaIrCompiler implements NovaCompilerApi {
      */
     public void setScriptMode(boolean scriptMode) {
         pipeline.setScriptMode(scriptMode);
+    }
+
+    /**
+     * 启用语义分析（在 AST→HIR 之前运行 SemanticAnalyzer）。
+     */
+    public void setEnableSemanticAnalysis(boolean enable) {
+        pipeline.setEnableSemanticAnalysis(enable);
+    }
+
+    /**
+     * 设置语义分析严格模式（strict=true 时 ERROR 级诊断会中止编译）。
+     */
+    public void setStrictSemanticMode(boolean strict) {
+        pipeline.setStrictSemanticMode(strict);
     }
 
     /**
@@ -123,10 +139,12 @@ public class NovaIrCompiler implements NovaCompilerApi {
             classes = remapBytecode(classes);
         }
 
+        // 先快照类名列表，因为 findClass() 中 remove() 会修改 classes map
+        List<String> classNames = new ArrayList<>(classes.keySet());
         NovaClassLoader loader = new NovaClassLoader(classes);
 
         Map<String, Class<?>> loadedClasses = new HashMap<>();
-        for (String className : classes.keySet()) {
+        for (String className : classNames) {
             try {
                 loadedClasses.put(className, loader.loadClass(className));
             } catch (ClassNotFoundException e) {
@@ -176,7 +194,8 @@ public class NovaIrCompiler implements NovaCompilerApi {
 
         @Override
         protected Class<?> findClass(String name) throws ClassNotFoundException {
-            byte[] bytecode = classes.get(name);
+            // remove 而非 get：defineClass 后释放原始字节码，避免双份驻留
+            byte[] bytecode = classes.remove(name);
             if (bytecode != null) {
                 return defineClass(name, bytecode, 0, bytecode.length);
             }

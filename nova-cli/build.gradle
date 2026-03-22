@@ -49,3 +49,24 @@ distributions {
         distributionBaseName = 'nova'
     }
 }
+
+// 将 Shadow JAR 复制到 VSCode 扩展的 server/ 目录
+tasks.register('bundleToVscode', Copy) {
+    dependsOn shadowJar
+    from(shadowJar.archiveFile)
+    into(rootProject.file('vscode-nova/server'))
+    group = 'build'
+    description = 'Copy CLI JAR to vscode-nova/server/ for bundled distribution'
+}
+
+// 发布 shadow JAR 到 Maven
+publishing {
+    publications {
+        shadow(MavenPublication) {
+            groupId = project.group
+            artifactId = 'nova-cli'
+            version = project.version
+            artifact(shadowJar)
+        }
+    }
+}

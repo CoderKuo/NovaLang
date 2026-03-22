@@ -5,6 +5,7 @@ import com.novalang.runtime.stdlib.NovaScopeFunctions;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * JSR-223 脚本模式的运行时上下文。
@@ -22,7 +23,7 @@ public class NovaScriptContext {
 
     private static final ThreadLocal<NovaScriptContext> CURRENT = new ThreadLocal<>();
 
-    private final Map<String, Object> bindings = new HashMap<>();
+    private final Map<String, Object> bindings = new ConcurrentHashMap<>();
     private ExtensionRegistry extensionRegistry;
 
     /** 获取当前线程的上下文（用于并发传播） */
@@ -34,6 +35,8 @@ public class NovaScriptContext {
     public static void setCurrent(NovaScriptContext ctx) {
         if (ctx != null) {
             CURRENT.set(ctx);
+        } else {
+            CURRENT.remove();
         }
     }
 
@@ -43,7 +46,9 @@ public class NovaScriptContext {
     public static void init(Map<String, Object> initialBindings) {
         NovaScriptContext ctx = new NovaScriptContext();
         if (initialBindings != null) {
-            ctx.bindings.putAll(initialBindings);
+            for (Map.Entry<String, Object> e : initialBindings.entrySet()) {
+                ctx.bindings.put(e.getKey(), e.getValue() != null ? e.getValue() : NULL_SENTINEL);
+            }
         }
         CURRENT.set(ctx);
     }
@@ -53,16 +58,28 @@ public class NovaScriptContext {
      */
     public static Object get(String name) {
         NovaScriptContext ctx = CURRENT.get();
-        return ctx != null ? ctx.bindings.get(name) : null;
+        if (ctx != null) {
+            Object val = ctx.bindings.get(name);
+            if (val != null) return val == NULL_SENTINEL ? null : val;
+        }
+        // 回退到 shared() 全局注册表（变量 + 函数 + 命名空间代理）
+        NovaRuntime.RegisteredEntry entry = NovaRuntime.shared().lookup(name);
+        if (entry != null) return entry.getValue();
+        NovaRuntime.NovaNamespace ns = NovaRuntime.shared().getNamespaceProxy(name);
+        if (ns != null) return ns;
+        return null;
     }
 
     /**
      * 写入绑定变量（编译后的字节码调用此方法）
      */
+    /** ConcurrentHashMap 不接受 null value，用 sentinel 占位 */
+    private static final Object NULL_SENTINEL = new Object();
+
     public static void set(String name, Object value) {
         NovaScriptContext ctx = CURRENT.get();
         if (ctx != null) {
-            ctx.bindings.put(name, value);
+            ctx.bindings.put(name, value != null ? value : NULL_SENTINEL);
         }
     }
 
@@ -85,7 +102,12 @@ public class NovaScriptContext {
      */
     public static Map<String, Object> getAll() {
         NovaScriptContext ctx = CURRENT.get();
-        return ctx != null ? new HashMap<>(ctx.bindings) : new HashMap<>();
+        if (ctx == null) return new HashMap<>();
+        HashMap<String, Object> result = new HashMap<>();
+        for (Map.Entry<String, Object> e : ctx.bindings.entrySet()) {
+            result.put(e.getKey(), e.getValue() == NULL_SENTINEL ? null : e.getValue());
+        }
+        return result;
     }
 
     /**
@@ -142,7 +164,29 @@ public class NovaScriptContext {
                         if (func instanceof Function8) return ((Function8) func).invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
                         break;
                 }
-                // FunctionN switch 未匹配：函数存在但 arity 不匹配或 instanceof 失败
+                // FunctionN switch 未匹配：通过 LambdaUtils MethodHandle 缓存调用
+                // （处理 HighArityAdapter / vararg 适配器 / 其他有 invoke 方法的对象）
+                java.lang.invoke.MethodHandle mh = com.novalang.runtime.stdlib.LambdaUtils.getInvokeHandle(func, args.length);
+                if (mh != null) {
+                    try {
+                        // 常见 arity 精确 invoke（JIT 友好），4+ 退化 invokeWithArguments
+                        switch (args.length) {
+                            case 0: return mh.invoke(func);
+                            case 1: return mh.invoke(func, args[0]);
+                            case 2: return mh.invoke(func, args[0], args[1]);
+                            case 3: return mh.invoke(func, args[0], args[1], args[2]);
+                            default:
+                                Object[] full = new Object[args.length + 1];
+                                full[0] = func;
+                                System.arraycopy(args, 0, full, 1, args.length);
+                                return mh.invokeWithArguments(full);
+                        }
+                    } catch (RuntimeException | Error e) {
+                        throw e;
+                    } catch (Throwable t) {
+                        throw new RuntimeException(t);
+                    }
+                }
                 throw new RuntimeException("Function '" + name + "' exists but cannot be called with "
                         + args.length + " arg(s) (type: " + func.getClass().getName() + ")");
             }

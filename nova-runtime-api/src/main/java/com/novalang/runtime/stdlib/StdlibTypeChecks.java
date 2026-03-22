@@ -86,12 +86,7 @@ public final class StdlibTypeChecks {
     @NovaFunction(signature = "isCallable(value)", description = "检查值是否可调用", returnType = "Boolean")
     public static Object isCallable(Object value) {
         if (value instanceof NovaValue) return ((NovaValue) value).isCallable();
-        // 编译路径：lambda 实现为匿名类（有 invoke 方法）
-        try {
-            value.getClass().getMethod("invoke");
-            return true;
-        } catch (NoSuchMethodException e) {
-            return false;
-        }
+        // 编译路径：利用 LambdaUtils 的 ClassValue 缓存（避免每次 getMethod 异常开销）
+        return LambdaUtils.hasAnyInvokeHandle(value);
     }
 }

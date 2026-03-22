@@ -271,6 +271,14 @@ public class MirCodeGenerator {
         }
 
         MethodVisitor mv = cw.visitMethod(access, func.getName(), desc, null, null);
+
+        // 写入 MethodParameters 属性（必须在 visitCode 之前）
+        if (!func.getParams().isEmpty() && !"<clinit>".equals(func.getName())) {
+            for (com.novalang.ir.mir.MirParam param : func.getParams()) {
+                mv.visitParameter(param.getName(), 0);
+            }
+        }
+
         mv.visitCode();
 
         // 识别可使用 ILOAD/ISTORE 的 int 局部变量
@@ -869,6 +877,15 @@ public class MirCodeGenerator {
             }
             case INVOKE_VIRTUAL: {
                 String extra = (String) inst.getExtra();
+
+                // 检查命名参数编码: "methodName;named:positionalCount:key1,key2"
+                String namedInfo = null;
+                int namedIdx = extra.indexOf(";named:");
+                if (namedIdx >= 0) {
+                    namedInfo = extra.substring(namedIdx + 1); // "named:positionalCount:key1,key2"
+                    extra = extra.substring(0, namedIdx);
+                }
+
                 String owner, methodName, descriptor;
 
                 if (extra.contains("|")) {
@@ -883,6 +900,34 @@ public class MirCodeGenerator {
                     owner = "java/lang/Object";
                     int argCount = inst.getOperands() != null ? inst.getOperands().length - 1 : 0;
                     descriptor = MethodDescriptor.allObjectDesc(argCount);
+                }
+
+                // 命名参数 → 运行时分派 NovaDynamic.invokeWithNamedArgs
+                if (namedInfo != null) {
+                    int[] ops = inst.getOperands();
+                    // receiver
+                    loadObject(mv, ops[0]);
+                    // methodName
+                    mv.visitLdcInsn(methodName);
+                    // 打包参数到 Object[]（不含 receiver）
+                    pushInt(mv, ops.length - 1);
+                    mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
+                    for (int i = 1; i < ops.length; i++) {
+                        mv.visitInsn(DUP);
+                        pushInt(mv, i - 1);
+                        loadObject(mv, ops[i]);
+                        mv.visitInsn(AASTORE);
+                    }
+                    // namedInfo
+                    mv.visitLdcInsn(namedInfo);
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaDynamic",
+                            "invokeWithNamedArgs",
+                            "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                            false);
+                    if (inst.getDest() >= 0) {
+                        mv.visitVarInsn(ASTORE, inst.getDest());
+                    }
+                    break;
                 }
 
                 // Lambda 类上的方法调用 → invokedynamic（Lambda 类没有 scopeReceiver 方法，需运行时分派）
@@ -1096,22 +1141,31 @@ public class MirCodeGenerator {
                 String typeName = (String) inst.getExtra();
                 int src = inst.operand(0);
                 loadObject(mv, src);
-                // 安全转换 as? → instanceof 检查，不匹配返回 null
-                if (typeName.startsWith("?|")) {
-                    String actualType = typeName.substring(2);
-                    mv.visitInsn(DUP);
-                    mv.visitTypeInsn(INSTANCEOF, actualType);
-                    Label matchLabel = new Label();
-                    Label endLabel = new Label();
-                    mv.visitJumpInsn(IFNE, matchLabel);
-                    mv.visitInsn(POP); // 丢弃不匹配的值
-                    mv.visitInsn(ACONST_NULL);
-                    mv.visitJumpInsn(GOTO, endLabel);
-                    mv.visitLabel(matchLabel);
-                    mv.visitTypeInsn(CHECKCAST, actualType);
-                    mv.visitLabel(endLabel);
+
+                // 解析安全转换标记
+                boolean safeCast = typeName.startsWith("?|");
+                String actualType = safeCast ? typeName.substring(2) : typeName;
+
+                // Result/Ok/Err 特殊处理
+                if ("Ok".equals(actualType) || "Err".equals(actualType) || "Result".equals(actualType)) {
+                    mv.visitLdcInsn(actualType);
+                    mv.visitInsn(safeCast ? ICONST_1 : ICONST_0);
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaResult",
+                            "castResult", "(Ljava/lang/Object;Ljava/lang/String;Z)Ljava/lang/Object;", false);
+                    mv.visitVarInsn(ASTORE, inst.getDest());
+                    break;
+                }
+
+                // 安全转换 as? → SamAdapter.safeCastOrAdapt（处理 SAM + 普通类型）
+                if (safeCast) {
+                    mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(actualType));
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/SamAdapter",
+                            "safeCastOrAdapt", "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
                 } else {
-                    mv.visitTypeInsn(CHECKCAST, typeName);
+                    // 强制转换 as → SamAdapter.castOrAdapt（处理 SAM + 普通类型）
+                    mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(actualType));
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/SamAdapter",
+                            "castOrAdapt", "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
                 }
                 mv.visitVarInsn(ASTORE, inst.getDest());
                 break;
@@ -1434,7 +1488,7 @@ public class MirCodeGenerator {
         if (isObjectLike) {
             loadObject(mv, left);
             loadObject(mv, right);
-            mv.visitMethodInsn(INVOKESTATIC, "java/util/Objects", "equals",
+            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", "equals",
                     "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
             if (op == BinaryOp.NE) {
                 // 取反
@@ -1452,7 +1506,7 @@ public class MirCodeGenerator {
             return;
         }
 
-        // 非数值 Object 类型的 LT/GT/LE/GE: Comparable.compareTo 回退（Character, String 等）
+        // 非数值 Object 类型的 LT/GT/LE/GE: NovaOps.compare 回退（Character, String 等）
         // Int/Double 混合比较：统一转为 double 避免 Integer.compareTo(Double) ClassCastException
         if ((op == BinaryOp.LT || op == BinaryOp.GT || op == BinaryOp.LE || op == BinaryOp.GE)
                 && (lk == MirType.Kind.OBJECT || rk == MirType.Kind.OBJECT
@@ -1492,9 +1546,9 @@ public class MirCodeGenerator {
             }
             loadObject(mv, left);
             loadObject(mv, right);
-            mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable", "compareTo",
-                    "(Ljava/lang/Object;)I", true);
-            // compareTo 返回 int，用 IFxx 与 0 比较
+            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", "compare",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)I", false);
+            // compare 返回 int，用 IFxx 与 0 比较
             Label trueLabel = new Label();
             Label endLabel = new Label();
             switch (op) {
@@ -1667,8 +1721,39 @@ public class MirCodeGenerator {
                 }
                 break;
             }
+            case POS: {
+                MirType.Kind kind = getLocalType(func, operand).getKind();
+                switch (kind) {
+                    case INT:
+                        // INT 类型：+x = x，保持 int 槽位一致性
+                        if (intLocals.contains(operand) && intLocals.contains(dest)) {
+                            loadInt(mv, operand);
+                            mv.visitVarInsn(ISTORE, dest);
+                        } else {
+                            loadObject(mv, operand);
+                            mv.visitVarInsn(ASTORE, dest);
+                        }
+                        break;
+                    case LONG:
+                    case DOUBLE:
+                    case FLOAT:
+                        // 数值类型：+x 就是 x，直接复制
+                        loadObject(mv, operand);
+                        mv.visitVarInsn(ASTORE, dest);
+                        break;
+                    default:
+                        // OBJECT 类型：运行时处理（可能有 unaryPlus 重载）
+                        loadObject(mv, operand);
+                        mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps",
+                                "unaryPlus", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                        mv.visitVarInsn(ASTORE, dest);
+                        break;
+                }
+                break;
+            }
             default: {
-                mv.visitInsn(ACONST_NULL);
+                // 未知一元运算符，安全回退
+                loadObject(mv, operand);
                 mv.visitVarInsn(ASTORE, dest);
                 break;
             }
@@ -1854,34 +1939,17 @@ public class MirCodeGenerator {
             if (op == BinaryOp.EQ || op == BinaryOp.NE) {
                 loadObject(mv, left);
                 loadObject(mv, right);
-                mv.visitMethodInsn(INVOKESTATIC, "java/util/Objects", "equals",
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", "equals",
                         "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
                 mv.visitJumpInsn(op == BinaryOp.EQ ? IFNE : IFEQ, thenLabel);
                 mv.visitJumpInsn(GOTO, elseLabel);
             } else {
-                // 非 EQ/NE 的 Object 比较
-                boolean leftNum = lk == MirType.Kind.INT || lk == MirType.Kind.DOUBLE
-                        || lk == MirType.Kind.LONG || lk == MirType.Kind.FLOAT;
-                boolean rightNum = rk == MirType.Kind.INT || rk == MirType.Kind.DOUBLE
-                        || rk == MirType.Kind.LONG || rk == MirType.Kind.FLOAT;
-                if (leftNum || rightNum) {
-                    // Int/Double 混合：统一转 double 避免 ClassCastException
-                    loadObject(mv, left);
-                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-                    loadObject(mv, right);
-                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-                    mv.visitInsn(DCMPG);
-                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
-                } else {
-                    loadObject(mv, left);
-                    mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
-                    loadObject(mv, right);
-                    mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable",
-                            "compareTo", "(Ljava/lang/Object;)I", true);
-                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
-                }
+                // 非 EQ/NE 的 Object 比较：统一走 NovaOps.compare
+                loadObject(mv, left);
+                loadObject(mv, right);
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", "compare",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)I", false);
+                emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
             }
             return;
         }
@@ -1953,34 +2021,17 @@ public class MirCodeGenerator {
             if (op == BinaryOp.EQ || op == BinaryOp.NE) {
                 loadObject(mv, left);
                 loadObject(mv, right);
-                mv.visitMethodInsn(INVOKESTATIC, "java/util/Objects", "equals",
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", "equals",
                         "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
                 mv.visitJumpInsn(op == BinaryOp.EQ ? IFNE : IFEQ, thenLabel);
                 mv.visitJumpInsn(GOTO, elseLabel);
             } else {
-                // 非 EQ/NE 的 Object 比较
-                boolean leftNum = lk == MirType.Kind.INT || lk == MirType.Kind.DOUBLE
-                        || lk == MirType.Kind.LONG || lk == MirType.Kind.FLOAT;
-                boolean rightNum = rk == MirType.Kind.INT || rk == MirType.Kind.DOUBLE
-                        || rk == MirType.Kind.LONG || rk == MirType.Kind.FLOAT;
-                if (leftNum || rightNum) {
-                    // Int/Double 混合：统一转 double 避免 ClassCastException
-                    loadObject(mv, left);
-                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-                    loadObject(mv, right);
-                    mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                    mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-                    mv.visitInsn(DCMPG);
-                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
-                } else {
-                    loadObject(mv, left);
-                    mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
-                    loadObject(mv, right);
-                    mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable",
-                            "compareTo", "(Ljava/lang/Object;)I", true);
-                    emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
-                }
+                // 非 EQ/NE 的 Object 比较：统一走 NovaOps.compare
+                loadObject(mv, left);
+                loadObject(mv, right);
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", "compare",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)I", false);
+                emitFusedCmpBranch(mv, op, thenLabel, elseLabel);
             }
         }
     }

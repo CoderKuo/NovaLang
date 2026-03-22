@@ -1,6 +1,5 @@
 package com.novalang.runtime.stdlib;
 
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.concurrent.*;
 
@@ -15,8 +14,6 @@ import com.novalang.runtime.NovaType;
 public final class StructuredConcurrencyHelper {
 
     private StructuredConcurrencyHelper() {}
-
-    private static final ConcurrentHashMap<Class<?>, Method> invokeCache = new ConcurrentHashMap<>();
 
     // ============ Dispatchers 常量（编译路径） ============
 
@@ -292,50 +289,13 @@ public final class StructuredConcurrencyHelper {
         @Override public String toString() { return "Job"; }
     }
 
-    // ============ Lambda 调用辅助 ============
+    // ============ Lambda 调用辅助（委托 LambdaUtils 统一 MethodHandle 缓存） ============
 
-    /** 带 1 个参数调用 lambda: block.invoke(arg)；若 lambda 无参数则忽略 arg */
     private static Object invokeWith1Arg(Object lambda, Object arg) {
-        try {
-            Method m = findInvokeMethod(lambda, 1);
-            if (m.getParameterCount() == 0) {
-                return m.invoke(lambda);
-            }
-            return m.invoke(lambda, arg);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
-        }
+        return LambdaUtils.invokeFlexible(lambda, arg);
     }
 
-    /** 无参调用 lambda: block.invoke() */
     private static Object invoke0(Object lambda) {
-        try {
-            Method m = findInvokeMethod(lambda, 0);
-            return m.invoke(lambda);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
-        }
-    }
-
-    private static Method findInvokeMethod(Object lambda, int arity) {
-        return invokeCache.computeIfAbsent(lambda.getClass(), cls -> {
-            // 先尝试 arity 匹配
-            for (Method m : cls.getMethods()) {
-                if ("invoke".equals(m.getName()) && m.getParameterCount() == arity) return m;
-            }
-            // 回退到任意 invoke
-            for (Method m : cls.getMethods()) {
-                if ("invoke".equals(m.getName())) return m;
-            }
-            throw new RuntimeException("Lambda has no invoke() method: " + cls.getName());
-        });
+        return LambdaUtils.invoke0(lambda);
     }
 }

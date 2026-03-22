@@ -58,12 +58,14 @@ public class IncrementalCompiler {
         for (File file : sourceFiles) {
             String filePath = file.getAbsolutePath();
             currentSourcePaths.add(filePath);
-            String source = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-            String hash = CompileCache.computeHash(source);
+            byte[] sourceBytes = Files.readAllBytes(file.toPath());
+            String hash = CompileCache.computeHashFromBytes(sourceBytes);
 
             if (cache.isChanged(filePath, hash)) {
                 // 需要重新编译
                 try {
+                    String source = new String(sourceBytes, StandardCharsets.UTF_8);
+                    sourceBytes = null; // 释放原始字节
                     Map<String, byte[]> classes = compiler.compile(source, file.getName());
                     allClasses.putAll(classes);
 

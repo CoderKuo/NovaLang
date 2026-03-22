@@ -270,6 +270,11 @@ public final class StdlibRegistry {
         return Collections.unmodifiableCollection(registry.values());
     }
 
+    /** 获取所有扩展方法（按目标类型分组） */
+    public static Map<String, Map<String, List<ExtensionMethodInfo>>> getAllExtensionMethods() {
+        return Collections.unmodifiableMap(extensionMethods);
+    }
+
     /** 获取所有接收者 Lambda 函数 */
     public static List<ReceiverLambdaInfo> getReceiverLambdas() {
         List<ReceiverLambdaInfo> result = new ArrayList<>();

@@ -23,6 +23,7 @@ dependencies {
     api project(':nova-runtime-types')
     implementation project(':nova-ir')
     implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
     jmh 'org.openjdk.jmh:jmh-core:1.37'
     jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
@@ -107,7 +108,21 @@ shadowJar {
     // ??? Caffeine ??????????? Bukkit ClassLoader ????
     relocate 'com.github.benmanes.caffeine', 'com.novalang.deps.caffeine'
     relocate 'org.checkerframework', 'com.novalang.deps.checkerframework'
+    relocate 'fi.iki.elonen', 'com.novalang.deps.nanohttpd'
 }
 
-// ?? fat jar
 tasks.build.dependsOn shadowJar
+
+// 额外发布 shadow JAR 到 Maven（artifactId = nova-runtime-all，无 classifier）
+publishing {
+    publications {
+        shadow(MavenPublication) {
+            groupId = project.group
+            artifactId = 'nova-runtime-all'
+            version = project.version
+            artifact(shadowJar) {
+                classifier = null  // 去掉 with-dependencies classifier
+            }
+        }
+    }
+}

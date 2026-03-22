@@ -163,6 +163,13 @@ public final class ExtensionRegistry {
     }
 
     /**
+     * 列出所有已注册的扩展方法（按目标类型 → 方法名 → 重载列表）
+     */
+    public Map<Class<?>, Map<String, List<RegisteredExtension>>> getAll() {
+        return java.util.Collections.unmodifiableMap(extensions);
+    }
+
+    /**
      * 移除扩展方法
      */
     public void unregister(Class<?> targetType, String methodName) {
