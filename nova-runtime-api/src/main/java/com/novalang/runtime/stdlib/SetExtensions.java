@@ -59,7 +59,11 @@ public final class SetExtensions {
     @SuppressWarnings("unchecked")
     public static Object forEach(Object set, Object action) {
         for (Object item : (Set<?>) set) {
-            invoke1(action, item);
+            try {
+                invoke1(action, item);
+            } catch (com.novalang.runtime.LoopSignal sig) {
+                if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
+            }
         }
         return null;
     }

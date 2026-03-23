@@ -32,6 +32,13 @@
   - 支持所有条件类型（is/in/值匹配/无 subject）+ 任意 guard 表达式
   - 支持多条件 + guard：`1, 2 if flag -> ...`
   - 解释器和编译器双路径均已支持
+- **Non-local break/continue**：在 `forEach` 等 lambda 内使用 `break`/`continue`，跳出外层迭代
+  ```nova
+  list.forEach { if (it == 0) continue; process(it) }
+  list.forEach { if (it == target) break }
+  ```
+  - 支持 `forEach`、`forEachIndexed`、Map `forEach`
+  - 嵌套 forEach 中 break 只影响最内层
 
 ### 修复
 - MirCodeGenerator：`unboxBoolean` / Branch 终止器未检查 `intLocals` 导致 VerifyError

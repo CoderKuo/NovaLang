@@ -352,7 +352,13 @@ public final class ListExtensions {
     @SuppressWarnings("unchecked")
     public static Object forEachIndexed(Object list, Object action) {
         List<?> l = (List<?>) list;
-        for (int i = 0; i < l.size(); i++) invoke2(action, i, l.get(i));
+        for (int i = 0; i < l.size(); i++) {
+            try {
+                invoke2(action, i, l.get(i));
+            } catch (com.novalang.runtime.LoopSignal sig) {
+                if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
+            }
+        }
         return null;
     }
 
@@ -598,7 +604,12 @@ public final class ListExtensions {
     @SuppressWarnings("unchecked")
     public static Object forEach(Object list, Object action) {
         for (Object item : (List<?>) list) {
-            invoke1(action, item);
+            try {
+                invoke1(action, item);
+            } catch (com.novalang.runtime.LoopSignal sig) {
+                if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
+                // CONTINUE: 跳过当前，继续下一次
+            }
         }
         return null;
     }

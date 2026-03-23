@@ -769,7 +769,14 @@ final class MirInterpreter {
         });
         // ---- action ----
         BATCH_OPS.put("forEach", (elems, n, c) -> {
-            for (int i = 0; i < n; i++) c.call1(elems.get(i));
+            for (int i = 0; i < n; i++) {
+                try {
+                    c.call1(elems.get(i));
+                } catch (LoopSignal sig) {
+                    if (sig == LoopSignal.BREAK) break;
+                    // CONTINUE: 跳过当前，继续下一次
+                }
+            }
             return NovaNull.UNIT;
         });
         // ---- key-based ----
@@ -834,7 +841,13 @@ final class MirInterpreter {
             return new NovaList(r);
         });
         BATCH_OPS.put("forEachIndexed", (elems, n, c) -> {
-            for (int i = 0; i < n; i++) c.call2(NovaInt.of(i), elems.get(i));
+            for (int i = 0; i < n; i++) {
+                try {
+                    c.call2(NovaInt.of(i), elems.get(i));
+                } catch (LoopSignal sig) {
+                    if (sig == LoopSignal.BREAK) break;
+                }
+            }
             return NovaNull.UNIT;
         });
     }
@@ -856,7 +869,13 @@ final class MirInterpreter {
         // ---- 鍙屽弬鏂规硶锛?-param only, 1-param 鍥為€€鍒?stdlib bridge 澶勭悊 entry/implicit-it锛?----
         MAP_BATCH_OPS.put("forEach", (map, c) -> {
             if (c.lambdaParamCount < 2) return null;
-            for (Map.Entry<NovaValue, NovaValue> e : map.getEntries().entrySet()) c.call2(e.getKey(), e.getValue());
+            for (Map.Entry<NovaValue, NovaValue> e : map.getEntries().entrySet()) {
+                try {
+                    c.call2(e.getKey(), e.getValue());
+                } catch (LoopSignal sig) {
+                    if (sig == LoopSignal.BREAK) break;
+                }
+            }
             return NovaNull.UNIT;
         });
         MAP_BATCH_OPS.put("filter", (map, c) -> {
@@ -2179,11 +2198,18 @@ final class MirInterpreter {
                     }
                     case MirTerminator.KIND_THROW: {
                         NovaValue ex = frame.get(((MirTerminator.Throw) term).getExceptionLocal());
+                        // LoopSignal: non-local break/continue，直接抛出原始信号
+                        if (ex instanceof NovaExternalObject) {
+                            Object jv = ex.toJavaValue();
+                            if (jv instanceof LoopSignal) throw (LoopSignal) jv;
+                        }
                         throw toRuntimeException(ex);
                     }
                     default: // UNREACHABLE
                         throw new NovaRuntimeException("Reached unreachable code");
                 }
+            } catch (LoopSignal sig) {
+                throw sig; // non-local break/continue：直接穿透，不拦截
             } catch (Exception e) {
                 NovaRuntimeException nre;
                 if (e instanceof NovaRuntimeException) {

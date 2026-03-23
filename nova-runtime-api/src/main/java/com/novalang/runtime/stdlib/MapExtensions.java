@@ -188,9 +188,21 @@ public final class MapExtensions {
     public static Object forEach(Object map, Object action) {
         Map<?, ?> m = (Map<?, ?>) map;
         if (isBiFunction(action)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) invoke2(action, e.getKey(), e.getValue());
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                try {
+                    invoke2(action, e.getKey(), e.getValue());
+                } catch (com.novalang.runtime.LoopSignal sig) {
+                    if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
+                }
+            }
         } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) invoke1(action, e.getKey());
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                try {
+                    invoke1(action, e.getKey());
+                } catch (com.novalang.runtime.LoopSignal sig) {
+                    if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
+                }
+            }
         }
         return null;
     }

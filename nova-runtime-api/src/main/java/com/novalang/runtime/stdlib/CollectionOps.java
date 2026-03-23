@@ -63,7 +63,11 @@ public final class CollectionOps {
             return MapExtensions.forEach(listObj, lambda);
         }
         for (Object item : asIterable(listObj)) {
-            invokeLambda1(lambda, item);
+            try {
+                invokeLambda1(lambda, item);
+            } catch (com.novalang.runtime.LoopSignal sig) {
+                if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
+            }
         }
         return null;
     }

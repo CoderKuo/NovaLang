@@ -2304,12 +2304,17 @@ public class HirToMirLowering {
                     break;
                 }
             }
-        } else {
+        } else if (!loopStack.isEmpty()) {
             // 无标签：最内层循环
             target = loopStack.peek();
         }
         if (target == null) {
-            builder.emitUnreachable(location);
+            // lambda 内部的 break/continue：生成 throw LoopSignal（non-local jump）
+            String signalField = isBreak ? "BREAK" : "CONTINUE";
+            int signal = builder.emitGetStatic("com/novalang/runtime/LoopSignal", signalField,
+                    "Lcom/novalang/runtime/LoopSignal;",
+                    MirType.ofObject("com/novalang/runtime/LoopSignal"), location);
+            builder.emitThrow(signal, location);
             return -1;
         }
         int blockId = isBreak ? target.exitBlockId : target.headerBlockId;
@@ -2666,12 +2671,17 @@ public class HirToMirLowering {
         }
 
         // 降级 lambda body（push 当前 lambda 的捕获变量，供嵌套 lambda 的捕获分析使用）
+        // 隔离 loopStack：lambda 内的 break/continue 不应匹配外层循环（生成 throw LoopSignal）
         lambdaCaptureStack.push(new HashSet<>(captures));
+        Deque<LoopContext> savedLoopStack = new ArrayDeque<>(loopStack);
+        loopStack.clear();
         int savedScopeDepth = blockScopeDepth;
         blockScopeDepth = 0;
         AstNode body = expr.getBody();
         int result = lowerNode(body, invokeBuilder);
         blockScopeDepth = savedScopeDepth;
+        loopStack.clear();
+        loopStack.addAll(savedLoopStack);
         lambdaCaptureStack.pop();
         if (!invokeBuilder.getCurrentBlock().hasTerminator()) {
             if (result >= 0) {
