@@ -21,8 +21,22 @@
 - **`Enum.entries`** 属性（返回枚举条目列表）
 - **Reflect API**：`field.isMutable`、`method.parameters` 属性
 - **`data object`**：`@data object Error` 自动生成一致的 `toString`（返回纯类名），常与 `sealed interface` 配合表示无数据状态分支
+- **when Guard Conditions**：`is Type if condition -> body` 语法，条件匹配且 guard 为真时才进入分支
+  ```nova
+  when (animal) {
+      is Cat if !animal.isHungry -> "feed cat"
+      is Cat -> "hungry cat"
+      else -> "unknown"
+  }
+  ```
+  - 支持所有条件类型（is/in/值匹配/无 subject）+ 任意 guard 表达式
+  - 支持多条件 + guard：`1, 2 if flag -> ...`
+  - 解释器和编译器双路径均已支持
 
 ### 修复
+- MirCodeGenerator：`unboxBoolean` / Branch 终止器未检查 `intLocals` 导致 VerifyError
+- MirCodeGenerator：`isLocalUsedInOtherBlocks` 遗漏 fused Branch 引用
+- MirCodeGenerator：`unboxInt` 未兼容 Boolean 类型和 null 值
 - 多层继承 `super` 调用导致 StackOverflowError
 - `with()` 作用域函数未正确绑定 scope receiver
 - `HirConstantFolding`：`"abc" * 0` 被错误优化为 `0` 而非 `""`

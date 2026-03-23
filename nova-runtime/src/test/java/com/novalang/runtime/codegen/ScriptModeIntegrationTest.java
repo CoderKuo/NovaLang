@@ -2623,6 +2623,129 @@ class ScriptModeIntegrationTest {
         }
     }
 
+    // ============ 87c. when guard conditions ============
+
+    @Nested
+    @DisplayName("when guard conditions")
+    class WhenGuardCodegenTests {
+
+        @Test void guardIsTypeBasic() {
+            assertEquals("feed cat", run(
+                    "open class Animal(val name: String)\n" +
+                    "class Cat(name: String, val isHungry: Boolean) : Animal(name)\n" +
+                    "class Dog(name: String) : Animal(name)\n" +
+                    "val a = Cat(\"Kitty\", false)\n" +
+                    "when (a) {\n" +
+                    "    is Cat if !a.isHungry -> \"feed cat\"\n" +
+                    "    is Cat -> \"hungry cat\"\n" +
+                    "    is Dog -> \"walk dog\"\n" +
+                    "    else -> \"unknown\"\n" +
+                    "}"));
+        }
+
+        @Test void guardIsTypeFallthrough() {
+            assertEquals("hungry cat", run(
+                    "open class Animal(val name: String)\n" +
+                    "class Cat(name: String, val isHungry: Boolean) : Animal(name)\n" +
+                    "class Dog(name: String) : Animal(name)\n" +
+                    "val a = Cat(\"Tom\", true)\n" +
+                    "when (a) {\n" +
+                    "    is Cat if !a.isHungry -> \"feed cat\"\n" +
+                    "    is Cat -> \"hungry cat\"\n" +
+                    "    is Dog -> \"walk dog\"\n" +
+                    "    else -> \"unknown\"\n" +
+                    "}"));
+        }
+
+        @Test void guardWithValueMatch() {
+            assertEquals("1-flagged", run(
+                    "val x = 1\nval flag = true\n" +
+                    "when(x) {\n" +
+                    "    1 if flag -> \"1-flagged\"\n" +
+                    "    1 -> \"1\"\n" +
+                    "    else -> \"other\"\n" +
+                    "}"));
+        }
+
+        @Test void guardWithRange() {
+            assertEquals("A+", run(
+                    "val score = 95\nval honors = true\n" +
+                    "when(score) {\n" +
+                    "    in 90..100 if honors -> \"A+\"\n" +
+                    "    in 90..100 -> \"A\"\n" +
+                    "    else -> \"B\"\n" +
+                    "}"));
+        }
+
+        @Test void guardFunctionCall() {
+            assertEquals("even", run(
+                    "fun isEven(n: Int) = n % 2 == 0\n" +
+                    "fun classify(n: Int) = when {\n" +
+                    "    n > 0 if isEven(n) -> \"even\"\n" +
+                    "    n > 0 -> \"odd\"\n" +
+                    "    else -> \"neg\"\n" +
+                    "}\n" +
+                    "classify(4)"));
+        }
+
+        @Test void guardLogicalOps() {
+            assertEquals("in-range", run(
+                    "fun classify(x: Int) = when {\n" +
+                    "    x > 0 if x > 0 && x < 100 -> \"in-range\"\n" +
+                    "    x > 0 -> \"out-range\"\n" +
+                    "    else -> \"neg\"\n" +
+                    "}\n" +
+                    "classify(50)"));
+        }
+
+        @Test void guardNoSubjectStatement() {
+            // no-subject when 语句路径 + guard
+            assertEquals("even", run(
+                    "fun isEven(n: Int) = n % 2 == 0\n" +
+                    "fun classify(n: Int): String {\n" +
+                    "    var r = \"\"\n" +
+                    "    when {\n" +
+                    "        n > 0 if isEven(n) -> r = \"even\"\n" +
+                    "        n > 0 -> r = \"odd\"\n" +
+                    "        else -> r = \"neg\"\n" +
+                    "    }\n" +
+                    "    return r\n" +
+                    "}\n" +
+                    "classify(4)"));
+        }
+
+        @Test void guardNoSubjectFallthrough() {
+            assertEquals("odd", run(
+                    "fun isEven(n: Int) = n % 2 == 0\n" +
+                    "fun classify(n: Int): String {\n" +
+                    "    var r = \"\"\n" +
+                    "    when {\n" +
+                    "        n > 0 if isEven(n) -> r = \"even\"\n" +
+                    "        n > 0 -> r = \"odd\"\n" +
+                    "        else -> r = \"neg\"\n" +
+                    "    }\n" +
+                    "    return r\n" +
+                    "}\n" +
+                    "classify(3)"));
+        }
+
+        @Test void guardMultiConditionCompiled() {
+            assertEquals("1or2-flagged", run(
+                    "val x = 1\nval flag = true\n" +
+                    "when(x) {\n" +
+                    "    1, 2 if flag -> \"1or2-flagged\"\n" +
+                    "    1, 2 -> \"1or2\"\n" +
+                    "    else -> \"other\"\n" +
+                    "}"));
+        }
+
+        @Test void guardBackwardCompat() {
+            // 无 guard 的 when 不受影响
+            assertEquals("two", run(
+                    "when(2) { 1 -> \"one\"; 2 -> \"two\"; else -> \"other\" }"));
+        }
+    }
+
     // ============ 88. Scope 函数全覆盖 ============
 
     @Nested

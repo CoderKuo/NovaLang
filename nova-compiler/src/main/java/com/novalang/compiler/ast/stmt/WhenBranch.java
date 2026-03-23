@@ -13,16 +13,28 @@ import java.util.List;
  */
 public class WhenBranch extends AstNode {
     private final List<WhenCondition> conditions;
+    private final Expression guardExpr;  // guard condition: is Type if expr -> ...
     private final Statement body;  // Block 或 ExpressionStmt
 
-    public WhenBranch(SourceLocation location, List<WhenCondition> conditions, Statement body) {
+    public WhenBranch(SourceLocation location, List<WhenCondition> conditions,
+                      Expression guardExpr, Statement body) {
         super(location);
         this.conditions = conditions;
+        this.guardExpr = guardExpr;
         this.body = body;
+    }
+
+    /** 向后兼容构造器（无 guard） */
+    public WhenBranch(SourceLocation location, List<WhenCondition> conditions, Statement body) {
+        this(location, conditions, null, body);
     }
 
     public List<WhenCondition> getConditions() {
         return conditions;
+    }
+
+    public Expression getGuardExpr() {
+        return guardExpr;
     }
 
     public Statement getBody() {

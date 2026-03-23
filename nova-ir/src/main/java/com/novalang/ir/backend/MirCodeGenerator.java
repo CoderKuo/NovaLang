@@ -1365,13 +1365,17 @@ public class MirCodeGenerator {
             return;
         }
 
-        // 逻辑运算 AND/OR → 拆箱 Boolean，运算，装箱
+        // 逻辑运算 AND/OR → 拆箱 Boolean，运算，装箱（或直接 ISTORE）
         if (op == BinaryOp.AND || op == BinaryOp.OR) {
             unboxBoolean(mv, left);
             unboxBoolean(mv, right);
             mv.visitInsn(op == BinaryOp.AND ? IAND : IOR);
-            boxBoolean(mv);
-            mv.visitVarInsn(ASTORE, dest);
+            if (intLocals.contains(dest)) {
+                mv.visitVarInsn(ISTORE, dest);
+            } else {
+                boxBoolean(mv);
+                mv.visitVarInsn(ASTORE, dest);
+            }
             return;
         }
 
@@ -1797,11 +1801,18 @@ public class MirCodeGenerator {
             mv.visitJumpInsn(GOTO, blockLabels.get(target));
         } else if (term instanceof MirTerminator.Branch) {
             MirTerminator.Branch branch = (MirTerminator.Branch) term;
-            // 调用 AbstractNovaValue.truthyCheck(Object) 支持非 Boolean 类型的 truthy 语义
-            mv.visitVarInsn(ALOAD, branch.getCondition());
-            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/AbstractNovaValue", "truthyCheck",
-                    "(Ljava/lang/Object;)Z", false);
-            mv.visitJumpInsn(IFNE, blockLabels.get(branch.getThenBlock()));
+            int cond = branch.getCondition();
+            if (intLocals.contains(cond)) {
+                // int 类型条件：直接用 IFNE（0=false, 非0=true）
+                mv.visitVarInsn(ILOAD, cond);
+                mv.visitJumpInsn(IFNE, blockLabels.get(branch.getThenBlock()));
+            } else {
+                // 对象类型条件：调用 truthyCheck
+                mv.visitVarInsn(ALOAD, cond);
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/AbstractNovaValue", "truthyCheck",
+                        "(Ljava/lang/Object;)Z", false);
+                mv.visitJumpInsn(IFNE, blockLabels.get(branch.getThenBlock()));
+            }
             mv.visitJumpInsn(GOTO, blockLabels.get(branch.getElseBlock()));
         } else if (term instanceof MirTerminator.Return) {
             int value = ((MirTerminator.Return) term).getValueLocal();
@@ -2238,22 +2249,47 @@ public class MirCodeGenerator {
 
     // ========== 装箱/拆箱辅助 ==========
 
-    /** 从局部变量加载并拆箱为 JVM int */
+    /** 从局部变量加载并拆箱为 JVM int（兼容 null/Boolean/Number） */
     private void unboxInt(MethodVisitor mv, int local) {
         if (intLocals.contains(local)) {
             mv.visitVarInsn(ILOAD, local);
         } else {
             mv.visitVarInsn(ALOAD, local);
+            Label done = new Label();
+            // null 安全：嵌套 if-else 路径上局部变量可能未初始化
+            mv.visitInsn(DUP);
+            Label notNull = new Label();
+            mv.visitJumpInsn(IFNONNULL, notNull);
+            mv.visitInsn(POP);
+            mv.visitInsn(ICONST_0);
+            mv.visitJumpInsn(GOTO, done);
+            mv.visitLabel(notNull);
+            // Boolean 也可能出现在 int 上下文（AND/OR 结果）
+            mv.visitInsn(DUP);
+            mv.visitTypeInsn(INSTANCEOF, "java/lang/Boolean");
+            Label notBoolean = new Label();
+            mv.visitJumpInsn(IFEQ, notBoolean);
+            mv.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+            mv.visitJumpInsn(GOTO, done);
+            // Number 路径
+            mv.visitLabel(notBoolean);
             mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
+            mv.visitLabel(done);
         }
     }
 
     /** 从局部变量加载并拆箱为 JVM boolean */
     private void unboxBoolean(MethodVisitor mv, int local) {
-        mv.visitVarInsn(ALOAD, local);
-        mv.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+        if (intLocals.contains(local)) {
+            // 已经是 int 类型（0/1），直接加载
+            mv.visitVarInsn(ILOAD, local);
+        } else {
+            mv.visitVarInsn(ALOAD, local);
+            mv.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+        }
     }
 
     /** 将栈顶 int 装箱为 Integer */
@@ -2600,10 +2636,14 @@ public class MirCodeGenerator {
                     }
                 }
             }
-            // 检查 terminator 中的引用
+            // 检查 terminator 中的引用（含 fused 比较操作数）
             MirTerminator term = block.getTerminator();
             if (term instanceof MirTerminator.Branch) {
-                if (((MirTerminator.Branch) term).getCondition() == localIdx) return true;
+                MirTerminator.Branch br = (MirTerminator.Branch) term;
+                if (br.getCondition() == localIdx) return true;
+                if (br.getFusedCmpOp() != null) {
+                    if (br.getFusedLeft() == localIdx || br.getFusedRight() == localIdx) return true;
+                }
             }
         }
         return false;

@@ -1337,6 +1337,10 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
                 ctx.append(", ");
             }
         }
+        if (branch.getGuardExpr() != null) {
+            ctx.append(" if ");
+            formatExpression(branch.getGuardExpr(), ctx);
+        }
         ctx.append(" -> ");
         if (branch.getBody() instanceof Block) {
             formatBlock((Block) branch.getBody(), ctx);

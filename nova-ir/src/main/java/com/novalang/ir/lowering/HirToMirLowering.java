@@ -1766,6 +1766,9 @@ public class HirToMirLowering {
             if (subject == null) subject = detectedSubject;
             else if (subject != detectedSubject) break; // 不同 subject 引用，放弃
 
+            // guard 条件会产生嵌套 ConditionalExpr 作为 thenExpr，此时不能优化为 switch
+            if (ce.getThenExpr() instanceof ConditionalExpr) break;
+
             for (Object key : keys) {
                 switchCases.add(new Object[]{key, ce.getThenExpr()});
             }

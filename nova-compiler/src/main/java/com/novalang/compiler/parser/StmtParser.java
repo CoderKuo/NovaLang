@@ -285,6 +285,12 @@ class StmtParser {
             conditions.add(parseWhenCondition());
         } while (parser.match(COMMA));
 
+        // Guard condition: is Type if expr -> ...
+        Expression guardExpr = null;
+        if (parser.match(KW_IF)) {
+            guardExpr = parser.parseExpression();
+        }
+
         parser.expect(ARROW, "Expected '->'");
 
         Statement body;
@@ -294,7 +300,7 @@ class StmtParser {
             body = parseExpressionStmt();
         }
 
-        return new WhenBranch(loc, conditions, body);
+        return new WhenBranch(loc, conditions, guardExpr, body);
     }
 
     WhenBranch.WhenCondition parseWhenCondition() {

@@ -740,7 +740,15 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             WhenBranch branch = branches.get(i);
             Expression cond = lowerWhenConditions(branch.getConditions(), subjectVar, loc, ctx);
             Statement body = lowerStmt(branch.getBody(), ctx);
-            elsePart = new IfStmt(branch.getLocation(), cond, null, body, elsePart);
+            if (branch.getGuardExpr() != null) {
+                // Guard condition: AND 合并条件和 guard
+                Expression guard = lowerExpr(branch.getGuardExpr(), ctx);
+                cond = new BinaryExpr(loc, new PrimitiveType(PrimitiveType.Kind.BOOLEAN),
+                        cond, BinaryOp.AND, guard);
+                elsePart = new IfStmt(branch.getLocation(), cond, null, body, elsePart);
+            } else {
+                elsePart = new IfStmt(branch.getLocation(), cond, null, body, elsePart);
+            }
         }
         return elsePart;
     }
@@ -1155,14 +1163,18 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
     public AstNode visitWhenExpr(WhenExpr node, LoweringContext ctx) {
         SourceLocation loc = node.getLocation();
 
-        // 内联 subject 表达式，避免返回 Block（非 HirExpr 会导致 ClassCastException）
+        // 检测是否有 guard 分支
+        boolean hasGuard = false;
+        for (WhenBranch b : node.getBranches()) {
+            if (b.getGuardExpr() != null) { hasGuard = true; break; }
+        }
+
+        // 无 guard：用 ConditionalExpr 链（高效内联）
         Expression subjectExpr = node.hasSubject() ? lowerExpr(node.getSubject(), ctx) : null;
 
-        // 用 ConditionalExpr 链表示
         Expression elseExpr = node.getElseExpr() != null
                 ? lowerExpr(node.getElseExpr(), ctx) : ctx.nullLiteral(loc);
 
-        // sealed class 穷举检查
         checkSealedExhaustiveness(node.getSubject(), node.getBranches(),
                 node.getElseExpr() != null, loc);
 
@@ -1170,7 +1182,21 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             WhenBranch branch = node.getBranches().get(i);
             Expression cond = lowerWhenConditionsInline(branch.getConditions(), subjectExpr, loc, ctx);
             Expression bodyExpr = lowerBranchBodyAsExpr(branch.getBody(), ctx);
-            elseExpr = new ConditionalExpr(branch.getLocation(), cond, bodyExpr, elseExpr);
+            if (branch.getGuardExpr() != null) {
+                Expression guard = lowerExpr(branch.getGuardExpr(), ctx);
+                if (subjectExpr != null) {
+                    // 有 subject: 用嵌套 ConditionalExpr 确保短路（is Type if guard 安全）
+                    Expression inner = new ConditionalExpr(branch.getLocation(), guard, bodyExpr, elseExpr);
+                    elseExpr = new ConditionalExpr(branch.getLocation(), cond, inner, elseExpr);
+                } else {
+                    // 无 subject: 用 AND 合并（条件都是布尔表达式，无类型安全短路需求）
+                    Expression combined = new BinaryExpr(loc, new PrimitiveType(PrimitiveType.Kind.BOOLEAN),
+                            cond, BinaryOp.AND, guard);
+                    elseExpr = new ConditionalExpr(branch.getLocation(), combined, bodyExpr, elseExpr);
+                }
+            } else {
+                elseExpr = new ConditionalExpr(branch.getLocation(), cond, bodyExpr, elseExpr);
+            }
         }
         return elseExpr;
     }
