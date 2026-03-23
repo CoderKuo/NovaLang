@@ -91,15 +91,9 @@ public final class SamAdapter {
                         if ("equals".equals(method.getName())) return proxy == args[0];
                         return method.invoke(lambda, args);
                     }
-                    // 默认方法直接调用
+                    // 默认方法直接调用（Java 8/9+ 兼容）
                     if (method.isDefault()) {
-                        return java.lang.invoke.MethodHandles.privateLookupIn(interfaceClass,
-                                        java.lang.invoke.MethodHandles.lookup())
-                                .findSpecial(interfaceClass, method.getName(),
-                                        java.lang.invoke.MethodType.methodType(method.getReturnType(), method.getParameterTypes()),
-                                        interfaceClass)
-                                .bindTo(proxy)
-                                .invokeWithArguments(args);
+                        return DefaultMethodInvoker.invoke(interfaceClass, method, proxy, args);
                     }
                     // SAM 方法 → 调用 Nova lambda
                     Object result = invokeLambda(lambda, args);
@@ -231,5 +225,47 @@ public final class SamAdapter {
             }
         }
         throw new RuntimeException("Cannot invoke lambda with " + args.length + " args: " + lambda.getClass().getName());
+    }
+
+    /**
+     * 默认方法调用器（Java 8/9+ 兼容）。
+     * 在类加载时一次性检测 Java 版本，后续调用零反射开销。
+     */
+    static final class DefaultMethodInvoker {
+        private static final java.lang.reflect.Method PRIVATE_LOOKUP_IN; // Java 9+: MethodHandles.privateLookupIn
+        private static final java.lang.reflect.Constructor<java.lang.invoke.MethodHandles.Lookup> LOOKUP_CTOR; // Java 8 fallback
+
+        static {
+            java.lang.reflect.Method plm = null;
+            java.lang.reflect.Constructor<java.lang.invoke.MethodHandles.Lookup> ctor = null;
+            try {
+                plm = java.lang.invoke.MethodHandles.class.getMethod(
+                        "privateLookupIn", Class.class, java.lang.invoke.MethodHandles.Lookup.class);
+            } catch (NoSuchMethodException e) {
+                try {
+                    ctor = java.lang.invoke.MethodHandles.Lookup.class.getDeclaredConstructor(Class.class);
+                    ctor.setAccessible(true);
+                } catch (Exception ignored) {}
+            }
+            PRIVATE_LOOKUP_IN = plm;
+            LOOKUP_CTOR = ctor;
+        }
+
+        static Object invoke(Class<?> iface, Method method, Object proxy, Object[] args) throws Throwable {
+            java.lang.invoke.MethodHandles.Lookup lookup;
+            if (PRIVATE_LOOKUP_IN != null) {
+                lookup = (java.lang.invoke.MethodHandles.Lookup) PRIVATE_LOOKUP_IN.invoke(null,
+                        iface, java.lang.invoke.MethodHandles.lookup());
+            } else if (LOOKUP_CTOR != null) {
+                lookup = LOOKUP_CTOR.newInstance(iface);
+            } else {
+                throw new UnsupportedOperationException("Cannot invoke default method on this JVM");
+            }
+            return lookup.findSpecial(iface, method.getName(),
+                            java.lang.invoke.MethodType.methodType(method.getReturnType(), method.getParameterTypes()),
+                            iface)
+                    .bindTo(proxy)
+                    .invokeWithArguments(args);
+        }
     }
 }
