@@ -20,6 +20,7 @@
 - **`Result.getOrElse { }` / `Result.flatMap { }`** 方法
 - **`Enum.entries`** 属性（返回枚举条目列表）
 - **Reflect API**：`field.isMutable`、`method.parameters` 属性
+- **`data object`**：`@data object Error` 自动生成一致的 `toString`（返回纯类名），常与 `sealed interface` 配合表示无数据状态分支
 
 ### 修复
 - 多层继承 `super` 调用导致 StackOverflowError

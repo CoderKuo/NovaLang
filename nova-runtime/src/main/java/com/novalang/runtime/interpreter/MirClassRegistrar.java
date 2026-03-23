@@ -294,9 +294,10 @@ final class MirClassRegistrar {
             novaClass.setSealed(true);
         }
 
-        // data class 标志
+        // data class / data object 标志
         if (cls.hasAnnotation("data")) {
             novaClass.setData(true);
+            boolean foundInit = false;
             for (MirFunction method : cls.getMethods()) {
                 if (SPECIAL_INIT.equals(method.getName()) && !method.hasDelegation()) {
                     List<String> fieldOrder = new ArrayList<>();
@@ -304,8 +305,13 @@ final class MirClassRegistrar {
                         fieldOrder.add(p.getName());
                     }
                     novaClass.setDataFieldOrder(fieldOrder);
+                    foundInit = true;
                     break;
                 }
+            }
+            // data object: 无构造器参数，设置空字段顺序
+            if (!foundInit) {
+                novaClass.setDataFieldOrder(new ArrayList<String>());
             }
         }
 

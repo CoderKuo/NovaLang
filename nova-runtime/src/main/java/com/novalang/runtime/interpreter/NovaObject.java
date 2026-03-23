@@ -67,6 +67,13 @@ public final class NovaObject extends AbstractNovaValue {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
+
+        // Data object: 无字段时只输出类名（Kotlin data object 语义）
+        if (novaClass.isData() && novaClass.getDataFieldOrder() != null
+                && novaClass.getDataFieldOrder().isEmpty()) {
+            return novaClass.getName();
+        }
+
         sb.append(novaClass.getName()).append("(");
 
         // Data class: 按构造器参数顺序输出，字符串不加引号（Kotlin 风格）
