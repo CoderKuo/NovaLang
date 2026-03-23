@@ -243,6 +243,8 @@ val first = list?[0]
 | [Standard Library](docs/文档/标准库模块.md) | Built-in modules |
 | [Reflection API](docs/文档/反射API.md) | Runtime type introspection |
 | [Annotation System](docs/文档/注解系统.md) | Custom annotations |
+| [Syntax Reference](docs/文档/语法文档.md) | Language syntax with examples |
+| [Changelog](CHANGELOG.md) | Version history & release notes |
 
 ---
 
