@@ -7,14 +7,14 @@ import com.novalang.runtime.types.NovaClass;
 import java.util.*;
 
 /**
- * 铏氭柟娉曞垎娲惧櫒銆?
+ * 虚方法分派器。
  *
- * <p>澶勭悊 INVOKE_VIRTUAL / INVOKE_INTERFACE / INVOKE_SPECIAL 鎸囦护涓?
- * 瀹為檯鐨勬柟娉曟煡鎵句笌璋冪敤閾撅紝浠?MirCallDispatcher 鎷嗗垎鑰屾潵銆?/p>
+ * <p>处理 INVOKE_VIRTUAL / INVOKE_INTERFACE / INVOKE_SPECIAL 指令中
+ * 实际的方法查找与调用链，从 MirCallDispatcher 拆分而来。</p>
  */
 final class VirtualMethodDispatcher {
 
-    // ===== JVM 绫诲悕 =====
+    // ===== JVM 类名 =====
     private static final String JAVA_LINKED_HASH_SET = "java/util/LinkedHashSet";
     private static final String MARKER_SUPER = "$super$";
     private static final String MARKER_LAMBDA = "$Lambda$";
@@ -40,7 +40,7 @@ final class VirtualMethodDispatcher {
         );
     }
 
-    // ============ 铏氭柟娉曞垎娲句富閾?============
+    // ============ 虚方法分派主链 ============
 
     NovaValue invokeVirtualMethod(NovaValue receiver, String methodName,
                                    String owner, List<NovaValue> args) {
@@ -140,10 +140,10 @@ final class VirtualMethodDispatcher {
         return tryGenericFallback(call.receiver, call.methodName, call.args);
     }
 
-    /** 澶勭悊甯﹀懡鍚嶅弬鏁扮殑鏂规硶璋冪敤 */
+    /** 处理带命名参数的方法调用 */
     NovaValue invokeWithNamedArgs(NovaValue receiver, String methodName,
                                    String owner, List<NovaValue> allArgs, String namedInfo) {
-        // namedInfo 鏍煎紡: "named:positionalCount:key1,key2"
+        // namedInfo 格式: "named:positionalCount:key1,key2"
         String[] parts = namedInfo.split(":", 3);
         int positionalCount = Integer.parseInt(parts[1]);
         String[] namedKeys = parts.length > 2 && !parts[2].isEmpty() ? parts[2].split(",") : new String[0];
@@ -154,7 +154,7 @@ final class VirtualMethodDispatcher {
             namedArgs.put(namedKeys[i], allArgs.get(positionalCount + i));
         }
 
-        // 瑙ｆ瀽鐩爣鏂规硶
+        // 解析目标方法
         NovaValue callable = resolver.resolveMemberOnValue(receiver, methodName, null);
         if (callable instanceof NovaCallable) {
             NovaCallable func = (NovaCallable) callable;
@@ -162,16 +162,16 @@ final class VirtualMethodDispatcher {
                 return func.callWithNamed(interp, positionalArgs, namedArgs);
             }
         }
-        // fallback: 蹇界暐鍛藉悕鍙傛暟锛屼娇鐢ㄥ叏閮ㄥ弬鏁颁綔涓轰綅缃弬鏁?
+        // fallback: 忽略命名参数，使用全部参数作为位置参数
         return invokeVirtualMethod(receiver, methodName, owner, allArgs);
     }
 
-    // ============ 鎸夋帴鏀惰€呯被鍨嬪垎娲?============
+    // ============ 按接收者类型分派 ============
 
-    /** NovaExternalObject: 瀹夊叏绛栫暐妫€鏌?+ PrintStream/Iterator/Java 鍙嶅皠 */
+    /** NovaExternalObject: 安全策略检查 + PrintStream/Iterator/Java 反射 */
     private NovaValue invokeOnExternal(NovaExternalObject receiver, String methodName, List<NovaValue> args) {
         Object javaObj = receiver.toJavaValue();
-        // Iterator/PrintStream 鏄瑷€鍩虹璁炬柦锛屽湪瀹夊叏绛栫暐妫€鏌ヤ箣鍓嶆斁琛?
+        // Iterator/PrintStream 是语言基础设施，在安全策略检查之前放行
         if (javaObj instanceof java.util.Iterator) {
             java.util.Iterator<?> it = (java.util.Iterator<?>) javaObj;
             if ("hasNext".equals(methodName)) return NovaBoolean.of(it.hasNext());
@@ -198,7 +198,7 @@ final class VirtualMethodDispatcher {
                 return NovaNull.UNIT;
             }
         }
-        // 瀹夊叏绛栫暐妫€鏌ワ紙瀵归潪鍩虹璁炬柦鐨?Java 鏂规硶璋冪敤锛?
+        // 安全策略检查（对非基础设施的 Java 方法调用）
         if (javaObj != null) {
             String className = javaObj.getClass().getName();
             if (!interp.getSecurityPolicy().isMethodAllowed(className, methodName)) {
@@ -211,7 +211,7 @@ final class VirtualMethodDispatcher {
         return null;
     }
 
-    /** NovaClass: 鏋氫妇闈欐€佹柟娉?/ 鍗曚緥濮旀墭 / 闈欐€佹柟娉?*/
+    /** NovaClass: 枚举静态方法 / 单例委托 / 静态方法 */
     private NovaValue invokeOnClass(NovaClass cls, String methodName, String owner, List<NovaValue> args) {
         NovaValue enumVal = interp.getEnvironment().tryGet(cls.getName());
         if (enumVal instanceof NovaEnum) {
@@ -232,7 +232,7 @@ final class VirtualMethodDispatcher {
         return null;
     }
 
-    /** NovaResult 鎴愬憳 + 闈?Result 鐨?isErr/isOk 鍥為€€ */
+    /** NovaResult 成员 + 非 Result 的 isErr/isOk 回退 */
     private NovaValue tryResultProtocol(NovaValue receiver, String methodName, List<NovaValue> args) {
         if (receiver instanceof NovaResult) {
             String resolverName = methodName;
@@ -252,14 +252,14 @@ final class VirtualMethodDispatcher {
         return null;
     }
 
-    /** Iterator 鍗忚: iterator() / hasNext() / next() */
+    /** Iterator 协议: iterator() / hasNext() / next() */
     private NovaValue tryIteratorProtocol(NovaValue receiver, String methodName) {
         if ("iterator".equals(methodName)) {
-            // NovaMap 浼樺厛妫€鏌ヨ嚜瀹氫箟 iterator 鏂规硶锛堝 Channel 鐨勮凯浠ｅ櫒锛?
+            // NovaMap 优先检查自定义 iterator 方法（如 Channel 的迭代器）
             if (receiver instanceof NovaMap) {
                 NovaValue entry = ((NovaMap) receiver).get(NovaString.of("iterator"));
                 if (entry instanceof NovaCallable) return ((NovaCallable) entry).call(interp, java.util.Collections.emptyList());
-                // 鏃犺嚜瀹氫箟 iterator 鈫?璧?Iterable 榛樿璺緞
+                // 无自定义 iterator → 走 Iterable 默认路径
             }
             if (receiver instanceof Iterable) {
                 return new NovaExternalObject(((Iterable<?>) receiver).iterator());
@@ -289,7 +289,7 @@ final class VirtualMethodDispatcher {
         return null;
     }
 
-    /** NovaEnumEntry: name/ordinal + 鏂规硶璋冪敤 */
+    /** NovaEnumEntry: name/ordinal + 方法调用 */
     private NovaValue invokeOnEnumEntry(NovaEnumEntry entry, String methodName, List<NovaValue> args) {
         if ("name".equals(methodName)) return NovaString.of(entry.name());
         if ("ordinal".equals(methodName)) return NovaInt.of(entry.ordinal());
@@ -337,9 +337,9 @@ final class VirtualMethodDispatcher {
         throw new NovaRuntimeException("super method '" + methodName + "' not found");
     }
 
-    /** NovaObject: 鍙鎬ф鏌?+ 鏂规硶鏌ユ壘 */
+    /** NovaObject: 可见性检查 + 方法查找 */
     private NovaValue tryInvokeOnObject(NovaObject obj, String methodName, String owner, List<NovaValue> args) {
-        // <init> 璋冪敤锛堟绾ф瀯閫犲櫒濮旀墭涓绘瀯閫犲櫒锛?
+        // <init> 调用（次级构造器委托主构造器）
         if ("<init>".equals(methodName)) {
             for (NovaCallable ctor : obj.getNovaClass().getHirConstructors()) {
                 if (ctor.getArity() == args.size() || ctor.getArity() == -1) {
@@ -353,9 +353,9 @@ final class VirtualMethodDispatcher {
         return null;
     }
 
-    /** 鐗规畩绫诲瀷: Set/List/Map 瀛楅潰閲忔瀯寤恒€丯ovaFuture銆乮nvoke銆佷綔鐢ㄥ煙鍑芥暟 */
+    /** 特殊类型: Set/List/Map 字面量构建、NovaFuture、invoke、作用域函数 */
     private NovaValue trySpecialTypes(NovaValue receiver, String methodName, String owner, List<NovaValue> args) {
-        // Set 鎿嶄綔
+        // Set 操作
         if (receiver instanceof NovaList && JAVA_LINKED_HASH_SET.equals(owner) && "add".equals(methodName)) {
             NovaList set = (NovaList) receiver;
             if (!set.contains(args.get(0))) set.add(args.get(0));
@@ -383,7 +383,7 @@ final class VirtualMethodDispatcher {
             if ("isCancelled".equals(methodName)) return NovaBoolean.of(fut.isCancelled());
             if ("getWithTimeout".equals(methodName) && args.size() == 1) return fut.getWithTimeout(interp, args.get(0).asLong());
         }
-        // NovaScope 鈥?缁撴瀯鍖栧苟鍙戜綔鐢ㄥ煙
+        // NovaScope — 结构化并发作用域
         if (receiver instanceof NovaScope) {
             NovaScope scope = (NovaScope) receiver;
             switch (methodName) {
@@ -394,7 +394,7 @@ final class VirtualMethodDispatcher {
                 case "isCancelled": return NovaBoolean.of(scope.isCancelled());
             }
         }
-        // NovaDeferred 鈥?async 杩斿洖鍊?
+        // NovaDeferred — async 返回值
         if (receiver instanceof NovaDeferred) {
             NovaDeferred d = (NovaDeferred) receiver;
             switch (methodName) {
@@ -404,7 +404,7 @@ final class VirtualMethodDispatcher {
                 case "isCancelled": return NovaBoolean.of(d.isCancelled());
             }
         }
-        // NovaJob 鈥?launch 杩斿洖鍊?
+        // NovaJob — launch 返回值
         if (receiver instanceof NovaJob) {
             NovaJob j = (NovaJob) receiver;
             switch (methodName) {
@@ -415,7 +415,7 @@ final class VirtualMethodDispatcher {
                 case "isCancelled": return NovaBoolean.of(j.isCancelled());
             }
         }
-        // NovaTask 鈥?schedule/scheduleRepeat 杩斿洖鍊?
+        // NovaTask — schedule/scheduleRepeat 返回值
         if (receiver instanceof NovaTask) {
             NovaTask t = (NovaTask) receiver;
             switch (methodName) {
@@ -429,7 +429,7 @@ final class VirtualMethodDispatcher {
             NovaCallable invokable = dispatcher.extractCallable(receiver);
             if (invokable != null) return invokable.call(interp, args);
         }
-        // 浣滅敤鍩熷嚱鏁?
+        // 作用域函数
         if (args.size() == 1) {
             NovaCallable lambda = dispatcher.extractCallable(args.get(0));
             if (lambda != null) {
@@ -445,7 +445,7 @@ final class VirtualMethodDispatcher {
         return null;
     }
 
-    /** 閫氱敤鍥為€€: 鎵╁睍鍑芥暟 鈫?stdlib 鈫?MemberResolver 鈫?JavaBean getter */
+    /** 通用回退: 扩展函数 → stdlib → MemberResolver → JavaBean getter */
     private NovaValue tryGenericFallback(NovaValue receiver, String methodName, List<NovaValue> args) {
         NovaCallable userExt = interp.findExtension(receiver, methodName);
         if (userExt != null) return dispatcher.bindAndExecute(receiver, userExt, args);

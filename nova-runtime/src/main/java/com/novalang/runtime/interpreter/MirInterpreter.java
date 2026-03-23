@@ -9,30 +9,30 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * MIR 瀛楄妭鐮佽В閲婂櫒銆?
+ * MIR 字节码解释器。
  *
- * <p>鐩存帴瑙ｉ噴鎵ц MIR 鎸囦护锛坵hile + switch 寰幆锛夛紝鏇夸唬 HirEvaluator 鐨勬爲閬嶅巻妯″瀷銆?
- * 澶嶇敤鐜版湁 Interpreter 鐨勫叏灞€鐘舵€佸拰 MemberResolver 杩涜鎴愬憳瑙ｆ瀽銆?/p>
+ * <p>直接解释执行 MIR 指令（while + switch 循环），替代 HirEvaluator 的树遍历模型。
+ * 复用现有 Interpreter 的全局状态和 MemberResolver 进行成员解析。</p>
  */
 final class MirInterpreter {
 
-    // ===== MIR 鐗规畩鏍囪 =====
+    // ===== MIR 特殊标记 =====
     private static final String MARKER_LAMBDA = "$Lambda$";
     private static final String MARKER_METHOD_REF = "$MethodRef$";
 
-    // ===== 鐗规畩鏂规硶鍚?=====
+    // ===== 特殊方法名 =====
     private static final String SPECIAL_CLINIT = "<clinit>";
 
-    // ===== JVM 绫诲悕 =====
+    // ===== JVM 类名 =====
     private static final String JAVA_ARRAY_LIST = "java/util/ArrayList";
     private static final String JAVA_HASH_MAP = "java/util/HashMap";
     private static final String JAVA_LINKED_HASH_SET = "java/util/LinkedHashSet";
     private static final String JAVA_SYSTEM = "java/lang/System";
 
-    /** GET_STATIC 缂撳瓨鍝ㄥ叺锛氳〃绀哄凡瑙ｆ瀽浣嗗瓧娈?绫讳笉瀛樺湪 */
+    /** GET_STATIC 缓存哨兵：表示已解析但字段/类不存在 */
     private static final Object STATIC_FIELD_MISS = new Object();
 
-    /** JVM 鍐呴儴鍚?鈫?Java 鐐瑰垎鍚? "java/lang/String" 鈫?"java.lang.String" */
+    /** JVM 内部名 → Java 点分名: "java/lang/String" → "java.lang.String" */
     private static String toJavaDotName(String internalName) {
         return internalName.replace("/", ".");
     }
@@ -40,27 +40,27 @@ final class MirInterpreter {
     final Interpreter interp;
     final MemberResolver resolver;
 
-    /** reified 绫诲瀷鍙傛暟浼犻€掞紙$PipeCall 鈫?executeFunction锛?*/
+    /** reified 类型参数传递（$PipeCall → executeFunction） */
     String[] pendingReifiedTypeArgs;
 
-    /** MirFrame 瀵硅薄姹狅紙閬垮厤閫掑綊璋冪敤鏃堕噸澶嶅垎閰嶆暟缁勶級 */
+    /** MirFrame 对象池（避免递归调用时重复分配数组） */
     private final MirFrame[] framePool = new MirFrame[32];
     private int framePoolTop = 0;
 
-    /** 缂撳瓨鐨勬渶澶ч€掑綊娣卞害锛堥伩鍏嶆瘡娆¤皟鐢ㄨ蛋铏氭柟娉曢摼锛?*/
+    /** 缓存的最大递归深度（避免每次调用走虚方法链） */
     private final int cachedMaxRecursionDepth;
 
     /** executeFrame 异常路径设置的 TCE 计数，供 fastCall 读取 */
     int lastTceCount;
 
-    /** 妯″潡绾ф敞鍐岋細鍑芥暟鍚?鈫?MirCallable */
+    /** 模块级注册：函数名 → MirCallable */
     final Map<String, MirCallable> mirFunctions = new HashMap<>();
-    /** 妯″潡绾ф敞鍐岋細绫诲悕 鈫?MirClassInfo */
+    /** 模块级注册：类名 → MirClassInfo */
     final Map<String, MirClassInfo> mirClasses = new HashMap<>();
 
-    /** 绫绘敞鍐屽櫒 */
+    /** 类注册器 */
     final MirClassRegistrar classRegistrar;
-    /** 鏂规硶鍒嗘淳鍣?*/
+    /** 方法分派器 */
     final MirCallDispatcher callDispatcher;
     private final Map<String, NovaCallFrame> emptyCallFrameCache = new HashMap<>();
     private static final Object NO_TAIL_INT_LOOP_PLAN = new Object();
@@ -170,7 +170,7 @@ final class MirInterpreter {
         }
     }
 
-    /** MIR 绫荤殑娉ㄥ唽淇℃伅 */
+    /** MIR 类的注册信息 */
     static final class MirClassInfo {
         final MirClass mirClass;
         final NovaClass novaClass;
@@ -189,8 +189,8 @@ final class MirInterpreter {
     }
 
     /**
-     * 瀛?MirInterpreter锛坅sync 绾跨▼鐢級銆?
-     * 鍏变韩鐖剁骇鐨勫嚱鏁?绫绘敞鍐岃〃锛屾嫢鏈夌嫭绔嬬殑鍙彉鎵ц鐘舵€侊紙callStack銆乧allDepth 绛夛級銆?
+     * 子 MirInterpreter（async 线程用）。
+     * 共享父级的函数/类注册表，拥有独立的可变执行状态（callStack、callDepth 等）。
      */
     MirInterpreter(Interpreter childInterp, MirInterpreter parent) {
         this.interp = childInterp;
@@ -204,11 +204,11 @@ final class MirInterpreter {
     }
 
     /**
-     * 閲嶇疆妯″潡绾ф敞鍐岀姸鎬侊紙姣忔 executeModule 鍓嶈皟鐢級銆?
+     * 重置模块级注册状态（每次 executeModule 前调用）。
      */
     void resetState() {
         mirFunctions.clear();
-        // 淇濈暀 lambda 鍖垮悕绫伙紙璺?evalRepl 璋冪敤鐨勯棴鍖呬粛闇€瑕佸畠浠級
+        // 保留 lambda 匿名类（跨 evalRepl 调用的闭包仍需要它们）
         mirClasses.entrySet().removeIf(e -> !e.getKey().contains(MARKER_LAMBDA));
         // moduleStaticFields 跨 eval 持久化（REPL 模式下顶层变量跨调用共享）
         resetExecutionState();
@@ -235,12 +235,12 @@ final class MirInterpreter {
         return STRING_ACCUM_LOOP_PLAN_HITS.get();
     }
 
-    /** 杩斿洖鎵€鏈夊凡娉ㄥ唽鐨?Nova 绫?鎺ュ彛鍚嶇О锛堜緵涓嬫 evalRepl 缂栬瘧浣跨敤锛?*/
+    /** 返回所有已注册的 Nova 类/接口名称（供下次 evalRepl 编译使用） */
     Set<String> getKnownClassNames() {
         return classRegistrar.getKnownClassNames();
     }
 
-    /** 杩斿洖宸茬煡鐨勬帴鍙ｅ悕锛堜緵璺?evalRepl 鐨?HirToMirLowering 璇嗗埆鎺ュ彛绫诲瀷锛?*/
+    /** 返回已知的接口名（供跨 evalRepl 的 HirToMirLowering 识别接口类型） */
     Set<String> getKnownInterfaceNames() {
         return classRegistrar.getKnownInterfaceNames();
     }
@@ -254,7 +254,7 @@ final class MirInterpreter {
         return frame;
     }
 
-    // ============ 妯″潡鎵ц ============
+    // ============ 模块执行 ============
 
     private static final byte EXPORT_MUT_DYNAMIC = 0;
     private static final byte EXPORT_MUT_VAL = 1;
@@ -540,7 +540,7 @@ final class MirInterpreter {
         return executePreparedModule(prepareModule(module));
     }
 
-    // ============ 甯ф睜鍖?============
+    // ============ 帧池化 ============
 
     private MirFrame acquireFrame(MirFunction func) {
         int needed = func.getFrameSize();
@@ -561,13 +561,13 @@ final class MirInterpreter {
     }
 
     /**
-     * 蹇€熻皟鐢ㄨ矾寰勶細璺宠繃 MirCallable.callDirect 鐨勬墍鏈夐棿鎺ュ紑閿€銆?
-     * 浠呯敤浜庢棤 this/鏃犳崟鑾?闈?init 鐨勭畝鍗曞嚱鏁帮紙濡傞《灞傚嚱鏁伴€掑綊锛夈€?
+     * 快速调用路径：跳过 MirCallable.callDirect 的所有间接开销。
+     * 仅用于无 this/无捕获/非 init 的简单函数（如顶层函数递归）。
      * <ul>
-     *   <li>鐩存帴浠庤皟鐢ㄨ€呭抚澶嶅埗鍙傛暟锛堜紶鎾?RAW_INT_MARKER锛岄浂瑁呯锛?/li>
-     *   <li>甯ф睜鍖栵紙娑堥櫎 NovaValue[] + long[] 鍒嗛厤锛?/li>
-     *   <li>callStack 杞婚噺鎺ㄥ叆锛堢┖鍙傚抚锛屽紓甯告椂鎯版€цˉ鍏呭弬鏁板€硷級</li>
-     *   <li>浣跨敤缂撳瓨鐨?maxRecursionDepth锛堥伩鍏嶈櫄鏂规硶閾撅級</li>
+     *   <li>直接从调用者帧复制参数（传播 RAW_INT_MARKER，零装箱）</li>
+     *   <li>帧池化（消除 NovaValue[] + long[] 分配）</li>
+     *   <li>callStack 轻量推入（空参帧，异常时惰性补充参数值）</li>
+     *   <li>使用缓存的 maxRecursionDepth（避免虚方法链）</li>
      * </ul>
      */
     NovaValue fastCall(MirFrame callerFrame, MirFunction targetFunc, MirInst inst) {
@@ -643,13 +643,13 @@ final class MirInterpreter {
         NovaValue exec(List<NovaValue> elems, int size, BatchCtx c);
     }
 
-    /** 甯у鐢ㄨ皟鐢ㄤ笂涓嬫枃锛氬皝瑁?lambda 璋冪敤鐨勫簳灞傜粏鑺?*/
+    /** 帧复用调用上下文：封装 lambda 调用的底层细节 */
     static final class BatchCtx {
         private final MirFrame frame;
         private final int slot;
         private final MirInterpreter mi;
         final NovaValue extraArg;
-        /** lambda 鐨勫疄闄呭弬鏁版暟閲忥紙涓嶅惈 this锛夛紝鐢ㄤ簬 Map 鍙屽弬鍒嗘淳 */
+        /** lambda 的实际参数数量（不含 this），用于 Map 双参分派 */
         final int lambdaParamCount;
 
         BatchCtx(MirFrame frame, int slot, MirInterpreter mi, NovaValue extraArg, int lambdaParamCount) {
@@ -660,7 +660,7 @@ final class MirInterpreter {
             this.lambdaParamCount = lambdaParamCount;
         }
 
-        /** 鍗曞弬璋冪敤 */
+        /** 单参调用 */
         NovaValue call1(NovaValue arg) {
             frame.locals[slot] = arg;
             frame.currentBlockId = 0;
@@ -668,7 +668,7 @@ final class MirInterpreter {
             return mi.executeFrame(frame, -1);
         }
 
-        /** 鍙屽弬璋冪敤 */
+        /** 双参调用 */
         NovaValue call2(NovaValue arg1, NovaValue arg2) {
             frame.locals[slot] = arg1;
             frame.locals[slot + 1] = arg2;
@@ -682,7 +682,7 @@ final class MirInterpreter {
         }
     }
 
-    /** 宸叉敞鍐岀殑 NovaList 鎵归噺鎿嶄綔锛堟坊鍔犳柊 HOF 鍙渶鍦ㄦ娉ㄥ唽涓€琛岋級 */
+    /** 已注册的 NovaList 批量操作（添加新 HOF 只需在此注册一行） */
     private static final Map<String, BatchOp> BATCH_OPS = new HashMap<>();
     static { registerBatchOps(); }
 
@@ -852,12 +852,12 @@ final class MirInterpreter {
         });
     }
 
-    // ==================== Map 鎵归噺鎿嶄綔 ====================
+    // ==================== Map 批量操作 ====================
 
-    /** Map 鎵归噺鎿嶄綔鍑芥暟寮忔帴鍙ｏ細鐩存帴鎿嶄綔 NovaMap锛屽悇 op 鑷杩唬 */
+    /** Map 批量操作函数式接口：直接操作 NovaMap，各 op 自行迭代 */
     @FunctionalInterface
     interface MapBatchOp {
-        /** @return 缁撴灉锛屾垨 null 琛ㄧず姝?op 涓嶉€傜敤锛堜緥濡傚弬鏁版暟閲忎笉鍖归厤锛夆啋 鍥為€€鍒?stdlib */
+        /** @return 结果，或 null 表示此 op 不适用（例如参数数量不匹配）→ 回退到 stdlib */
         NovaValue exec(NovaMap map, BatchCtx c);
     }
 
@@ -866,7 +866,7 @@ final class MirInterpreter {
 
     @SuppressWarnings("unchecked")
     private static void registerMapBatchOps() {
-        // ---- 鍙屽弬鏂规硶锛?-param only, 1-param 鍥為€€鍒?stdlib bridge 澶勭悊 entry/implicit-it锛?----
+        // ---- 双参方法（2-param only, 1-param 回退到 stdlib bridge 处理 entry/implicit-it） ----
         MAP_BATCH_OPS.put("forEach", (map, c) -> {
             if (c.lambdaParamCount < 2) return null;
             for (Map.Entry<NovaValue, NovaValue> e : map.getEntries().entrySet()) {
@@ -939,7 +939,7 @@ final class MirInterpreter {
                 r.put(e.getKey(), c.call2(e.getKey(), e.getValue()));
             return new NovaMap(r);
         });
-        // ---- 鍗曞弬鏂规硶锛堜换鎰忓弬鏁版暟閲忓潎鍙級 ----
+        // ---- 单参方法（任意参数数量均可） ----
         MAP_BATCH_OPS.put("filterKeys", (map, c) -> {
             Map<NovaValue, NovaValue> r = new java.util.LinkedHashMap<>();
             for (Map.Entry<NovaValue, NovaValue> e : map.getEntries().entrySet())
@@ -955,11 +955,11 @@ final class MirInterpreter {
     }
 
     /**
-     * NovaMap 楂橀樁鏂规硶甯у鐢ㄦ壒閲忔墽琛屻€?
-     * <p>鍙屽弬鏂规硶锛坒orEach/filter/map/...锛変粎澶勭悊 2-param lambda锛?-param 鍥為€€鍒?stdlib bridge銆?
-     * 鍗曞弬鏂规硶锛坒ilterKeys/filterValues锛夌洿鎺ュ鐞嗐€?
+     * NovaMap 高阶方法帧复用批量执行。
+     * <p>双参方法（forEach/filter/map/...）仅处理 2-param lambda，1-param 回退到 stdlib bridge。
+     * 单参方法（filterKeys/filterValues）直接处理。
      *
-     * @return 缁撴灉锛屾垨 null锛堟湭娉ㄥ唽/鍙傛暟涓嶅尮閰嶏級
+     * @return 结果，或 null（未注册/参数不匹配）
      */
     NovaValue batchExecMap(NovaMap map, String methodName, NovaValue extraArg, MirCallable lambda) {
         MapBatchOp op = MAP_BATCH_OPS.get(methodName);
@@ -992,11 +992,11 @@ final class MirInterpreter {
     }
 
     /**
-     * NovaList 楂橀樁鏂规硶甯у鐢ㄦ壒閲忔墽琛岋紙缁熶竴鍏ュ彛锛夈€?
-     * <p>鏍规嵁 BATCH_OPS 娉ㄥ唽琛ㄥ垎娲俱€傛坊鍔犳柊 HOF 鍙渶娉ㄥ唽涓€琛屻€?
+     * NovaList 高阶方法帧复用批量执行（统一入口）。
+     * <p>根据 BATCH_OPS 注册表分派。添加新 HOF 只需注册一行。
      *
-     * @param extraArg fold/reduce 鐨勫垵濮嬪€硷紝鍏朵粬鏂规硶浼?null
-     * @return 鎿嶄綔缁撴灉锛屾垨 null 濡傛灉 methodName 鏈敞鍐?
+     * @param extraArg fold/reduce 的初始值，其他方法传 null
+     * @return 操作结果，或 null 如果 methodName 未注册
      */
     NovaValue batchExec(NovaList list, String methodName, NovaValue extraArg, MirCallable lambda) {
         BatchOp op = BATCH_OPS.get(methodName);
@@ -1028,7 +1028,7 @@ final class MirInterpreter {
         }
     }
 
-    // ============ 鍑芥暟鎵ц ============
+    // ============ 函数执行 ============
 
     private NovaValue getMemoizedResult(MirFunction func, MemoKey key) {
         if (!func.isMemoized()) {
@@ -1136,12 +1136,12 @@ final class MirInterpreter {
         NovaValue cached = memoKey != null ? getMemoizedResult(func, memoKey) : null;
         if (cached != null) return cached;
         MirFrame frame = acquireFrame(func);
-        // 鍙傛暟缁戝畾锛氬墠 N 涓?locals = args
+        // 参数绑定：前 N 个 locals = args
         for (int i = 0; i < args.length && i < frame.locals.length; i++) {
             frame.locals[i] = args[i];
         }
         try {
-        // 缁戝畾 reified 绫诲瀷鍙傛暟鍒版爤甯?
+        // 绑定 reified 类型参数到栈帧
         if (pendingReifiedTypeArgs != null) {
             List<String> typeParams = func.getTypeParams();
             if (!typeParams.isEmpty()) {
@@ -1150,7 +1150,7 @@ final class MirInterpreter {
                     reifiedMap.put(typeParams.get(i), pendingReifiedTypeArgs[i]);
                 }
                 frame.reifiedTypes = reifiedMap;
-                // 缁戝畾 __reified_T 灞€閮ㄥ彉閲忥紙渚?T::class 寮曠敤浣跨敤锛?
+                // 绑定 __reified_T 局部变量（供 T::class 引用使用）
                 for (Map.Entry<String, String> entry : reifiedMap.entrySet()) {
                     String localName = "__reified_" + entry.getKey();
                     for (MirLocal local : func.getLocals()) {
@@ -1164,28 +1164,28 @@ final class MirInterpreter {
             pendingReifiedTypeArgs = null;
         }
 
-        // 娆＄骇鏋勯€犲櫒濮旀墭锛歞elegation 淇℃伅浣滀负鍏冩暟鎹瓨鍌ㄥ湪 MirFunction 涓?
+        // 次级构造器委托：delegation 信息作为元数据存储在 MirFunction 中
         if (func.hasDelegation()) {
-            // block 0 = delegation args 涓撶敤鍧楋紙鐢?lowerConstructor 閲嶆帓鍒?position 0锛?
-            // block 1+ = 鏋勯€犲櫒 body锛堝彲鑳戒负绌猴級
+            // block 0 = delegation args 专用块（由 lowerConstructor 重排到 position 0）
+            // block 1+ = 构造器 body（可能为空）
             List<BasicBlock> blocks = func.getBlocks();
             if (!blocks.isEmpty()) {
                 for (MirInst inst : blocks.get(0).getInstructions()) {
                     executeInst(frame, inst);
                 }
             }
-            // 璇诲彇濮旀墭鍙傛暟
+            // 读取委托参数
             int[] delegLocals = func.getDelegationArgLocals();
             NovaValue thisObj = frame.locals[0];
             NovaValue[] delegArgs = new NovaValue[delegLocals.length];
             for (int i = 0; i < delegLocals.length; i++) {
                 delegArgs[i] = delegLocals[i] < frame.locals.length ? frame.get(delegLocals[i]) : NovaNull.NULL;
             }
-            // 璋冪敤鐩爣鏋勯€犲櫒锛堜富鏋勯€犲櫒鎴栧叾浠栨绾ф瀯閫犲櫒锛?
+            // 调用目标构造器（主构造器或其他次级构造器）
             if (thisObj instanceof NovaObject) {
                 NovaClass cls = ((NovaObject) thisObj).getNovaClass();
                 NovaCallable ctor = cls.getConstructorByArity(delegArgs.length);
-                // 璺宠繃鑷韩锛堥伩鍏嶉€掑綊锛?
+                // 跳过自身（避免递归）
                 if (ctor instanceof MirCallable && ((MirCallable) ctor).getFunction() == func) {
                     ctor = null;
                     for (NovaCallable c : cls.getHirConstructors()) {
@@ -1205,16 +1205,16 @@ final class MirInterpreter {
                     }
                 }
             }
-            // 鎵ц濮旀墭鍚庣殑鏋勯€犲櫒 body锛坆lock 1+锛?
+            // 执行委托后的构造器 body（block 1+）
             if (blocks.size() > 1) {
                 executeFrame(frame, blocks.get(1).getId());
             }
             return thisObj;
         }
 
-        // 瓒呯被鏋勯€犲櫒璋冪敤锛歴uperInitArgLocals 浣滀负鍏冩暟鎹瓨鍌ㄥ湪 MirFunction 涓?
+        // 超类构造器调用：superInitArgLocals 作为元数据存储在 MirFunction 中
         if (func.hasSuperInitArgs()) {
-            // 鎵ц entry block 鐨?CONST 鎸囦护鏉ュ垵濮嬪寲鍚堟垚灞€閮ㄥ彉閲?
+            // 执行 entry block 的 CONST 指令来初始化合成局部变量
             List<BasicBlock> blocks = func.getBlocks();
             int[] superLocals = func.getSuperInitArgLocals();
             if (!blocks.isEmpty()) {
@@ -1246,8 +1246,8 @@ final class MirInterpreter {
                 superArgs.add(localIdx < frame.locals.length ? frame.get(localIdx) : NovaNull.NULL);
             }
             if (thisObj instanceof NovaObject) {
-                // 浣跨敤 MirFunction 涓婅褰曠殑瓒呯被鍚嶏紙鑰岄潪 thisObj.getNovaClass()锛夛紝
-                // 閬垮厤缁ф壙閾句腑 B鈫扐 鏌ユ壘鏃惰鐢ㄥ叿浣撶被 C 鐨勮秴绫诲鑷存棤闄愰€掑綊
+                // 使用 MirFunction 上记录的超类名（而非 thisObj.getNovaClass()），
+                // 避免继承链中 B→A 查找时误用具体类 C 的超类导致无限递归
                 NovaClass superclass = null;
                 String superName = func.getSuperClassName();
                 if (superName != null) {
@@ -1257,7 +1257,7 @@ final class MirInterpreter {
                     }
                 }
                 if (superclass == null) {
-                    // 鍥為€€锛氫粠杩愯鏃跺璞¤幏鍙栵紙浠呭湪鏃?superClassName 鍏冩暟鎹椂锛?
+                    // 回退：从运行时对象获取（仅在无 superClassName 元数据时）
                     superclass = ((NovaObject) thisObj).getNovaClass().getSuperclass();
                 }
                 if (superclass != null) {
@@ -1270,7 +1270,7 @@ final class MirInterpreter {
                     }
                 }
             }
-            // 缁х画鎵ц褰撳墠鏋勯€犲櫒浣擄紙SET_FIELD 绛夛級
+            // 继续执行当前构造器体（SET_FIELD 等）
         }
 
         NovaValue result = executeFrame(frame, -1);
@@ -1998,7 +1998,7 @@ final class MirInterpreter {
         BasicBlock[] blockArr = frame.function.getBlockArr();
         if (blockArr.length == 0) return NovaNull.UNIT;
 
-        // entry block = 鎸囧畾鐨勮捣濮嬪潡鎴栫涓€涓潡鐨?ID
+        // entry block = 指定的起始块或第一个块的 ID
         frame.currentBlockId = startBlockId >= 0 ? startBlockId
                 : frame.function.getBlocks().get(0).getId();
 
@@ -2009,13 +2009,13 @@ final class MirInterpreter {
                 ? resolveTailIntLoopPlan3(frame.function, blockArr) : null;
         StringAccumLoopPlan stringAccumLoopPlan = resolveStringAccumLoopPlan(frame.function);
 
-        int tceCount = 0;  // TCE 灏鹃€掑綊杞惊鐜殑杩唬璁℃暟
+        int tceCount = 0;  // TCE 尾递归转循环的迭代计数
         int prevBlockId = -1;
         while (true) {
             BasicBlock block = blockArr[frame.currentBlockId];
             MirInst[] insts = block.getInstArray();
 
-            // 鍥炶竟妫€娴嬶細璺宠浆鍒?ID <= 褰撳墠鍧楃殑鍧?鈫?寰幆杩唬锛屾鏌ュ畨鍏ㄩ檺鍒?
+            // 回边检测：跳转到 ID <= 当前块的块 → 循环迭代，检查安全限制
             if (frame.currentBlockId <= prevBlockId && interp.hasSecurityLimits) {
                 interp.checkLoopLimits();
             }
@@ -2043,7 +2043,7 @@ final class MirInterpreter {
                 if (stringAccumLoopPlan != null && frame.currentBlockId == stringAccumLoopPlan.headerBlockId) {
                     return executeStringAccumLoopFast(frame, stringAccumLoopPlan);
                 }
-                // 鎵ц鍧楀唴鎵€鏈夋寚浠わ紙鐑搷浣滅爜鍐呰仈锛屽噺灏戞柟娉曡皟鐢ㄥ紑閿€锛?
+                // 执行块内所有指令（热操作码内联，减少方法调用开销）
                 for (frame.pc = 0; frame.pc < insts.length; frame.pc++) {
                     MirInst inst = insts[frame.pc];
                     switch (inst.getOp()) {
@@ -2126,7 +2126,7 @@ final class MirInterpreter {
                     }
                 }
 
-                // 澶勭悊缁堟鎸囦护
+                // 处理终结指令
                 MirTerminator term = block.getTerminator();
                 if (term == null) {
                     return NovaNull.UNIT;
@@ -2150,7 +2150,7 @@ final class MirInterpreter {
                         if (stringAccumLoopPlan != null && targetId == stringAccumLoopPlan.headerBlockId) {
                             return executeStringAccumLoopFast(frame, stringAccumLoopPlan);
                         }
-                        // 绌块€忥細Goto 鐩爣涓虹┖鎸囦护鍧?+ Branch 鈫?鐩存帴璇勪及 Branch锛岀渷涓€娆″潡杞崲
+                        // 穿透：Goto 目标为空指令块 + Branch → 直接评估 Branch，省一次块转换
                         BasicBlock targetBlock = blockArr[targetId];
                         if (targetBlock.getInstArray().length == 0) {
                             MirTerminator tt = targetBlock.getTerminator();
@@ -2231,11 +2231,11 @@ final class MirInterpreter {
         }
     }
 
-    // ============ 鎸囦护鍒嗘淳 ============
+    // ============ 指令分派 ============
 
     private void executeInst(MirFrame frame, MirInst inst) {
         switch (inst.getOp()) {
-            // ===== 甯搁噺鍔犺浇 =====
+            // ===== 常量加载 =====
             case CONST_INT:
                 frame.rawLocals[inst.getDest()] = inst.extraInt;
                 frame.locals[inst.getDest()] = MirFrame.RAW_INT_MARKER;
@@ -2265,7 +2265,7 @@ final class MirInterpreter {
                 frame.locals[inst.getDest()] = NovaNull.NULL;
                 break;
 
-            // ===== 鍙橀噺 =====
+            // ===== 变量 =====
             case MOVE: {
                 int src = inst.operand(0);
                 int dest = inst.getDest();
@@ -2277,7 +2277,7 @@ final class MirInterpreter {
                 break;
             }
 
-            // ===== 绠楁湳/閫昏緫 =====
+            // ===== 算术/逻辑 =====
             case BINARY:
                 executeBinaryRaw(frame, inst);
                 break;
@@ -2285,7 +2285,7 @@ final class MirInterpreter {
                 executeUnary(frame, inst);
                 break;
 
-            // ===== 瀵硅薄绯荤粺 =====
+            // ===== 对象系统 =====
             case NEW_OBJECT:
                 executeNewObject(frame, inst);
                 break;
@@ -2302,7 +2302,7 @@ final class MirInterpreter {
                 executeSetStatic(frame, inst);
                 break;
 
-            // ===== 璋冪敤 =====
+            // ===== 调用 =====
             case INVOKE_VIRTUAL:
             case INVOKE_INTERFACE:
             case INVOKE_SPECIAL:
@@ -2312,7 +2312,7 @@ final class MirInterpreter {
                 callDispatcher.executeInvokeStatic(frame, inst);
                 break;
 
-            // ===== 闆嗗悎/鏁扮粍 =====
+            // ===== 集合/数组 =====
             case INDEX_GET:
                 executeIndexGet(frame, inst);
                 break;
@@ -2326,7 +2326,7 @@ final class MirInterpreter {
                 executeNewCollection(frame, inst);
                 break;
 
-            // ===== 绫诲瀷 =====
+            // ===== 类型 =====
             case TYPE_CHECK:
                 executeTypeCheck(frame, inst);
                 break;
@@ -2337,7 +2337,7 @@ final class MirInterpreter {
                 executeConstClass(frame, inst);
                 break;
 
-            // ===== 闂寘 =====
+            // ===== 闭包 =====
             case CLOSURE:
                 executeClosure(frame, inst);
                 break;
@@ -2351,9 +2351,9 @@ final class MirInterpreter {
     // ============ BINARY ============
 
     /**
-     * 鍙屾Ы BINARY 蹇€熻矾寰勶細涓や釜鎿嶄綔鏁板潎涓?RAW_INT_MARKER 鏃剁洿鎺ュ湪 rawLocals 涓?
-     * 鎵ц long 杩愮畻锛岀畻鏈粨鏋滃瓨鍥?rawLocals锛堜笉瑁呯锛夛紝姣旇緝缁撴灉瀛?NovaBoolean銆?
-     * 闈?raw 鎿嶄綔鏁板洖閫€鍒?executeBinary锛堥€氳繃 frame.get() 鑷姩鍏峰寲锛夈€?
+     * 双槽 BINARY 快速路径：两个操作数均为 RAW_INT_MARKER 时直接在 rawLocals 中
+     * 执行 long 运算，算术结果存回 rawLocals（不装箱），比较结果存 NovaBoolean。
+     * 非 raw 操作数回退到 executeBinary（通过 frame.get() 自动具化）。
      */
     private void executeBinaryRawFast(MirFrame frame, MirInst inst, NovaValue[] locals, long[] rawLocals) {
         int[] operands = inst.getOperands();
@@ -2470,7 +2470,7 @@ final class MirInterpreter {
                 default: break;
             }
         }
-        // 娣峰悎蹇€熻矾寰勶細涓€涓?raw + 涓€涓?NovaInt锛屾垨涓や釜 NovaInt 鈫?缁撴灉瀛?raw锛堥€嗚绠憋級
+        // 混合快速路径：一个 raw + 一个 NovaInt，或两个 NovaInt → 结果存 raw（逆装箱）
         long a, b;
         NovaValue lv = frame.locals[leftIdx], rv = frame.locals[rightIdx];
         if (lv == MirFrame.RAW_INT_MARKER) a = frame.rawLocals[leftIdx];
@@ -2511,7 +2511,7 @@ final class MirInterpreter {
         NovaValue right = frame.get(inst.operand(1));
         BinaryOp op = inst.extraAs();
 
-        // 蹇€熻矾寰勶細int + int
+        // 快速路径：int + int
         if (left instanceof NovaInt && right instanceof NovaInt) {
             int a = ((NovaInt) left).getValue(), b = ((NovaInt) right).getValue();
             NovaValue result;
@@ -2543,17 +2543,17 @@ final class MirInterpreter {
     }
 
     private NovaValue generalBinary(NovaValue left, NovaValue right, BinaryOp op) {
-        // 閫昏緫杩愮畻
+        // 逻辑运算
         if (op == BinaryOp.AND) return NovaBoolean.of(isTruthy(left) && isTruthy(right));
         if (op == BinaryOp.OR) return NovaBoolean.of(isTruthy(left) || isTruthy(right));
 
-        // 鐩哥瓑鎬ф瘮杈冿紙澶勭悊 null锛?
+        // 相等性比较（处理 null）
         if (op == BinaryOp.EQ) return NovaBoolean.of(novaEquals(left, right));
         if (op == BinaryOp.NE) return NovaBoolean.of(!novaEquals(left, right));
         if (op == BinaryOp.REF_EQ) return NovaBoolean.of(left == right);
         if (op == BinaryOp.REF_NE) return NovaBoolean.of(left != right);
 
-        // 绠楁湳杩愮畻 鈫?BinaryOps
+        // 算术运算 → BinaryOps
         switch (op) {
             case ADD: return BinaryOps.add(left, right, interp);
             case SUB: return BinaryOps.sub(left, right, interp);
@@ -2563,7 +2563,7 @@ final class MirInterpreter {
             default: break;
         }
 
-        // 姣旇緝杩愮畻 鈫?BinaryOps
+        // 比较运算 → BinaryOps
         if (op == BinaryOp.LT || op == BinaryOp.GT || op == BinaryOp.LE || op == BinaryOp.GE) {
             int cmp = BinaryOps.compare(left, right, interp);
             switch (op) {
@@ -2575,7 +2575,7 @@ final class MirInterpreter {
             }
         }
 
-        // 浣嶈繍绠?
+        // 位运算
         switch (op) {
             case BAND: return BinaryOps.bitwiseAnd(left, right);
             case BOR:  return BinaryOps.bitwiseOr(left, right);
@@ -2603,13 +2603,13 @@ final class MirInterpreter {
                 else if (operand instanceof NovaLong) result = NovaLong.of(-((NovaLong) operand).getValue());
                 else if (operand instanceof NovaFloat) result = NovaFloat.of(-((NovaFloat) operand).getValue());
                 else if (operand instanceof NovaObject) {
-                    // 灏濊瘯 unaryMinus 杩愮畻绗﹂噸杞?
+                    // 尝试 unaryMinus 运算符重载
                     NovaCallable method = ((NovaObject) operand).getMethod("unaryMinus");
                     if (method != null) {
                         result = method.call(interp, Collections.singletonList(operand));
                         break;
                     }
-                    // 灏濊瘯 unaryPlus锛圥OS 鎿嶄綔鐮佸鐢?NEG 鏃?extra 鍖哄垎锛?
+                    // 尝试 unaryPlus（POS 操作码复用 NEG 时 extra 区分）
                     throw new NovaRuntimeException("Cannot negate " + operand.getTypeName());
                 }
                 else throw new NovaRuntimeException("Cannot negate " + operand.getTypeName());
@@ -2768,10 +2768,10 @@ final class MirInterpreter {
     }
 
     private NovaValue createLambdaInstance(String lambdaClassName, MirFrame frame, int[] captureOps) {
-        // 鏌ユ壘 Lambda 鐨?MirClass锛堝湪 additionalClasses 涓敞鍐岋級
+        // 查找 Lambda 的 MirClass（在 additionalClasses 中注册）
         MirClassInfo lambdaInfo = mirClasses.get(lambdaClassName);
         if (lambdaInfo != null) {
-            // 鏌ユ壘 invoke 鏂规硶
+            // 查找 invoke 方法
             MirFunction invokeFunc = null;
             for (MirFunction method : lambdaInfo.mirClass.getMethods()) {
                 if ("invoke".equals(method.getName())) {
@@ -2780,7 +2780,7 @@ final class MirInterpreter {
                 }
             }
             if (invokeFunc != null) {
-                // 鏋勫缓鎹曡幏鍙橀噺瀛楁鏄犲皠锛堝瓧娈靛悕 鈫?鍊硷級
+                // 构建捕获变量字段映射（字段名 → 值）
                 Map<String, NovaValue> captureFields = new LinkedHashMap<>();
                 List<MirField> fields = lambdaInfo.mirClass.getFields();
                 for (int i = 0; i < Math.min(fields.size(), captureOps.length); i++) {
@@ -3137,7 +3137,7 @@ final class MirInterpreter {
             return;
         }
 
-        // 鐗规畩澶勭悊 System.out
+        // 特殊处理 System.out
         if (JAVA_SYSTEM.equals(owner) && "out".equals(fieldName)) {
             frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(interp.getStdout());
             return;
@@ -3146,7 +3146,7 @@ final class MirInterpreter {
             frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(interp.getStderr());
             return;
         }
-        // Dispatchers: 浼樺厛浣跨敤 Builtins 娉ㄥ唽鐨?NovaMap锛堟敮鎸佸姩鎬?Main 娉ㄥ叆锛?
+        // Dispatchers: 优先使用 Builtins 注册的 NovaMap（支持动态 Main 注入）
         if ("DISPATCHERS".equals(fieldName)) {
             NovaValue dispatchers = interp.getGlobals().tryGet("Dispatchers");
             if (dispatchers != null) {
@@ -3155,7 +3155,7 @@ final class MirInterpreter {
             }
         }
 
-        // Nova 绫荤殑闈欐€佸瓧娈?
+        // Nova 类的静态字段
         String normalizedOwner = toJavaDotName(owner);
         MirClassInfo classInfo = mirClasses.get(owner);
         if (classInfo != null) {
@@ -3166,7 +3166,7 @@ final class MirInterpreter {
             }
         }
 
-        // 浠庣幆澧冩煡鎵剧被
+        // 从环境查找类
         NovaValue classVal = interp.getEnvironment().tryGet(normalizedOwner);
         if (classVal == null) classVal = interp.getEnvironment().tryGet(owner);
 
@@ -3185,7 +3185,7 @@ final class MirInterpreter {
             }
         }
 
-        // Java 闈欐€佸瓧娈碉細inst.cache 缂撳瓨 MethodHandle锛堥伩鍏嶆瘡娆″弽灏勶級
+        // Java 静态字段：inst.cache 缓存 MethodHandle（避免每次反射）
         Object cached = inst.cache;
         if (cached instanceof java.lang.invoke.MethodHandle) {
             try {
@@ -3201,7 +3201,7 @@ final class MirInterpreter {
             frame.locals[inst.getDest()] = NovaNull.NULL;
             return;
         }
-        // 棣栨鎵ц锛氳В鏋愬苟缂撳瓨
+        // 首次执行：解析并缓存
         try {
             String javaDotName = toJavaDotName(owner);
             if (!interp.getSecurityPolicy().isClassAllowed(javaDotName)) {
@@ -3269,13 +3269,13 @@ final class MirInterpreter {
             } else if (idxVal instanceof NovaInt) {
                 idx = ((NovaInt) idxVal).getValue();
             } else {
-                // 闈?int 绱㈠紩锛圧ange 鍒囩墖绛夛級鈫?閫氱敤璺緞
+                // 非 int 索引（Range 切片等）→ 通用路径
                 frame.locals[inst.getDest()] = resolver.performIndex(target, frame.get(idxReg), null);
                 return;
             }
             NovaValue elem = ((NovaList) target).getElements().get(idx);
             int dest = inst.getDest();
-            // 閫嗚绠憋細NovaInt 鍏冪礌 鈫?raw 瀛樺偍锛屼娇鍚庣画 BINARY 璧扮函 raw 蹇€熻矾寰?
+            // 逆装箱：NovaInt 元素 → raw 存储，使后续 BINARY 走纯 raw 快速路径
             if (elem instanceof NovaInt) {
                 frame.rawLocals[dest] = ((NovaInt) elem).getValue();
                 frame.locals[dest] = MirFrame.RAW_INT_MARKER;
@@ -3284,7 +3284,7 @@ final class MirInterpreter {
             }
             return;
         }
-        // NovaArray 蹇€熻矾寰?
+        // NovaArray 快速路径
         if (target instanceof NovaArray) {
             NovaArray arr = (NovaArray) target;
             int idxReg = inst.operand(1);
@@ -3307,7 +3307,7 @@ final class MirInterpreter {
             }
             return;
         }
-        // 閫氱敤璺緞锛歋tring/Map/Range/Pair/杩愮畻绗﹂噸杞?
+        // 通用路径：String/Map/Range/Pair/运算符重载
         frame.locals[inst.getDest()] = resolver.performIndex(
                 frame.get(inst.operand(0)), frame.get(inst.operand(1)), null);
     }
@@ -3330,7 +3330,7 @@ final class MirInterpreter {
             ((NovaList) target).set(idx, frame.get(inst.operand(2)));
             return;
         }
-        // NovaArray 蹇€熻矾寰?
+        // NovaArray 快速路径
         if (target instanceof NovaArray) {
             NovaArray arr = (NovaArray) target;
             int idxReg = inst.operand(1);
@@ -3346,7 +3346,7 @@ final class MirInterpreter {
                 return;
             }
             if (idx >= 0 && arr.getElementType() == NovaArray.ElementType.INT) {
-                // raw int 鐩撮€氾細璺宠繃 NovaValue 瑁呯/鎷嗙
+                // raw int 直通：跳过 NovaValue 装箱/拆箱
                 int valReg = inst.operand(2);
                 NovaValue valSlot = frame.locals[valReg];
                 if (valSlot == MirFrame.RAW_INT_MARKER) {
@@ -3368,7 +3368,7 @@ final class MirInterpreter {
 
     private void executeNewArray(MirFrame frame, MirInst inst) {
         int size = frame.get(inst.operand(0)).asInt();
-        // 妫€鏌ュ眬閮ㄥ彉閲忕被鍨嬪喅瀹氭暟缁勫厓绱犵被鍨?
+        // 检查局部变量类型决定数组元素类型
         MirLocal local = frame.function.getLocals().get(inst.getDest());
         String className = local.getType().getClassName();
         if ("[I".equals(className)) {
@@ -3384,7 +3384,7 @@ final class MirInterpreter {
         } else if ("[C".equals(className)) {
             frame.locals[inst.getDest()] = new NovaArray(NovaArray.ElementType.CHAR, size);
         } else {
-            // 閫氱敤 Object[] 鈫?浣跨敤 NovaList 妯℃嫙
+            // 通用 Object[] → 使用 NovaList 模拟
             NovaList list = new NovaList();
             for (int i = 0; i < size; i++) {
                 list.add(NovaNull.NULL);
@@ -3396,7 +3396,7 @@ final class MirInterpreter {
     // ============ NEW_COLLECTION ============
 
     private void executeNewCollection(MirFrame frame, MirInst inst) {
-        // 褰撳墠 HirToMirLowering 涓嶄骇鐢熸鎿嶄綔鐮侊紝棰勭暀澶勭悊
+        // 当前 HirToMirLowering 不产生此操作码，预留处理
         frame.locals[inst.getDest()] = new NovaList();
     }
 
@@ -3405,7 +3405,7 @@ final class MirInterpreter {
     private void executeTypeCheck(MirFrame frame, MirInst inst) {
         NovaValue value = frame.get(inst.operand(0));
         String typeName = inst.extraAs();
-        // reified 绫诲瀷鍙傛暟瑙ｆ瀽
+        // reified 类型参数解析
         if (frame.reifiedTypes != null && frame.reifiedTypes.containsKey(typeName)) {
             typeName = frame.reifiedTypes.get(typeName);
         }
@@ -3477,7 +3477,7 @@ final class MirInterpreter {
             Class<?> cls = Class.forName(toJavaDotName(className));
             frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(cls);
         } catch (ClassNotFoundException e) {
-            // 鍙兘鏄?Nova 绫?
+            // 可能是 Nova 类
             NovaValue classVal = interp.getEnvironment().tryGet(className);
             frame.locals[inst.getDest()] = classVal != null ? classVal : NovaNull.NULL;
         }
@@ -3486,12 +3486,12 @@ final class MirInterpreter {
     // ============ CLOSURE ============
 
     private void executeClosure(MirFrame frame, MirInst inst) {
-        // 褰撳墠 HirToMirLowering 涓嶄骇鐢熸鎿嶄綔鐮侊紙Lambda 鈫?鍖垮悕绫?+ NEW_OBJECT锛?
-        // 棰勭暀澶勭悊
+        // 当前 HirToMirLowering 不产生此操作码（Lambda → 匿名类 + NEW_OBJECT）
+        // 预留处理
         frame.locals[inst.getDest()] = NovaNull.NULL;
     }
 
-    // ============ 杈呭姪鏂规硶 ============
+    // ============ 辅助方法 ============
 
     private boolean isTruthy(NovaValue value) {
         if (value == null) return false;
@@ -3500,7 +3500,7 @@ final class MirInterpreter {
     }
 
     /**
-     * 铻嶅悎姣旇緝+鍒嗘敮蹇€熻矾寰勩€傚弻妲?raw int 鏃剁洿鎺ュ師濮嬫瘮杈冿紝鍚﹀垯鍥為€€鍒版爣鍑嗛€昏緫銆?
+     * 融合比较+分支快速路径。双槽 raw int 时直接原始比较，否则回退到标准逻辑。
      */
     private boolean compareFused(MirFrame frame, BinaryOp op, int leftIdx, int rightIdx) {
         boolean leftRaw = frame.locals[leftIdx] == MirFrame.RAW_INT_MARKER;
@@ -3518,21 +3518,21 @@ final class MirInterpreter {
                 default: break;
             }
         }
-        // 鍗曚晶 raw int 涓?null 姣旇緝: raw int 姘歌繙涓嶇瓑浜?null锛堥伩鍏嶈绠憋級
+        // 单侧 raw int 与 null 比较: raw int 永远不等于 null（避免装箱）
         if ((leftRaw || rightRaw) && (op == BinaryOp.EQ || op == BinaryOp.NE)) {
             NovaValue other = leftRaw ? frame.locals[rightIdx] : frame.locals[leftIdx];
             if (other instanceof NovaNull || other == null) {
                 return op == BinaryOp.NE;
             }
         }
-        // 鍥為€€锛氭爣鍑嗘瘮杈?
+        // 回退：标准比较
         NovaValue left = frame.get(leftIdx);
         NovaValue right = frame.get(rightIdx);
         NovaValue result = generalBinary(left, right, op);
         return isTruthy(result);
     }
 
-    /** MIR lowering 鐨?resolveMethodAlias 鍙嶅悜鏄犲皠锛欽ava 鏂规硶鍚?鈫?Nova 鏂规硶鍚?*/
+    /** MIR lowering 的 resolveMethodAlias 反向映射：Java 方法名 → Nova 方法名 */
     private boolean novaEquals(NovaValue a, NovaValue b) {
         return BinaryOps.novaEquals(a, b);
     }
@@ -3552,7 +3552,7 @@ final class MirInterpreter {
     }
 
     private NovaValue wrapException(NovaRuntimeException e) {
-        // 杩斿洖寮傚父娑堟伅瀛楃涓诧紙涓?HIR 璺緞琛屼负涓€鑷达級
+        // 返回异常消息字符串（与 HIR 路径行为一致）
         String msg = e.getMessage();
         return msg != null ? NovaString.of(msg) : NovaNull.NULL;
     }
