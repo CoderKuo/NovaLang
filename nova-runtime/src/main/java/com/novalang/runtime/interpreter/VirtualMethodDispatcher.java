@@ -94,7 +94,7 @@ final class VirtualMethodDispatcher {
         NovaObject obj = (NovaObject) call.receiver;
         if ("getClass".equals(call.methodName)) return obj.getNovaClass();
         if (call.owner != null && call.owner.startsWith(MARKER_SUPER)) {
-            return invokeSuper(obj, call.methodName, call.args);
+            return invokeSuper(obj, call.methodName, call.owner, call.args);
         }
         if (obj.getNovaClass().getName().contains(MARKER_LAMBDA) && obj.getMethod(call.methodName) == null) {
             if (dispatcher.scopeReceiver != null) {
@@ -301,11 +301,28 @@ final class VirtualMethodDispatcher {
         return null;
     }
 
-    /** super.method() 鈥?鐖剁被鏂规硶鍒嗘淳 */
-    private NovaValue invokeSuper(NovaObject obj, String methodName, List<NovaValue> args) {
-        NovaClass superClass = obj.getNovaClass().getSuperclass();
-        if (superClass != null) {
-            NovaCallable method = superClass.findCallableMethod(methodName);
+    /** super.method() — 父类方法分派（根据 owner 中编码的目标超类） */
+    private NovaValue invokeSuper(NovaObject obj, String methodName, String owner, List<NovaValue> args) {
+        // owner 格式: "$super$ClassName" — 从编译时确定的目标超类查找方法
+        NovaClass targetSuper = null;
+        if (owner != null && owner.length() > MARKER_SUPER.length()) {
+            String targetName = owner.substring(MARKER_SUPER.length());
+            // 沿继承链查找名称匹配的超类
+            NovaClass cur = obj.getNovaClass().getSuperclass();
+            while (cur != null) {
+                if (cur.getName().equals(targetName)) {
+                    targetSuper = cur;
+                    break;
+                }
+                cur = cur.getSuperclass();
+            }
+        }
+        // 如果没有编码目标名称或没找到，回退到直接超类
+        if (targetSuper == null) {
+            targetSuper = obj.getNovaClass().getSuperclass();
+        }
+        if (targetSuper != null) {
+            NovaCallable method = targetSuper.findCallableMethod(methodName);
             if (method != null) return dispatcher.bindAndExecute(obj, method, args);
         }
         Object javaDelegate = obj.getJavaDelegate();

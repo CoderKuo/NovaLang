@@ -250,6 +250,11 @@ final class MirCallDispatcher {
                 withScopeReceiver(r, () -> lambda.call(interp, Collections.emptyList()));
                 return r;
             }
+            case "with": {
+                NovaValue r = receiver instanceof ScalarizedNovaObject
+                        ? ((ScalarizedNovaObject) receiver).materialize() : receiver;
+                return withScopeReceiver(r, () -> lambda.call(interp, Collections.emptyList()));
+            }
             case "takeIf":
                 return isTruthy(lambda.call(interp, Collections.singletonList(receiver))) ? receiver : NovaNull.NULL;
             case "takeUnless":

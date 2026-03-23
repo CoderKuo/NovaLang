@@ -270,6 +270,12 @@ final class MemberResolver {
         NovaEnumEntry entry = novaEnum.getEntry(memberName);
         if (entry != null) return entry;
         if ("values".equals(memberName)) return novaEnum.createValuesMethod();
+        if ("entries".equals(memberName)) {
+            // entries 属性：返回所有枚举条目的 List（等价于 values() 的结果）
+            List<NovaValue> entryList = new ArrayList<>();
+            for (NovaEnumEntry e : novaEnum.values()) entryList.add(e);
+            return new NovaList(entryList);
+        }
         if ("valueOf".equals(memberName)) {
             return new NovaNativeFunction("valueOf", 1,
                 (interpreter, args) -> novaEnum.valueOf(args.get(0).asString()));
@@ -643,6 +649,7 @@ final class MemberResolver {
             case "type": return fi.type != null ? NovaString.of(fi.type) : NovaNull.NULL;
             case "visibility": return NovaString.of(fi.visibility);
             case "mutable": return NovaBoolean.of(fi.mutable);
+            case "isMutable": return NovaBoolean.of(fi.mutable);
             case "get": return new NovaNativeFunction("get", 1, (ctx, args) -> {
                 if (fi.getOwnerClass() != null) {
                     NovaObject obj = (NovaObject) args.get(0);
@@ -670,6 +677,7 @@ final class MemberResolver {
             case "name": return NovaString.of(mi.name);
             case "visibility": return NovaString.of(mi.visibility);
             case "params": return new NovaList(new ArrayList<>(mi.getParamInfos()));
+            case "parameters": return new NovaList(new ArrayList<>(mi.getParamInfos()));
             case "call": return NovaNativeFunction.createVararg("call", (ctx, args) -> {
                 NovaValue instance = args.get(0);
                 List<NovaValue> methodArgs = args.subList(1, args.size());
@@ -1024,6 +1032,20 @@ final class MemberResolver {
             case "getOrNull":
                 return NovaNativeFunction.create("getOrNull", () -> {
                     return result.isOk() ? result.getInner() : NovaNull.NULL;
+                });
+            case "getOrElse":
+                return new NovaNativeFunction("getOrElse", 1, (ctx, args) -> {
+                    if (result.isOk()) return result.getInner();
+                    Interpreter interp2 = (Interpreter) ctx;
+                    com.novalang.runtime.NovaCallable func = interp2.asCallable(args.get(0), "Result method");
+                    return func.call(ctx, java.util.Collections.singletonList(result.getInner()));
+                });
+            case "flatMap":
+                return new NovaNativeFunction("flatMap", 1, (ctx, args) -> {
+                    if (result.isErr()) return result;
+                    Interpreter interp2 = (Interpreter) ctx;
+                    com.novalang.runtime.NovaCallable func = interp2.asCallable(args.get(0), "Result method");
+                    return func.call(ctx, java.util.Collections.singletonList(result.getInner()));
                 });
             default:
                 return null;

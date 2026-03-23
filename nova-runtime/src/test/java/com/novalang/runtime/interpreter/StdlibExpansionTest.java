@@ -649,8 +649,9 @@ class StdlibExpansionTest {
         @Test
         @DisplayName("with")
         void testWith() {
-            // with(receiver, block) — block 接收 receiver 作为参数
-            NovaValue result = interpreter.evalRepl("with(10) { it + 5 }");
+            // with(receiver, block) — block 内 scope receiver 绑定为 receiver（Kotlin 语义）
+            interpreter.evalRepl("class WBox(val value: Int)");
+            NovaValue result = interpreter.evalRepl("with(WBox(10)) { value + 5 }");
             assertEquals(15, result.asInt());
         }
 

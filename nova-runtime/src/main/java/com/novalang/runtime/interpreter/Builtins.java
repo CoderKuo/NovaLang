@@ -397,11 +397,13 @@ public final class Builtins {
             return result;
         }));
 
-        // with(receiver, block) - 作用域函数
+        // with(receiver, block) - 作用域函数（绑定 scope receiver，使 block 内可直接访问 receiver 的成员）
         env.defineVal("with", new NovaNativeFunction("with", 2, (interp, args) -> {
             NovaValue receiver = args.get(0);
             NovaCallable block = interp.asCallable(args.get(1), "Builtins method");
-            return block.call(interp, java.util.Collections.singletonList(receiver));
+            Interpreter interpCast = (Interpreter) interp;
+            MirCallDispatcher cd = ((MirInterpreter) interpCast.getMirInterpreter()).callDispatcher;
+            return cd.withScopeReceiver(receiver, () -> block.call(interp, java.util.Collections.emptyList()));
         }));
 
         // repeat(times, action) - 重复执行
@@ -444,6 +446,30 @@ public final class Builtins {
                 String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                 return NovaResult.err(msg);
             }
+        }));
+
+        // check(condition) / check(condition, lazyMessage) - 断言条件为真
+        env.defineVal("check", new NovaNativeFunction("check", -1, (interp, args) -> {
+            if (args.isEmpty()) throw new NovaRuntimeException("check() requires at least 1 argument");
+            boolean condition = args.get(0).asBool();
+            if (!condition) {
+                String msg = args.size() > 1 ? "Check failed: " + args.get(1).asString()
+                                              : "Check failed.";
+                throw new NovaRuntimeException(msg);
+            }
+            return NovaNull.UNIT;
+        }));
+
+        // require(condition) / require(condition, lazyMessage) - 要求条件为真
+        env.defineVal("require", new NovaNativeFunction("require", -1, (interp, args) -> {
+            if (args.isEmpty()) throw new NovaRuntimeException("require() requires at least 1 argument");
+            boolean condition = args.get(0).asBool();
+            if (!condition) {
+                String msg = args.size() > 1 ? "Required: " + args.get(1).asString()
+                                              : "Failed requirement.";
+                throw new IllegalArgumentException(msg);
+            }
+            return NovaNull.UNIT;
         }));
 
         // ============ 结构化并发 ============
