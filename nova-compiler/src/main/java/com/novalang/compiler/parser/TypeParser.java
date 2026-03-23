@@ -29,7 +29,7 @@ class TypeParser {
             params.add(parseTypeParam());
         } while (parser.match(COMMA));
 
-        parser.expect(GT, "Expected '>'");
+        parser.expectGT("Expected '>'");
         return params;
     }
 
@@ -156,6 +156,8 @@ class TypeParser {
             while (depth > 0 && !parser.check(EOF)) {
                 if (parser.check(LT)) depth++;
                 else if (parser.check(GT)) depth--;
+                else if (parser.check(SHR)) { depth -= 2; if (depth <= 0) break; }
+                else if (parser.check(USHR)) { depth -= 3; if (depth <= 0) break; }
                 if (depth > 0) parser.advance();
             }
             if (depth != 0) return false;
@@ -178,7 +180,7 @@ class TypeParser {
         do {
             types.add(parseType());
         } while (parser.match(COMMA));
-        parser.expect(GT, "Expected '>'");
+        parser.expectGT("Expected '>'");
         return types;
     }
 
@@ -190,7 +192,7 @@ class TypeParser {
             args.add(parseTypeArg());
         } while (parser.match(COMMA));
 
-        parser.expect(GT, "Expected '>'");
+        parser.expectGT("Expected '>'");
         return args;
     }
 

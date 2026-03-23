@@ -70,6 +70,15 @@ public class StrengthReduction implements MirPass {
                     continue;
                 }
 
+                // 只对整数类型做强度削弱，非整数（OBJECT 等）可能有运算符重载
+                List<MirLocal> locals = func.getLocals();
+                if (base >= 0 && base < locals.size()) {
+                    MirType.Kind baseKind = locals.get(base).getType().getKind();
+                    if (baseKind != MirType.Kind.INT && baseKind != MirType.Kind.LONG) {
+                        continue;
+                    }
+                }
+
                 int shift = Long.numberOfTrailingZeros(constVal);
 
                 if (shift == 1) {

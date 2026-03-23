@@ -110,21 +110,9 @@ public final class NovaClassInfo extends AbstractNovaValue {
 
     // ============ 工厂方法 ============
 
-    /** 从 NovaCallable 提取参数信息（兼容 HIR/MIR 两种路径） */
+    /** 从 NovaCallable 提取参数信息（MIR 路径） */
     public static List<NovaParamInfo> extractParams(NovaCallable callable) {
-        // HIR 路径：HirFunctionValue 有完整的 HirParam 信息
-        if (callable instanceof com.novalang.runtime.interpreter.HirFunctionValue) {
-            com.novalang.runtime.interpreter.HirFunctionValue hfv = (com.novalang.runtime.interpreter.HirFunctionValue) callable;
-            if (hfv.getDeclaration() != null) {
-                List<NovaParamInfo> params = new ArrayList<>();
-                for (com.novalang.ir.hir.decl.HirParam p : hfv.getDeclaration().getParams()) {
-                    String typeName = p.getType() != null ? p.getType().toString() : null;
-                    params.add(new NovaParamInfo(p.getName(), typeName, p.getDefaultValue() != null));
-                }
-                return params;
-            }
-        }
-        // MIR 路径（或通用回退）：通过 NovaCallable.getParamNames() 获取
+        // 通过 NovaCallable.getParamNames() 获取
         List<String> paramNames = callable.getParamNames();
         if (!paramNames.isEmpty()) {
             List<String> typeNames = callable.getParamTypeNames();

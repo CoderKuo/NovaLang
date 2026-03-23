@@ -126,6 +126,7 @@ final class StaticMethodDispatcher {
 
         // 热路径：$PipeCall 或模块内函数调用（缓存 MirCallable + fastCall 快速路径）
         if (owner != null && methodName.indexOf('%') < 0 && methodName.indexOf('#') < 0
+                && methodName.indexOf('@') < 0
                 && (MARKER_PIPE_CALL.equals(owner) || owner.endsWith(MARKER_MODULE))) {
             MirCallable resolved = cs.resolvedCallable;
             if (resolved == null) {
@@ -391,8 +392,69 @@ final class StaticMethodDispatcher {
         throw new NovaRuntimeException("Cannot bind method '" + name + "' on " + target.getTypeName());
     }
 
-    /** $PipeCall — 管道操作符: 解析 spread/reified，先查函数再尝试方法调用 */
+    /**
+     * 命名参数重排：根据目标函数的参数列表，将 [positional..., namedValues...]
+     * 按正确的参数顺序排列，缺失的参数填 NovaNull.NULL（由函数体的默认值处理）。
+     */
+    private List<NovaValue> reorderNamedArgs(String funcName, List<NovaValue> args,
+                                              int positionalCount, String[] namedKeys) {
+        // 查找目标函数的参数名列表（先 mirFunctions，再 Environment）
+        List<String> paramNames = null;
+        MirCallable func = mirFunctions.get(funcName);
+        if (func != null) {
+            List<com.novalang.ir.mir.MirParam> params = func.getFunction().getParams();
+            paramNames = new ArrayList<>();
+            for (com.novalang.ir.mir.MirParam p : params) paramNames.add(p.getName());
+        }
+        if (paramNames == null) {
+            // 跨 REPL：从 Environment 中查找已注册的 MirCallable
+            NovaValue envVal = interp.getEnvironment().tryGet(funcName);
+            if (envVal instanceof MirCallable) {
+                List<com.novalang.ir.mir.MirParam> params = ((MirCallable) envVal).getFunction().getParams();
+                paramNames = new ArrayList<>();
+                for (com.novalang.ir.mir.MirParam p : params) paramNames.add(p.getName());
+            } else if (envVal instanceof NovaCallable) {
+                // 非 MirCallable 但有 paramNames 方法
+                List<String> pn = ((NovaCallable) envVal).getParamNames();
+                if (pn != null && !pn.isEmpty()) paramNames = pn;
+            }
+        }
+        if (paramNames == null) {
+            return args;
+        }
+
+        // 构建重排后的参数列表
+        List<NovaValue> reordered = new ArrayList<>(Collections.nCopies(paramNames.size(), NovaNull.NULL));
+        // 先放位置参数
+        for (int i = 0; i < positionalCount && i < paramNames.size(); i++) {
+            reordered.set(i, args.get(i));
+        }
+        // 再放命名参数
+        for (int k = 0; k < namedKeys.length; k++) {
+            int paramIdx = paramNames.indexOf(namedKeys[k]);
+            if (paramIdx >= 0) {
+                reordered.set(paramIdx, args.get(positionalCount + k));
+            }
+        }
+        return reordered;
+    }
+
+    /** $PipeCall — 管道操作符: 解析 spread/reified/named，先查函数再尝试方法调用 */
     private NovaValue handlePipeCall(String methodName, List<NovaValue> args) {
+        // 解析命名参数标记: funcName@named:positionalCount:key1,key2
+        int namedPositionalCount = -1;
+        String[] namedKeys = null;
+        int atIdx = methodName.indexOf('@');
+        if (atIdx >= 0) {
+            String namedPart = methodName.substring(atIdx + 1);
+            methodName = methodName.substring(0, atIdx);
+            if (namedPart.startsWith("named:")) {
+                String rest = namedPart.substring(6); // "positionalCount:key1,key2"
+                int colonIdx = rest.indexOf(':');
+                namedPositionalCount = Integer.parseInt(rest.substring(0, colonIdx));
+                namedKeys = rest.substring(colonIdx + 1).split(",");
+            }
+        }
         // 解析 spread 标记: methodName%spread:0,2
         Set<Integer> spreadIndices = null;
         int pctIdx = methodName.indexOf('%');
@@ -425,6 +487,10 @@ final class StaticMethodDispatcher {
                 }
             }
             args = expanded;
+        }
+        // 命名参数重排：将位置参数+命名参数按目标函数的参数列表重新排列
+        if (namedKeys != null && namedPositionalCount >= 0) {
+            args = reorderNamedArgs(methodName, args, namedPositionalCount, namedKeys);
         }
         // 1. 查 mirFunctions
         MirCallable func = mirFunctions.get(methodName);

@@ -1694,6 +1694,130 @@ class NovaTest {
         }
     }
 
+    // ── CompiledNova defineFunction/registerExtension ─
+
+    @Nested
+    @DisplayName("CompiledNova defineFunction/registerExtension")
+    class CompiledNovaApiTests {
+
+        @Test
+        @DisplayName("defineFunction 0 参数")
+        void defineFunction0() {
+            CompiledNova compiled = new Nova().compileToBytecode("getVersion()", "test.nova");
+            compiled.defineFunction("getVersion", () -> "1.0");
+            assertEquals("1.0", compiled.run());
+        }
+
+        @Test
+        @DisplayName("defineFunction 1 参数")
+        void defineFunction1() {
+            CompiledNova compiled = new Nova().compileToBytecode("double(21)", "test.nova");
+            compiled.defineFunction("double", (Object n) -> ((Number) n).intValue() * 2);
+            assertEquals(42, compiled.run());
+        }
+
+        @Test
+        @DisplayName("defineFunction 2 参数")
+        void defineFunction2() {
+            CompiledNova compiled = new Nova().compileToBytecode("add(10, 20)", "test.nova");
+            compiled.defineFunction("add", (Object a, Object b) ->
+                    ((Number) a).intValue() + ((Number) b).intValue());
+            assertEquals(30, compiled.run());
+        }
+
+        @Test
+        @DisplayName("defineFunction 3 参数")
+        void defineFunction3() {
+            CompiledNova compiled = new Nova().compileToBytecode("sum3(1, 2, 3)", "test.nova");
+            compiled.defineFunction("sum3", (Object a, Object b, Object c) ->
+                    ((Number) a).intValue() + ((Number) b).intValue() + ((Number) c).intValue());
+            assertEquals(6, compiled.run());
+        }
+
+        @Test
+        @DisplayName("defineFunctionVararg")
+        void defineFunctionVararg() {
+            CompiledNova compiled = new Nova().compileToBytecode("concat(\"a\", \"b\", \"c\")", "test.nova");
+            compiled.defineFunctionVararg("concat", (Object[] args) -> {
+                StringBuilder sb = new StringBuilder();
+                for (Object a : args) sb.append(a);
+                return sb.toString();
+            });
+            assertEquals("abc", compiled.run());
+        }
+
+        @Test
+        @DisplayName("registerExtension 1 参数 (receiver only)")
+        void registerExtension1() {
+            CompiledNova compiled = new Nova().compileToBytecode(
+                    "\"hello\".shout()", "test.nova");
+            compiled.registerExtension(String.class, "shout",
+                    (Object s) -> ((String) s).toUpperCase() + "!");
+            assertEquals("HELLO!", compiled.run());
+        }
+
+        @Test
+        @DisplayName("registerExtension 2 参数")
+        void registerExtension2() {
+            CompiledNova compiled = new Nova().compileToBytecode(
+                    "\"hello\".repeatN(3)", "test.nova");
+            compiled.registerExtension(String.class, "repeatN",
+                    (Object s, Object n) -> {
+                        StringBuilder sb = new StringBuilder();
+                        for (int i = 0; i < ((Number) n).intValue(); i++) sb.append((String) s);
+                        return sb.toString();
+                    });
+            assertEquals("hellohellohello", compiled.run());
+        }
+
+        @Test
+        @DisplayName("编译模式 Float 运算")
+        void floatArithmetic() {
+            assertEquals(5.5, ((Number) new Nova().compileToBytecode(
+                    "2.5 + 3.0", "test.nova").run()).doubleValue(), 0.001);
+        }
+
+        @Test
+        @DisplayName("编译模式 Long 运算")
+        void longArithmetic() {
+            Object result = new Nova().compileToBytecode(
+                    "val x = 1000000000000L\nx + 1L", "test.nova").run();
+            assertEquals(1000000000001L, ((Number) result).longValue());
+        }
+
+        @Test
+        @DisplayName("编译模式 混合类型比较")
+        void mixedTypeComparison() {
+            assertEquals(true, new Nova().compileToBytecode("1 == 1.0", "test.nova").run());
+            assertEquals(true, new Nova().compileToBytecode("2 > 1.5", "test.nova").run());
+        }
+
+        @Test
+        @DisplayName("编译模式语法错误抛异常")
+        void compileSyntaxError() {
+            assertThrows(Exception.class, () ->
+                    new Nova().compileToBytecode("fun (", "test.nova"));
+        }
+
+        @Test
+        @DisplayName("编译模式运行时错误抛异常")
+        void compileRuntimeError() {
+            CompiledNova compiled = new Nova().compileToBytecode("1 / 0", "test.nova");
+            assertThrows(Exception.class, compiled::run);
+        }
+
+        @Test
+        @DisplayName("defineFunction fluent API")
+        void defineFunctionFluent() {
+            CompiledNova compiled = new Nova().compileToBytecode("a() + b()", "test.nova");
+            CompiledNova result = compiled
+                    .defineFunction("a", () -> 10)
+                    .defineFunction("b", () -> 20);
+            assertSame(compiled, result);
+            assertEquals(30, compiled.run());
+        }
+    }
+
     // ── @NovaExt aliases 注解别名 ───────────────────
 
     public static class ExtWithAliases {

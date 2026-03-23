@@ -15,8 +15,6 @@ import com.novalang.compiler.parser.ParseException;
 import com.novalang.compiler.parser.Parser;
 import com.novalang.ir.hir.*;
 import com.novalang.ir.hir.decl.*;
-import com.novalang.ir.hir.expr.*;
-import com.novalang.ir.hir.stmt.*;
 import com.novalang.compiler.hirtype.*;
 import com.novalang.ir.lowering.AstToHirLowering;
 import com.novalang.ir.mir.MirModule;
@@ -112,37 +110,19 @@ public class Interpreter implements ExecutionContext {
     /** 模块加载器（脚本模式下初始化） */
     protected ModuleLoader moduleLoader;
 
-    // ============ HIR 特有字段 ============
-    /** 类名 → 实例字段列表（含初始化器），用于实例化时初始化属性 */
-    final Map<String, List<HirField>> classInstanceFields = new HashMap<>();
-    /** 类名 → 有序实例初始化列表（HirField + init 块 AstNode），按声明顺序 */
-    final Map<String, List<AstNode>> classInstanceInitializers = new HashMap<>();
-    /** 缓存: className → (fieldName → HirField)，仅含有自定义 getter 的字段 */
-    final Map<String, Map<String, HirField>> customGetterCache = new HashMap<>();
-    /** 缓存: className → (fieldName → HirField)，仅含有自定义 setter 的字段 */
-    final Map<String, Map<String, HirField>> customSetterCache = new HashMap<>();
+    // ============ HIR 元数据字段 ============
     /** 类名 → 所有 HirField（用于反射 API 获取字段信息） */
     final Map<String, List<HirField>> hirClassFields = new HashMap<>();
-    /** 类名 → 超类构造器参数表达式（用于 Nova→Nova 继承时调用超类构造器） */
-    final Map<String, List<Expression>> hirSuperCtorArgs = new HashMap<>();
-    /** reified 类型参数传递（visitCall → executeBoundMethod） */
-    List<HirType> pendingHirTypeArgs;
     /** 类注解缓存（类名 → 注解列表） */
     final Map<String, List<HirAnnotation>> hirClassAnnotations = new HashMap<>();
-    /** 字段信号替代 ControlFlow 异常（unlabeled return）—— 4.7x 性能提升 */
-    private final ThreadLocal<Boolean> tlHasReturn = ThreadLocal.withInitial(() -> Boolean.FALSE);
-    private final ThreadLocal<NovaValue> tlReturnValue = new ThreadLocal<>();
+    /** return 信号字段（替代 ControlFlow 异常，性能提升） */
+    private boolean hasReturn = false;
+    private NovaValue returnValue;
 
-    // 便捷访问器（减少对已有代码的改动量）
-    boolean getHasReturn() { return tlHasReturn.get(); }
-    void setHasReturn(boolean v) { tlHasReturn.set(v); }
-    NovaValue getReturnValue() { return tlReturnValue.get(); }
-    void setReturnValue(NovaValue v) { tlReturnValue.set(v); }
-
-    /** HIR 多线程 SAM 回调：所有者线程 ID */
-    private final long hirOwnerThreadId = getThreadId(Thread.currentThread());
-    /** HIR 多线程 SAM 回调：线程隔离子解释器 */
-    private final ThreadLocal<Interpreter> hirThreadLocalChild = new ThreadLocal<>();
+    boolean getHasReturn() { return hasReturn; }
+    void setHasReturn(boolean v) { hasReturn = v; }
+    NovaValue getReturnValue() { return returnValue; }
+    void setReturnValue(NovaValue v) { returnValue = v; }
 
     /** HIR 循环信号 */
     enum HirLoopSignal { NORMAL, BREAK, CONTINUE }
@@ -234,7 +214,7 @@ public class Interpreter implements ExecutionContext {
         this.typeResolver = new TypeResolver(this);
         this.memberResolver = new MemberResolver(this);
         this.functionExecutor = new FunctionExecutor(this);
-        this.hirEvaluator = new HirEvaluator(this);
+
         this.javaInteropHelper = new JavaInteropHelper(this);
         this.mirInterpreter = new MirInterpreter(this);
     }
@@ -259,19 +239,14 @@ public class Interpreter implements ExecutionContext {
         this.stdin = parent.stdin;
         // MIR 管线：子解释器创建独立实例，避免与父线程共享可变状态
         this.mirPipeline = createDefaultPipeline();
-        this.classInstanceFields.putAll(parent.classInstanceFields);
-        this.classInstanceInitializers.putAll(parent.classInstanceInitializers);
-        this.customGetterCache.putAll(parent.customGetterCache);
-        this.customSetterCache.putAll(parent.customSetterCache);
         this.hirClassFields.putAll(parent.hirClassFields);
-        this.hirSuperCtorArgs.putAll(parent.hirSuperCtorArgs);
         this.scheduler = parent.scheduler;
 
         // Helper 委托对象
         this.typeResolver = new TypeResolver(this, parent.typeResolver);
         this.memberResolver = new MemberResolver(this);
         this.functionExecutor = new FunctionExecutor(this);
-        this.hirEvaluator = new HirEvaluator(this);
+
         this.javaInteropHelper = new JavaInteropHelper(this);
         this.mirInterpreter = new MirInterpreter(this, parent.mirInterpreter);
     }
@@ -282,11 +257,6 @@ public class Interpreter implements ExecutionContext {
      */
     public void cleanup() {
         threadLocalChild.remove();
-        hirThreadLocalChild.remove();
-        tlReturnValue.remove();
-        tlHasReturn.remove();
-        // 不重置 MethodHandleCache.setAllowSetAccessible：
-        // 同一线程可能还有其他受限 Interpreter，无条件放宽会破坏安全策略
     }
 
     // ============ I/O 流配置============
@@ -372,12 +342,12 @@ public class Interpreter implements ExecutionContext {
      * 使用独立的子 Interpreter 避免与主线程竞争可变状态。
      */
     public NovaValue executeSamCallback(NovaCallable callable, List<NovaValue> args) {
-        if (getThreadId(Thread.currentThread()) != hirOwnerThreadId) {
+        if (getThreadId(Thread.currentThread()) != ownerThreadId) {
             // 外部线程：使用 ThreadLocal 缓存的子 Interpreter
-            Interpreter child = hirThreadLocalChild.get();
+            Interpreter child = threadLocalChild.get();
             if (child == null) {
                 child = new Interpreter(this);
-                hirThreadLocalChild.set(child);
+                threadLocalChild.set(child);
             }
             return callable.call(child, args);
         }
@@ -484,10 +454,6 @@ public class Interpreter implements ExecutionContext {
         return extensionRegistry.findNovaExtension(receiver, methodName);
     }
 
-    public void registerNovaExtensionProperty(String typeName, String propertyName,
-                                               Expression getter, Environment closure) {
-        extensionRegistry.registerNovaExtensionProperty(typeName, propertyName, getter, closure);
-    }
 
     public void registerExtensionProperty(String typeName, String propertyName, NovaCallable getter) {
         extensionRegistry.registerExtensionProperty(typeName, propertyName, getter);
@@ -607,10 +573,7 @@ public class Interpreter implements ExecutionContext {
      * 用于注解参数求值等仍持有 AST Expression 的路径。
      */
     NovaValue evaluate(Expression expr) {
-        AstToHirLowering lowering = new AstToHirLowering();
-        com.novalang.ir.lowering.LoweringContext lctx = new com.novalang.ir.lowering.LoweringContext();
-        AstNode hirNode = ((AstNode) expr).accept(lowering, lctx);
-        return executeAstNode(hirNode);
+        return MirClassRegistrar.foldExpression(expr, this);
     }
 
     /** 预编译源码为 MIR 模块（基准测试用，不执行） */
@@ -874,17 +837,17 @@ public class Interpreter implements ExecutionContext {
         return functionExecutor.executeBoundMethod((NovaBoundMethod) boundMethod, args, namedArgs);
     }
 
-    /** ExecutionContext 接口方法：执行 HIR 函数 */
+    /** ExecutionContext 接口方法：执行 HIR 函数（MIR 路径不使用） */
     @Override
     public NovaValue executeHirFunction(NovaValue function, List<NovaValue> args,
                                          Map<String, NovaValue> namedArgs) {
-        return functionExecutor.executeHirFunction((HirFunctionValue) function, args, namedArgs);
+        throw new NovaRuntimeException("HIR function execution not supported in MIR path");
     }
 
-    /** ExecutionContext 接口方法：执行 HIR Lambda */
+    /** ExecutionContext 接口方法：执行 HIR Lambda（MIR 路径不使用） */
     @Override
     public NovaValue executeHirLambda(NovaValue lambda, List<NovaValue> args) {
-        return functionExecutor.executeHirLambda((HirLambdaValue) lambda, args);
+        throw new NovaRuntimeException("HIR lambda execution not supported in MIR path");
     }
 
 
@@ -931,9 +894,6 @@ public class Interpreter implements ExecutionContext {
      * 获取待处理的类型参数名称
      */
     public String getPendingTypeArgName(int index) {
-        if (pendingHirTypeArgs != null && index < pendingHirTypeArgs.size()) {
-            return getHirTypeName(pendingHirTypeArgs.get(index));
-        }
         return null;
     }
 
@@ -1017,75 +977,18 @@ public class Interpreter implements ExecutionContext {
     }
 
 
-    // ============ HIR Evaluator (delegated to HirEvaluator) ============
 
-    final HirEvaluator hirEvaluator;
-
-    public NovaValue executeHirModule(HirModule module) {
-        return hirEvaluator.executeHirModule(module);
-    }
-
-    public NovaValue evaluateHir(Expression expr) {
-        return hirEvaluator.evaluateHir(expr);
-    }
-
-    NovaValue executeHirStmt(Statement stmt) {
-        return hirEvaluator.executeHirStmt(stmt);
-    }
-
-    NovaValue executeAstNode(AstNode node) {
-        return hirEvaluator.executeAstNode(node);
-    }
-
-    protected NovaRuntimeException hirError(String message, AstNode node) {
-        return hirEvaluator.hirError(message, node);
-    }
-
-    // ============ HIR Function Execution (delegated to FunctionExecutor) ============
-
-    ExtensionRegistry.HirExtProp findHirExtensionProperty(NovaValue receiver, String propertyName) {
-        return extensionRegistry.findHirExtensionProperty(receiver, propertyName);
-    }
-
-    NovaValue executeHirExtensionPropertyGetter(ExtensionRegistry.HirExtProp prop, NovaValue receiver) {
-        return extensionRegistry.executeHirExtensionPropertyGetter(prop, receiver, this);
-    }
-
-    HirField findHirFieldWithGetter(String className, String fieldName) {
-        return functionExecutor.findHirFieldWithGetter(className, fieldName);
-    }
-
-    HirField findHirFieldWithSetter(String className, String fieldName) {
-        return functionExecutor.findHirFieldWithSetter(className, fieldName);
-    }
-
-    void executeHirCustomSetter(HirField field, NovaObject obj, NovaValue value) {
-        functionExecutor.executeHirCustomSetter(field, obj, value);
-    }
-
-    NovaValue executeHirCustomGetter(HirField field, NovaObject obj) {
-        return functionExecutor.executeHirCustomGetter(field, obj);
-    }
-
-    public NovaValue executeHirFunction(HirFunctionValue function, List<NovaValue> args,
-                                         Map<String, NovaValue> namedArgs) {
-        return functionExecutor.executeHirFunction(function, args, namedArgs);
-    }
-
-    public NovaValue executeHirLambda(HirLambdaValue lambda, List<NovaValue> args) {
-        return functionExecutor.executeHirLambda(lambda, args);
-    }
-
-    NovaValue executeBlock(Block block, Environment blockEnv) {
-        return functionExecutor.executeBlock(block, blockEnv);
-    }
-
-    HirLoopSignal executeHirLoopBody(Statement body) {
-        return functionExecutor.executeHirLoopBody(body);
-    }
-
-    HirLoopSignal executeHirLoopBody(Environment loopEnv, Statement body) {
-        return functionExecutor.executeHirLoopBody(loopEnv, body);
+    protected NovaRuntimeException createError(String message, AstNode node) {
+        if (node != null && node.getLocation() != null) {
+            SourceLocation loc = node.getLocation();
+            String sourceLine = getSourceLine(loc.getLine());
+            NovaRuntimeException ex = new NovaRuntimeException(message, loc, sourceLine);
+            ex.setNovaStackTrace(captureStackTraceString());
+            return ex;
+        }
+        NovaRuntimeException ex = new NovaRuntimeException(message);
+        ex.setNovaStackTrace(captureStackTraceString());
+        return ex;
     }
 
     String getHirTypeName(HirType type) {

@@ -15,6 +15,7 @@ allprojects {
 subprojects {
     apply plugin: 'java'
     apply plugin: 'maven-publish'
+    apply plugin: 'jacoco'
 
     // 全面兼容 JDK 8
     java {
@@ -38,6 +39,15 @@ subprojects {
         useJUnitPlatform()
         testLogging {
             events 'passed', 'skipped', 'failed'
+        }
+        finalizedBy jacocoTestReport
+    }
+
+    jacocoTestReport {
+        dependsOn test
+        reports {
+            html.required = true
+            xml.required = true
         }
     }
 

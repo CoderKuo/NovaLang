@@ -1323,6 +1323,22 @@ public class MirCodeGenerator {
             return;
         }
 
+        // String * Int 或 Int * String → NovaOps.mul（字符串重复）
+        if (op == BinaryOp.MUL) {
+            MirType lt = getLocalType(func, left);
+            MirType rt = getLocalType(func, right);
+            boolean leftStr = isStringType(lt) || stringLocals.contains(left);
+            boolean rightStr = isStringType(rt) || stringLocals.contains(right);
+            if (leftStr || rightStr) {
+                loadObject(mv, left);
+                loadObject(mv, right);
+                mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaOps", "mul",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitVarInsn(ASTORE, dest);
+                return;
+            }
+        }
+
         // 动态算术：操作数类型为 OBJECT（运行时可能是 String 或 Number），委托 NovaOps
         if (isUnknownObjectType(func, left, right)) {
             String method = null;

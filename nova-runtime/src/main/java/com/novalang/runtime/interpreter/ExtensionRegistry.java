@@ -22,7 +22,6 @@ final class ExtensionRegistry {
     private final Map<String, Map<String, ExtensionProperty>> novaExtensionProperties = new HashMap<>();
 
     /** HIR 扩展属性：类型名 → { 属性名 → (Expression getter, Environment closure) } */
-    final Map<String, Map<String, HirExtProp>> hirExtensionProperties = new HashMap<>();
 
     // ============ 扩展方法 ============
 
@@ -144,14 +143,6 @@ final class ExtensionRegistry {
 
     // ============ Nova 扩展属性 ============
 
-    /**
-     * 注册 Nova 扩展属性
-     */
-    void registerNovaExtensionProperty(String typeName, String propertyName,
-                                        Expression getter, Environment closure) {
-        novaExtensionProperties.computeIfAbsent(typeName, k -> new HashMap<>())
-                .put(propertyName, new ExtensionProperty(getter, closure));
-    }
 
     /**
      * 注册 MIR 路径的扩展属性（callable-based getter）
@@ -204,75 +195,19 @@ final class ExtensionRegistry {
      * 执行扩展属性 getter
      */
     NovaValue executeExtensionPropertyGetter(ExtensionProperty prop, NovaValue receiver, Interpreter interp) {
-        // MIR 路径: 使用 callable getter
-        if (prop.callableGetter != null) {
-            return prop.callableGetter.call(interp, java.util.Collections.singletonList(receiver));
-        }
-        Environment getterEnv = new Environment(prop.closure);
-        getterEnv.defineVal("this", receiver);
-
-        return interp.withEnvironment(getterEnv, () -> interp.evaluate(prop.getter));
-    }
-
-    // ============ HIR 扩展属性 ============
-
-    /**
-     * 查找 HIR 扩展属性
-     */
-    HirExtProp findHirExtensionProperty(NovaValue receiver, String propertyName) {
-        String typeName = receiver.getNovaTypeName();
-        if (typeName != null) {
-            Map<String, HirExtProp> props = hirExtensionProperties.get(typeName);
-            if (props != null && props.containsKey(propertyName)) return props.get(propertyName);
-        }
-        // Any type wildcard
-        Map<String, HirExtProp> anyProps = hirExtensionProperties.get("Any");
-        if (anyProps != null && anyProps.containsKey(propertyName)) return anyProps.get(propertyName);
-        return null;
-    }
-
-    /**
-     * 执行 HIR 扩展属性 getter
-     */
-    NovaValue executeHirExtensionPropertyGetter(HirExtProp prop, NovaValue receiver, Interpreter interp) {
-        Environment getterEnv = new Environment(prop.closure);
-        getterEnv.defineVal("this", receiver);
-        return interp.withEnvironment(getterEnv, () ->
-            interp.evaluateHir(prop.getter));
+        return prop.callableGetter.call(interp, java.util.Collections.singletonList(receiver));
     }
 
     // ============ 内部类 ============
 
     /**
-     * 扩展属性信息
+     * 扩展属性信息（MIR 路径: callable-based getter）
      */
     static class ExtensionProperty {
-        final Expression getter;
-        final Environment closure;
-        final NovaCallable callableGetter; // MIR 路径: 可调用 getter（接收 receiver 作为参数）
-
-        ExtensionProperty(Expression getter, Environment closure) {
-            this.getter = getter;
-            this.closure = closure;
-            this.callableGetter = null;
-        }
+        final NovaCallable callableGetter;
 
         ExtensionProperty(NovaCallable callableGetter) {
-            this.getter = null;
-            this.closure = null;
             this.callableGetter = callableGetter;
-        }
-    }
-
-    /**
-     * HIR 扩展属性信息
-     */
-    static final class HirExtProp {
-        final Expression getter;
-        final Environment closure;
-        HirExtProp(Expression getter, Environment closure) {
-            this.getter = getter;
-            this.closure = closure;
         }
     }
 }

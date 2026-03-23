@@ -214,9 +214,9 @@ public class HirConstantFolding extends HirTransformer implements HirPass {
             case MUL:
                 if (isOne(right)) return left;
                 if (isOne(left)) return right;
-                // x * 0 → 0（仅整数零，排除 float NaN * 0 = NaN）
-                if (isIntZero(right)) return right;
-                if (isIntZero(left)) return left;
+                // x * 0 → 0（仅整数零，排除 float NaN * 0 = NaN 和 String * 0 = ""）
+                if (isIntZero(right) && !isStringExpr(left)) return right;
+                if (isIntZero(left) && !isStringExpr(right)) return left;
                 break;
             case DIV:
                 if (isOne(right)) return left;
@@ -352,6 +352,13 @@ public class HirConstantFolding extends HirTransformer implements HirPass {
         if (!(expr instanceof Literal)) return false;
         Literal lit = (Literal) expr;
         return lit.getKind() == LiteralKind.BOOLEAN && (Boolean) lit.getValue() == value;
+    }
+
+    /** 表达式是否为字符串类型（字面量或类型推断为 String） */
+    private static boolean isStringExpr(Expression expr) {
+        if (expr instanceof Literal && ((Literal) expr).getKind() == LiteralKind.STRING) return true;
+        if (expr.getType() instanceof ClassType && "String".equals(((ClassType) expr.getType()).getName())) return true;
+        return false;
     }
 
     /** 整数零（INT 或 LONG），不匹配 FLOAT/DOUBLE 的 0.0（因为 NaN * 0.0 = NaN） */

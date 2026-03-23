@@ -191,6 +191,43 @@ public class Parser {
     }
 
     /**
+     * 匹配 GT（>），支持拆分 SHR（>>）和 USHR（>>>）。
+     * 泛型上下文中 List&lt;List&lt;Int&gt;&gt; 的 >> 应被视为两个 >。
+     */
+    boolean matchGT() {
+        if (check(TokenType.GT)) {
+            advance();
+            return true;
+        }
+        // >> → 消费第一个 >，把第二个 > 推回
+        if (check(TokenType.SHR)) {
+            Token shr = current;
+            advance(); // 消费 >>
+            // 把第二个 > 作为 nextToken 推回
+            nextToken = current;
+            current = new Token(TokenType.GT, ">", null, shr.getLine(), shr.getColumn() + 1, shr.getOffset() + 1);
+            return true;
+        }
+        // >>> → 消费第一个 >，把 >> 推回
+        if (check(TokenType.USHR)) {
+            Token ushr = current;
+            advance(); // 消费 >>>
+            nextToken = current;
+            current = new Token(TokenType.SHR, ">>", null, ushr.getLine(), ushr.getColumn() + 1, ushr.getOffset() + 1);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 期望 GT（>），支持拆分 SHR/USHR。用于泛型关闭。
+     */
+    Token expectGT(String message) {
+        if (matchGT()) return previous;
+        throw new ParseException(message, current, TokenType.GT.name()).withSource(lexer.getSource());
+    }
+
+    /**
      * 解析成员名：标识符或关键字（.后允许关键字作为成员名，如 s.launch）
      */
     String expectMemberName() {

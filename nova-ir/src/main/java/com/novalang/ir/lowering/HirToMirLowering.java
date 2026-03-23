@@ -594,7 +594,10 @@ public class HirToMirLowering {
     private MirClass lowerClass(HirClass hirClass) {
         List<MirField> fields = new ArrayList<>();
         for (HirField f : hirClass.getFields()) {
-            fields.add(new MirField(f.getName(), hirTypeToMir(f.getType()), f.getModifiers()));
+            MirField mf = new MirField(f.getName(), hirTypeToMir(f.getType()), f.getModifiers());
+            if (f.hasCustomGetter()) mf.setGetterFunctionName("get$" + f.getName());
+            if (f.hasCustomSetter()) mf.setSetterFunctionName("set$" + f.getName());
+            fields.add(mf);
         }
 
         String className = hirClass.getName();
@@ -3688,7 +3691,10 @@ public class HirToMirLowering {
         for (MirLocal local : builder.getFunction().getLocals()) {
             if (local.getName().equals(name)) { isLocalVar = true; break; }
         }
-        if (!isLocalVar && (!expr.getArgs().isEmpty()
+        // 命名参数：需要走 $PipeCall 运行时分派（编译期不知道目标函数参数列表）
+        if (!isLocalVar && expr.getNamedArgs() != null && !expr.getNamedArgs().isEmpty()) {
+            // 跳到下面的 scriptMode $PipeCall 路径处理命名参数
+        } else if (!isLocalVar && (!expr.getArgs().isEmpty()
                 || (expr.getTypeArgs() != null && !expr.getTypeArgs().isEmpty()))) {
             int[] args = lowerArgs(expr.getArgs(), builder);
 
@@ -3742,9 +3748,29 @@ public class HirToMirLowering {
                     expr.getCallee(), expr.getTypeArgs(), filled);
             return lowerFunctionTypeInvocation(filledCall, builder);
         }
-        // scriptMode 编译模式: 未解析的 0 参数裸调用走 $PipeCall 运行时分派
-        // （支持 scope receiver 内的方法调用，如 .run { toUpperCase() }）
+        // scriptMode 编译模式: 未解析的裸调用走 $PipeCall 运行时分派
         if (scriptMode && !isLocalVar) {
+            Map<String, Expression> namedArgs = expr.getNamedArgs();
+            if (namedArgs != null && !namedArgs.isEmpty()) {
+                // 命名参数编码: "funcName@named:positionalCount:key1,key2"
+                // 位置参数先 lower，命名参数值按 key 顺序追加
+                int[] positionalArgs = lowerArgs(expr.getArgs(), builder);
+                StringBuilder nameList = new StringBuilder();
+                List<Integer> namedVals = new ArrayList<>();
+                for (Map.Entry<String, Expression> e : namedArgs.entrySet()) {
+                    if (nameList.length() > 0) nameList.append(',');
+                    nameList.append(e.getKey());
+                    namedVals.add(lowerExpr(e.getValue(), builder));
+                }
+                int[] allArgs = new int[positionalArgs.length + namedVals.size()];
+                System.arraycopy(positionalArgs, 0, allArgs, 0, positionalArgs.length);
+                for (int i = 0; i < namedVals.size(); i++) {
+                    allArgs[positionalArgs.length + i] = namedVals.get(i);
+                }
+                String extra = name + "@named:" + positionalArgs.length + ":" + nameList;
+                return builder.emitInvokeStatic("$PipeCall|" + extra, allArgs,
+                        MirType.ofObject("java/lang/Object"), expr.getLocation());
+            }
             int[] args = lowerArgs(expr.getArgs(), builder);
             return builder.emitInvokeStatic("$PipeCall|" + name, args,
                     MirType.ofObject("java/lang/Object"), expr.getLocation());
@@ -3910,6 +3936,28 @@ public class HirToMirLowering {
     private int lowerTopLevelFunctionCall(String name, HirCall expr, MirBuilder builder) {
         SourceLocation loc = expr.getLocation();
         HirFunction hirFunc = topLevelFunctionDecls.get(name);
+
+        // 跨 REPL 命名参数：hirFunc 不可用时无法编译期合并 → 走 $PipeCall 运行时分派
+        Map<String, Expression> namedArgs = expr.getNamedArgs();
+        if (hirFunc == null && namedArgs != null && !namedArgs.isEmpty()) {
+            int[] positionalArgs = lowerArgs(expr.getArgs(), builder);
+            StringBuilder nameList = new StringBuilder();
+            List<Integer> namedVals = new ArrayList<>();
+            for (Map.Entry<String, Expression> e : namedArgs.entrySet()) {
+                if (nameList.length() > 0) nameList.append(',');
+                nameList.append(e.getKey());
+                namedVals.add(lowerExpr(e.getValue(), builder));
+            }
+            int[] allArgs = new int[positionalArgs.length + namedVals.size()];
+            System.arraycopy(positionalArgs, 0, allArgs, 0, positionalArgs.length);
+            for (int i = 0; i < namedVals.size(); i++) {
+                allArgs[positionalArgs.length + i] = namedVals.get(i);
+            }
+            String extra = "$PipeCall|" + name + "@named:" + positionalArgs.length + ":" + nameList;
+            return builder.emitInvokeStatic(extra, allArgs,
+                    MirType.ofObject("java/lang/Object"), loc);
+        }
+
         // spread 调用: 展开列表参数到单独的位置参数
         if (expr.hasSpread() && hirFunc != null) {
             return lowerTopLevelSpreadCall(name, expr, hirFunc, builder, loc);

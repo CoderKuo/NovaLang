@@ -110,7 +110,7 @@ final class MemberResolver {
         if (lastLookupMiss != null) {
             throw lastLookupMiss;
         }
-        throw interp.hirError("Unknown member '" + memberName + "' on " + obj.getTypeName(), node);
+        throw interp.createError("Unknown member '" + memberName + "' on " + obj.getTypeName(), node);
     }
 
     private NovaValue resolveMemberOnValueExact(NovaValue obj, String memberName, AstNode node) {
@@ -134,7 +134,7 @@ final class MemberResolver {
         if (obj instanceof NovaLibrary) {
             NovaValue member = ((NovaLibrary) obj).getMember(memberName);
             if (member != null) return member;
-            throw interp.hirError("Unknown member '" + memberName + "' on library '"
+            throw interp.createError("Unknown member '" + memberName + "' on library '"
                     + ((NovaLibrary) obj).getName() + "'", node);
         }
         { NovaValue d = MemberDispatcher.dispatch(obj, memberName, interp); if (d != null) return d; }
@@ -208,7 +208,8 @@ final class MemberResolver {
 
     private NovaValue resolveObjectMember(NovaObject novaObj, String memberName, AstNode node) {
         if (novaObj.hasField(memberName)) {
-            if (!interp.evaluatingCallee && !interp.customGetterCache.containsKey(novaObj.getNovaClass().getName())
+            if (!interp.evaluatingCallee
+                    && novaObj.getNovaClass().getCustomGetter(memberName) == null
                     && novaObj.getNovaClass().isFieldAccessibleFrom(memberName, interp.getCurrentClass())) {
                 return novaObj.getField(memberName);
             }
@@ -218,15 +219,15 @@ final class MemberResolver {
             }
             NovaClass objClass = novaObj.getNovaClass();
             if (!objClass.isFieldAccessibleFrom(memberName, interp.getCurrentClass())) {
-                throw interp.hirError("Cannot access private field '" + memberName + "'", node);
+                throw interp.createError("Cannot access private field '" + memberName + "'", node);
             }
-            HirField gf = interp.findHirFieldWithGetter(objClass.getName(), memberName);
-            if (gf != null) return interp.executeHirCustomGetter(gf, novaObj);
+            NovaCallable mirGetter = objClass.getCustomGetter(memberName);
+            if (mirGetter != null) return mirGetter.call(interp, Collections.singletonList(novaObj));
             return novaObj.getField(memberName);
         }
         // getter-only 属性
-        HirField gf = interp.findHirFieldWithGetter(novaObj.getNovaClass().getName(), memberName);
-        if (gf != null) return interp.executeHirCustomGetter(gf, novaObj);
+        NovaCallable mirGetter = novaObj.getNovaClass().getCustomGetter(memberName);
+        if (mirGetter != null) return mirGetter.call(interp, Collections.singletonList(novaObj));
         // 方法查找（含接口默认方法）
         NovaCallable method = novaObj.getNovaClass().findCallableMethod(memberName);
         if (method == null) {
@@ -237,7 +238,7 @@ final class MemberResolver {
         }
         if (method != null) {
             if (!novaObj.getNovaClass().isMethodAccessibleFrom(memberName, interp.getCurrentClass())) {
-                throw interp.hirError("Cannot access private method '" + memberName + "'", node);
+                throw interp.createError("Cannot access private method '" + memberName + "'", node);
             }
             if (!interp.evaluatingCallee && method.getArity() == 0) {
                 return new NovaBoundMethod(novaObj, method).call(interp, Collections.emptyList());
@@ -311,19 +312,17 @@ final class MemberResolver {
             NovaExternalObject ext = new NovaExternalObject(proxy.getInstance().getJavaDelegate());
             return resolveMemberOnExternal(ext, memberName, node);
         }
-        throw interp.hirError("Unknown super member: " + memberName, node);
+        throw interp.createError("Unknown super member: " + memberName, node);
     }
 
     private NovaValue resolveExtensionFallback(NovaValue obj, String memberName, AstNode node) {
         NovaCallable ext = interp.findExtension(obj, memberName);
         if (ext != null) return new NovaBoundMethod(obj, ext);
-        ExtensionRegistry.HirExtProp hirProp = interp.findHirExtensionProperty(obj, memberName);
-        if (hirProp != null) return interp.executeHirExtensionPropertyGetter(hirProp, obj);
         ExtensionRegistry.ExtensionProperty extProp = interp.findNovaExtensionProperty(obj, memberName);
         if (extProp != null) return interp.executeExtensionPropertyGetter(extProp, obj);
         NovaValue envCallable = resolveCallableInScope(obj, memberName);
         if (envCallable != null) return envCallable;
-        throw interp.hirError("Unknown member '" + memberName + "' on " + obj.getTypeName(), node);
+        throw interp.createError("Unknown member '" + memberName + "' on " + obj.getTypeName(), node);
     }
 
     NovaValue resolveMemberOnExternal(NovaExternalObject extObj, String memberName, AstNode node) {
@@ -621,12 +620,12 @@ final class MemberResolver {
             case "annotations": return new NovaList(new ArrayList<>(info.getAnnotationInfos()));
             case "field": return new NovaNativeFunction("field", 1, (interpreter, args) -> {
                 NovaFieldInfo fi = info.findField(args.get(0).asString());
-                if (fi == null) throw interp.hirError("Field not found: " + args.get(0).asString(), node);
+                if (fi == null) throw interp.createError("Field not found: " + args.get(0).asString(), node);
                 return fi;
             });
             case "method": return new NovaNativeFunction("method", 1, (interpreter, args) -> {
                 NovaMethodInfo mi = info.findMethod(args.get(0).asString());
-                if (mi == null) throw interp.hirError("Method not found: " + args.get(0).asString(), node);
+                if (mi == null) throw interp.createError("Method not found: " + args.get(0).asString(), node);
                 return mi;
             });
             case "isData": return NovaBoolean.of(info.getNovaClass() != null && info.getNovaClass().isData());
@@ -634,7 +633,7 @@ final class MemberResolver {
             case "isAnnotation": return NovaBoolean.of(info.getNovaClass() != null && info.getNovaClass().isAnnotation());
             case "toString": return NovaNativeFunction.create("toString", () -> NovaString.of(info.toString()));
             default:
-                throw interp.hirError("Unknown ClassInfo member: " + memberName, node);
+                throw interp.createError("Unknown ClassInfo member: " + memberName, node);
         }
     }
 
@@ -662,7 +661,7 @@ final class MemberResolver {
                 return NovaNull.UNIT;
             });
             default:
-                throw interp.hirError("Unknown FieldInfo member: " + memberName, node);
+                throw interp.createError("Unknown FieldInfo member: " + memberName, node);
         }
     }
 
@@ -684,7 +683,7 @@ final class MemberResolver {
                 }
             });
             default:
-                throw interp.hirError("Unknown MethodInfo member: " + memberName, node);
+                throw interp.createError("Unknown MethodInfo member: " + memberName, node);
         }
     }
 
@@ -725,7 +724,7 @@ final class MemberResolver {
             map.put(NovaString.of("name"), NovaString.of(ann.getName()));
             NovaMap argsMap = new NovaMap();
             for (Map.Entry<String, Expression> entry : ann.getArgs().entrySet()) {
-                argsMap.put(NovaString.of(entry.getKey()), interp.evaluateHir(entry.getValue()));
+                argsMap.put(NovaString.of(entry.getKey()), MirClassRegistrar.foldExpression(entry.getValue(), interp));
             }
             map.put(NovaString.of("args"), argsMap);
             result.add(map);
@@ -768,15 +767,6 @@ final class MemberResolver {
                 boolean isMutable = !hf.isVal();
                 fields.add(new NovaFieldInfo(hf.getName(), typeName, visStr, isMutable, cls, null));
             }
-        } else if (cls.getConstructorCallable() instanceof HirFunctionValue) {
-            // 回退：从构造器参数推断字段
-            HirFunctionValue ctorFunc = (HirFunctionValue) cls.getConstructorCallable();
-            for (HirParam param : ctorFunc.getDeclaration().getParams()) {
-                String typeName = interp.getHirTypeName(param.getType());
-                com.novalang.runtime.types.Modifier vis = cls.getFieldVisibility(param.getName());
-                String visStr = vis != null ? vis.name().toLowerCase() : "public";
-                fields.add(new NovaFieldInfo(param.getName(), typeName, visStr, true, cls, null));
-            }
         }
 
         // 2. 方法信息：从 callableMethods 获取
@@ -796,7 +786,7 @@ final class MemberResolver {
             for (HirAnnotation ann : anns) {
                 Map<String, NovaValue> annArgs = new HashMap<>();
                 for (Map.Entry<String, Expression> e : ann.getArgs().entrySet()) {
-                    annArgs.put(e.getKey(), interp.evaluateHir(e.getValue()));
+                    annArgs.put(e.getKey(), MirClassRegistrar.foldExpression(e.getValue(), interp));
                 }
                 annotations.add(new NovaAnnotationInfo(ann.getName(), annArgs));
             }
@@ -836,29 +826,13 @@ final class MemberResolver {
             return new NovaNativeFunction("build", 0, (interpreter, args) -> {
                 // 从构造器参数中获取字段名列表
                 NovaCallable ctor = targetClass.getConstructorCallable();
-                if (ctor instanceof HirFunctionValue) {
-                    List<HirParam> params = ((HirFunctionValue) ctor).getDeclaration().getParams();
-                    List<NovaValue> ctorArgs = new ArrayList<>();
-                    for (HirParam p : params) {
-                        NovaValue val = builder.getField(p.getName());
-                        if (val == null) {
-                            if (p.hasDefaultValue()) {
-                                val = interp.evaluateHir(p.getDefaultValue());
-                            } else {
-                                throw interp.hirError("Builder missing required field: " + p.getName(), node);
-                            }
-                        }
-                        ctorArgs.add(val);
-                    }
-                    return interpreter.instantiate(targetClass, ctorArgs, null);
-                }
                 if (ctor instanceof MirCallable) {
                     List<com.novalang.ir.mir.MirParam> params = ((MirCallable) ctor).getFunction().getParams();
                     List<NovaValue> ctorArgs = new ArrayList<>();
                     for (com.novalang.ir.mir.MirParam p : params) {
                         NovaValue val = builder.getField(p.getName());
                         if (val == null) {
-                            throw interp.hirError("Builder missing required field: " + p.getName(), node);
+                            throw interp.createError("Builder missing required field: " + p.getName(), node);
                         }
                         ctorArgs.add(val);
                     }
@@ -872,16 +846,6 @@ final class MemberResolver {
 
         // fluent setter: 字段名作为方法名
         com.novalang.runtime.NovaCallable ctor = targetClass.getConstructorCallable();
-        if (ctor instanceof HirFunctionValue) {
-            for (HirParam p : ((HirFunctionValue) ctor).getDeclaration().getParams()) {
-                if (p.getName().equals(memberName)) {
-                    return NovaNativeFunction.create(memberName, (value) -> {
-                        builder.setField(memberName, value);
-                        return builder;
-                    });
-                }
-            }
-        }
         if (ctor instanceof MirCallable) {
             for (com.novalang.ir.mir.MirParam p : ((MirCallable) ctor).getFunction().getParams()) {
                 if (p.getName().equals(memberName)) {
@@ -893,7 +857,7 @@ final class MemberResolver {
             }
         }
 
-        throw interp.hirError("Unknown builder member: " + memberName, node);
+        throw interp.createError("Unknown builder member: " + memberName, node);
     }
 
     // ============ HIR performIndex ============
@@ -925,7 +889,7 @@ final class MemberResolver {
             NovaPair pair = (NovaPair) target;
             if (i == 0) return AbstractNovaValue.fromJava(pair.getFirst());
             if (i == 1) return AbstractNovaValue.fromJava(pair.getSecond());
-            throw interp.hirError("Pair index out of bounds: " + i, node);
+            throw interp.createError("Pair index out of bounds: " + i, node);
         }
         if (target instanceof NovaObject) {
             com.novalang.runtime.NovaCallable getMethod = ((NovaObject) target).getNovaClass().findCallableMethod("get");
@@ -939,7 +903,7 @@ final class MemberResolver {
             if (result instanceof NovaValue) return (NovaValue) result;
             return AbstractNovaValue.fromJava(result);
         } catch (RuntimeException e) {
-            throw interp.hirError("Cannot index into " + target.getTypeName(), node);
+            throw interp.createError("Cannot index into " + target.getTypeName(), node);
         }
     }
 

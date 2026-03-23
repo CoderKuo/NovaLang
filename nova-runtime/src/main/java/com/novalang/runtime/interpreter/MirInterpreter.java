@@ -2900,6 +2900,11 @@ final class MirInterpreter {
         if (target instanceof ScalarizedNovaObject) {
             ScalarizedNovaObject obj = (ScalarizedNovaObject) target;
             NovaClass objClass = obj.getNovaClass();
+            NovaCallable scalarGetter = objClass.getCustomGetter(fieldName);
+            if (scalarGetter != null && !("get$" + fieldName).equals(frame.function.getName())) {
+                frame.locals[inst.getDest()] = scalarGetter.call(interp, Collections.singletonList(obj));
+                return;
+            }
             FieldAccessSite site = inst.cache instanceof FieldAccessSite ? (FieldAccessSite) inst.cache : null;
             if (site != null && site.cachedClass == objClass && site.fieldIndex >= 0) {
                 obj.exportFieldToFrame(site.fieldIndex, frame, inst.getDest());
@@ -2926,6 +2931,12 @@ final class MirInterpreter {
         if (target instanceof NovaObject) {
             NovaObject obj = (NovaObject) target;
             NovaClass objClass = obj.getNovaClass();
+            // 自定义 getter → 调用 get$fieldName() 合成方法（跳过递归：在 getter 函数自身内不拦截）
+            NovaCallable customGetter = objClass.getCustomGetter(fieldName);
+            if (customGetter != null && !("get$" + fieldName).equals(frame.function.getName())) {
+                frame.locals[inst.getDest()] = customGetter.call(interp, Collections.singletonList(obj));
+                return;
+            }
             // DEBUG: detect lambda class accessing non-existent field (scope function scenario)
             if (objClass.getName().contains("$Lambda$") && objClass.getFieldIndex(fieldName) < 0
                     && !obj.hasField(fieldName) && obj.getMethod(fieldName) == null) {
@@ -3040,6 +3051,12 @@ final class MirInterpreter {
         if (target instanceof NovaObject) {
             NovaObject obj = (NovaObject) target;
             NovaClass objClass = obj.getNovaClass();
+            // 自定义 setter → 调用 set$fieldName(value) 合成方法（跳过递归）
+            NovaCallable customSetter = objClass.getCustomSetter(fieldName);
+            if (customSetter != null && !("set$" + fieldName).equals(frame.function.getName())) {
+                customSetter.call(interp, java.util.Arrays.asList(obj, value));
+                return;
+            }
             // Lambda class SET_FIELD: field not on lambda → redirect to scopeReceiver
             if (objClass.getName().contains("$Lambda$") && objClass.getFieldIndex(fieldName) < 0
                     && !obj.hasField(fieldName)) {

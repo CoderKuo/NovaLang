@@ -267,10 +267,6 @@ public class ReplRunner {
             }
         } catch (NovaRuntimeException e) {
             System.err.println("错误: " + e.getMessage());
-        } catch (ControlFlow cf) {
-            if (cf.getType() == ControlFlow.Type.RETURN && cf.getValue() != null) {
-                System.out.println(cf.getValue());
-            }
         } catch (Exception e) {
             System.err.println("错误: " + e.getMessage());
         }

@@ -5,6 +5,8 @@ import com.novalang.ir.hir.ClassKind;
 import com.novalang.ir.hir.HirAnnotation;
 import com.novalang.compiler.ast.Modifier;
 import com.novalang.compiler.ast.expr.Expression;
+import com.novalang.compiler.ast.expr.Identifier;
+import com.novalang.compiler.ast.expr.Literal;
 import com.novalang.runtime.*;
 import com.novalang.runtime.types.Environment;
 import com.novalang.runtime.types.NovaClass;
@@ -38,6 +40,34 @@ final class MirClassRegistrar {
     final Set<String> persistentInterfaceNames = new HashSet<>();
     /** 持久接口对象（跨 evalRepl 保留，带抽象方法信息） */
     private final Map<String, NovaInterface> persistentInterfaces = new HashMap<>();
+
+    // ============ 表达式常量折叠（替代 HirEvaluator） ============
+
+    /** 将 AST 表达式折叠为 NovaValue。仅支持字面量和标识符，其他类型报错。 */
+    static NovaValue foldExpression(Expression expr, Interpreter interp) {
+        if (expr instanceof Literal) {
+            Literal lit = (Literal) expr;
+            Object value = lit.getValue();
+            switch (lit.getKind()) {
+                case INT:     return NovaInt.of(((Number) value).intValue());
+                case LONG:    return NovaLong.of(((Number) value).longValue());
+                case FLOAT:   return NovaFloat.of(((Number) value).floatValue());
+                case DOUBLE:  return NovaDouble.of(((Number) value).doubleValue());
+                case CHAR:    return NovaChar.of((Character) value);
+                case STRING:  return NovaString.of((String) value);
+                case BOOLEAN: return NovaBoolean.of((Boolean) value);
+                case NULL:    return NovaNull.NULL;
+                default:      return AbstractNovaValue.fromJava(value);
+            }
+        }
+        if (expr instanceof Identifier) {
+            NovaValue val = interp.getEnvironment().tryGet(((Identifier) expr).getName());
+            return val != null ? val : NovaNull.NULL;
+        }
+        throw new NovaRuntimeException("Unsupported expression type in annotation/default argument: "
+                + expr.getClass().getSimpleName()
+                + ". Only literals and identifiers are supported.");
+    }
 
     /** Java 类解析缓存 */
     private static final String[] JAVA_PREFIXES = {
@@ -279,13 +309,21 @@ final class MirClassRegistrar {
             }
         }
 
-        // 字段可见性
+        // 字段可见性 + 自定义 getter/setter
         for (MirField field : cls.getFields()) {
             if (field.getModifiers().contains(Modifier.STATIC)) continue;
             if (field.getModifiers().contains(Modifier.PRIVATE)) {
                 novaClass.setFieldVisibility(field.getName(), com.novalang.runtime.types.Modifier.PRIVATE);
             } else if (field.getModifiers().contains(Modifier.PROTECTED)) {
                 novaClass.setFieldVisibility(field.getName(), com.novalang.runtime.types.Modifier.PROTECTED);
+            }
+            if (field.hasCustomGetter()) {
+                NovaCallable getter = novaClass.findMethod(field.getGetterFunctionName());
+                if (getter != null) novaClass.setCustomGetter(field.getName(), getter);
+            }
+            if (field.hasCustomSetter()) {
+                NovaCallable setter = novaClass.findMethod(field.getSetterFunctionName());
+                if (setter != null) novaClass.setCustomSetter(field.getName(), setter);
             }
         }
 
@@ -324,7 +362,7 @@ final class MirClassRegistrar {
                 if (processors != null) {
                     Map<String, NovaValue> annArgs = new HashMap<>();
                     for (Map.Entry<String, Expression> entry : ann.getArgs().entrySet()) {
-                        annArgs.put(entry.getKey(), interp.evaluateHir(entry.getValue()));
+                        annArgs.put(entry.getKey(), foldExpression(entry.getValue(), interp));
                     }
                     for (NovaAnnotationProcessor proc : processors) {
                         proc.processClass(novaClass, annArgs, interp);
@@ -427,7 +465,7 @@ final class MirClassRegistrar {
             for (HirAnnotation ann : hirAnns) {
                 Map<String, NovaValue> annArgs = new HashMap<>();
                 for (Map.Entry<String, Expression> e : ann.getArgs().entrySet()) {
-                    annArgs.put(e.getKey(), interp.evaluateHir(e.getValue()));
+                    annArgs.put(e.getKey(), foldExpression(e.getValue(), interp));
                 }
                 annotations.add(new com.novalang.runtime.interpreter.reflect.NovaAnnotationInfo(ann.getName(), annArgs));
             }

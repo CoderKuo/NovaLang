@@ -48,6 +48,10 @@ public final class NovaClass extends AbstractNovaValue implements NovaCallable {
     // 方法查找缓存（含继承链）
     private Map<String, NovaCallable> methodCache;
 
+    // 自定义 getter/setter（MIR 路径编译的合成方法）
+    private Map<String, NovaCallable> customGetters;
+    private Map<String, NovaCallable> customSetters;
+
     // 缓存的 ClassInfo（HIR 路径预构建，供 fromNovaClass 使用）
     private Object cachedClassInfo;
 
@@ -204,6 +208,29 @@ public final class NovaClass extends AbstractNovaValue implements NovaCallable {
     }
 
     public void setCachedClassInfo(Object info) { this.cachedClassInfo = info; }
+
+    public void setCustomGetter(String fieldName, NovaCallable getter) {
+        if (customGetters == null) customGetters = new HashMap<String, NovaCallable>();
+        customGetters.put(fieldName, getter);
+    }
+    public NovaCallable getCustomGetter(String fieldName) {
+        if (customGetters != null) {
+            NovaCallable g = customGetters.get(fieldName);
+            if (g != null) return g;
+        }
+        return superclass != null ? superclass.getCustomGetter(fieldName) : null;
+    }
+    public void setCustomSetter(String fieldName, NovaCallable setter) {
+        if (customSetters == null) customSetters = new HashMap<String, NovaCallable>();
+        customSetters.put(fieldName, setter);
+    }
+    public NovaCallable getCustomSetter(String fieldName) {
+        if (customSetters != null) {
+            NovaCallable s = customSetters.get(fieldName);
+            if (s != null) return s;
+        }
+        return superclass != null ? superclass.getCustomSetter(fieldName) : null;
+    }
     public Object getCachedClassInfo() { return cachedClassInfo; }
 
     // ============ 静态成员 ============
