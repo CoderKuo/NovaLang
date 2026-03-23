@@ -603,7 +603,9 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
     }
 
     /**
-     * 脱糖：val (a, b) = e → val tmp = e; val a = tmp.component1(); val b = tmp.component2()
+     * 脱糖：
+     * - 位置解构: val (a, b) = e → val tmp = e; val a = tmp.component1(); val b = tmp.component2()
+     * - 名称解构: val (mail = email) = e → val tmp = e; val mail = tmp.email
      */
     @Override
     public AstNode visitDestructuringDecl(DestructuringDecl node, LoweringContext ctx) {
@@ -614,17 +616,28 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
         List<Statement> stmts = new ArrayList<>();
         stmts.add(ctx.makeTempVal(loc, tmp, null, init));
 
-        List<String> names = node.getNames();
-        for (int i = 0; i < names.size(); i++) {
-            String name = names.get(i);
-            if (name == null || "_".equals(name)) continue;
-            // val name = tmp.componentN()
+        List<DestructuringEntry> entries = node.getEntries();
+        int positionIndex = 0;
+        for (int i = 0; i < entries.size(); i++) {
+            DestructuringEntry entry = entries.get(i);
+            positionIndex++;  // 所有条目递增位置
+            if (entry.isSkip()) continue;
+
+            String localName = entry.getLocalName();
             Identifier tmpRef = ctx.tempRef(loc, tmp, null);
-            String methodName = "component" + (i + 1);
-            Expression call = new HirCall(loc, null,
-                    new MemberExpr(loc, tmpRef, methodName),
-                    Collections.emptyList(), Collections.emptyList());
-            stmts.add(ctx.makeTempVal(loc, name, null, call));
+            Expression valueExpr;
+
+            if (entry.isNameBased()) {
+                // 名称解构: tmp.propertyName（字段访问）
+                valueExpr = new MemberExpr(loc, tmpRef, entry.getPropertyName());
+            } else {
+                // 位置解构: tmp.componentN()
+                String methodName = "component" + positionIndex;
+                valueExpr = new HirCall(loc, null,
+                        new MemberExpr(loc, tmpRef, methodName),
+                        Collections.emptyList(), Collections.emptyList());
+            }
+            stmts.add(ctx.makeTempVal(loc, localName, null, valueExpr));
         }
         return new Block(loc, stmts, true);
     }
@@ -849,7 +862,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
     @Override
     public AstNode visitForStmt(ForStmt node, LoweringContext ctx) {
         return new ForStmt(node.getLocation(), node.getLabel(),
-                node.getVariables(), lowerExpr(node.getIterable(), ctx),
+                node.getEntries(), lowerExpr(node.getIterable(), ctx),
                 lowerStmt(node.getBody(), ctx));
     }
 

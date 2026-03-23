@@ -4,6 +4,7 @@ import com.novalang.compiler.ast.stmt.Block;
 import com.novalang.compiler.ast.SourceLocation;
 import com.novalang.compiler.ast.decl.Declaration;
 import com.novalang.compiler.ast.decl.DestructuringDecl;
+import com.novalang.compiler.ast.decl.DestructuringEntry;
 import com.novalang.compiler.ast.decl.FunDecl;
 import com.novalang.compiler.ast.decl.PropertyDecl;
 import com.novalang.compiler.ast.expr.*;
@@ -333,15 +334,15 @@ class StmtParser {
             return parseCStyleForStmt(loc, label);
         }
 
-        List<String> variables = new ArrayList<String>();
+        List<DestructuringEntry> entries;
         if (parser.match(LPAREN)) {
-            // 解构
-            do {
-                variables.add(parseForVariable());
-            } while (parser.match(COMMA));
+            // 解构（支持位置和名称解构）
+            entries = parser.declParser.parseDestructuringEntries();
             parser.expect(RPAREN, "Expected ')'");
         } else {
-            variables.add(parseForVariable());
+            String varName = parseForVariable();
+            entries = new ArrayList<DestructuringEntry>();
+            entries.add(new DestructuringEntry("_".equals(varName) ? null : varName, null));
         }
 
         parser.expect(KW_IN, "Expected 'in'");
@@ -355,7 +356,7 @@ class StmtParser {
             body = parseStatement();
         }
 
-        return new ForStmt(loc, label, variables, iterable, body);
+        return new ForStmt(loc, label, entries, iterable, body);
     }
 
     private CStyleForStmt parseCStyleForStmt(SourceLocation loc, String label) {

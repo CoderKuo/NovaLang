@@ -272,6 +272,28 @@ public final class TypeAliasDecl extends Declaration {
 }
 ```
 
+### 3.7 解构声明
+
+```java
+public final class DestructuringDecl extends Declaration {
+    private final boolean isVal;
+    private final List<DestructuringEntry> entries;  // 解构条目列表
+    private final Expression initializer;
+}
+
+// 解构条目：支持位置解构和名称解构
+public class DestructuringEntry {
+    private final String localName;      // 本地变量名，null = 跳过(_)
+    private final String propertyName;   // 属性名，null = 位置解构(componentN)
+    // isNameBased(): propertyName != null
+    // isSkip(): localName == null && propertyName == null
+}
+
+// 位置解构: val (a, b) = expr → a=component1(), b=component2()
+// 名称解构: val (mail = email) = expr → mail=expr.email
+// 混合:    val (mail = email, b) = expr → mail=expr.email, b=component2()
+```
+
 ---
 
 ## 4. 语句节点
@@ -322,10 +344,16 @@ public final class RangeCondition extends WhenCondition {
 }
 
 public final class ForStmt extends Statement {
-    private final String label;                  // 可选
-    private final List<String> variables;        // 支持解构
+    private final String label;                          // 可选
+    private final List<DestructuringEntry> entries;       // 支持位置/名称解构
     private final Expression iterable;
     private final Statement body;
+}
+
+// 解构条目
+public class DestructuringEntry {
+    private final String localName;      // 本地变量名，null = 跳过(_)
+    private final String propertyName;   // 属性名，null = 位置解构(componentN)
 }
 
 public final class WhileStmt extends Statement {

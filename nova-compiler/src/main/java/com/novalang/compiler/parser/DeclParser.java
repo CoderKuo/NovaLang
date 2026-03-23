@@ -602,20 +602,30 @@ class DeclParser {
     }
 
     /**
-     * 解析解构名称列表 (a, b, _) 中的内容，不含括号
+     * 解析解构条目列表 (a, b, _, mail = email) 中的内容，不含括号。
+     * 支持位置解构（a）和名称解构（localVar = propertyName）。
      */
-    List<String> parseDestructuringNames() {
-        List<String> names = new ArrayList<String>();
+    List<DestructuringEntry> parseDestructuringEntries() {
+        List<DestructuringEntry> entries = new ArrayList<DestructuringEntry>();
         do {
             if (parser.match(UNDERSCORE)) {
-                names.add(null);
+                entries.add(new DestructuringEntry(null, null));
             } else if (parser.check(IDENTIFIER)) {
-                names.add(parser.advance().getLexeme());
+                String firstName = parser.advance().getLexeme();
+                if (parser.match(ASSIGN)) {
+                    // 名称解构: localName = propertyName
+                    String propName = parser.expect(IDENTIFIER,
+                        "Expected property name after '=' in destructuring").getLexeme();
+                    entries.add(new DestructuringEntry(firstName, propName));
+                } else {
+                    // 位置解构
+                    entries.add(new DestructuringEntry(firstName, null));
+                }
             } else {
                 throw new ParseException("Expected variable name in destructuring", parser.current);
             }
         } while (parser.match(COMMA));
-        return names;
+        return entries;
     }
 
     // ============ 属性声明 ============
@@ -720,11 +730,11 @@ class DeclParser {
      */
     DestructuringDecl parseDestructuringBody(SourceLocation loc, boolean isVal) {
         parser.expect(LPAREN, "Expected '(' for destructuring");
-        List<String> names = parseDestructuringNames();
+        List<DestructuringEntry> entries = parseDestructuringEntries();
         parser.expect(RPAREN, "Expected ')' after destructuring names");
         parser.expect(ASSIGN, "Expected '=' in destructuring declaration");
         Expression initializer = parser.parseExpression();
-        return new DestructuringDecl(loc, isVal, names, initializer);
+        return new DestructuringDecl(loc, isVal, entries, initializer);
     }
 
     // ============ 属性访问器 ============

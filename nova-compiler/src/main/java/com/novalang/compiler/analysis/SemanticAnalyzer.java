@@ -579,7 +579,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (node.getInitializer() != null) {
             node.getInitializer().accept(this, ctx);
         }
-        for (String name : node.getNames()) {
+        for (DestructuringEntry entry : node.getEntries()) {
+            String name = entry.getLocalName();
             if (name != null && !"_".equals(name)) {
                 checker.checkRedefinition(currentScope, name, node);
                 Symbol sym = new Symbol(name, SymbolKind.VARIABLE, null,
@@ -674,7 +675,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         NovaType elemNovaType = inference.inferElementNovaType(iterableNovaType);
         String elemType = elemNovaType != null ? elemNovaType.toDisplayString() : null;
 
-        for (String varName : node.getVariables()) {
+        for (DestructuringEntry entry : node.getEntries()) {
+            String varName = entry.getLocalName();
             if (varName != null && !"_".equals(varName)) {
                 Symbol varSym = new Symbol(varName, SymbolKind.VARIABLE, elemType,
                         false, node.getLocation(), node, Modifier.PUBLIC);

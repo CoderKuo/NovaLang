@@ -174,7 +174,7 @@ public class HirTransformer implements HirVisitor<HirNode, Void> {
             Expression iter = transformExpr(fs.getIterable());
             Statement body = transformStmt(fs.getBody());
             if (iter == fs.getIterable() && body == fs.getBody()) return stmt;
-            return new ForStmt(fs.getLocation(), fs.getLabel(), fs.getVariables(), iter, body);
+            return new ForStmt(fs.getLocation(), fs.getLabel(), fs.getEntries(), iter, body);
         }
         if (stmt instanceof IfStmt) {
             IfStmt is = (IfStmt) stmt;

@@ -408,7 +408,15 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
     @Override
     public Void visitDestructuringDecl(DestructuringDecl node, FormatterContext ctx) {
         ctx.append(node.isVal() ? "val (" : "var (");
-        formatJoined(node.getNames(), ctx, ", ", (name, c) -> c.append(name != null ? name : "_"));
+        formatJoined(node.getEntries(), ctx, ", ", (entry, c) -> {
+            if (entry.isSkip()) {
+                c.append("_");
+            } else if (entry.isNameBased()) {
+                c.append(entry.getLocalName()); c.append(" = "); c.append(entry.getPropertyName());
+            } else {
+                c.append(entry.getLocalName() != null ? entry.getLocalName() : "_");
+            }
+        });
         ctx.append(") = ");
         formatExpression(node.getInitializer(), ctx);
         return null;
@@ -489,12 +497,21 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
             ctx.append("@ ");
         }
         ctx.append("for (");
-        List<String> vars = node.getVariables();
-        if (vars.size() == 1) {
-            ctx.append(vars.get(0));
+        List<DestructuringEntry> entries = node.getEntries();
+        if (entries.size() == 1 && !entries.get(0).isNameBased()) {
+            String name = entries.get(0).getLocalName();
+            ctx.append(name != null ? name : "_");
         } else {
             ctx.append("(");
-            formatJoined(vars, ctx, ", ", (v, c) -> c.append(v));
+            formatJoined(entries, ctx, ", ", (entry, c) -> {
+                if (entry.isSkip()) {
+                    c.append("_");
+                } else if (entry.isNameBased()) {
+                    c.append(entry.getLocalName()); c.append(" = "); c.append(entry.getPropertyName());
+                } else {
+                    c.append(entry.getLocalName() != null ? entry.getLocalName() : "_");
+                }
+            });
             ctx.append(")");
         }
         ctx.append(" in ");

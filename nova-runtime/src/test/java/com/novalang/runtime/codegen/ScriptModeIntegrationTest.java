@@ -2584,6 +2584,45 @@ class ScriptModeIntegrationTest {
         }
     }
 
+    // ============ 87b. 基于名称的解构 ============
+
+    @Nested
+    @DisplayName("基于名称的解构")
+    class NameBasedDestructuringCodegenTests {
+
+        @Test void nameBasedBasic() {
+            assertEquals(30, run(
+                    "@data class Pt(val x: Int, val y: Int)\n" +
+                    "val (b = y, a = x) = Pt(10, 20)\na + b"));
+        }
+
+        @Test void nameBasedReversedOrder() {
+            assertEquals("alice", run(
+                    "@data class User(val username: String, val email: String)\n" +
+                    "val (name = username, mail = email) = User(\"alice\", \"a@e\")\nname"));
+        }
+
+        @Test void nameBasedThreeFields() {
+            assertEquals(6, run(
+                    "@data class V(val x: Int, val y: Int, val z: Int)\n" +
+                    "val (c = z, a = x, b = y) = V(1, 2, 3)\na + b + c"));
+        }
+
+        @Test void nameBasedMixed() {
+            assertEquals(10, run(
+                    "@data class Pair(val first: Int, val second: Int)\n" +
+                    "val (a = first, b) = Pair(10, 20)\na"));
+        }
+
+        @Test void nameBasedForLoop() {
+            assertEquals(30, run(
+                    "@data class Item(val name: String, val price: Int)\n" +
+                    "val items = listOf(Item(\"a\", 10), Item(\"b\", 20))\n" +
+                    "var total = 0\n" +
+                    "for ((cost = price) in items) total += cost\ntotal"));
+        }
+    }
+
     // ============ 88. Scope 函数全覆盖 ============
 
     @Nested

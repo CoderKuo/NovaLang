@@ -2,8 +2,10 @@ package com.novalang.compiler.ast.stmt;
 
 import com.novalang.compiler.ast.AstVisitor;
 import com.novalang.compiler.ast.SourceLocation;
+import com.novalang.compiler.ast.decl.DestructuringEntry;
 import com.novalang.compiler.ast.expr.Expression;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,15 +13,15 @@ import java.util.List;
  */
 public class ForStmt extends Statement {
     private final String label;  // 可选
-    private final List<String> variables;  // 支持解构
+    private final List<DestructuringEntry> entries;  // 支持位置和名称解构
     private final Expression iterable;
     private final Statement body;
 
-    public ForStmt(SourceLocation location, String label, List<String> variables,
+    public ForStmt(SourceLocation location, String label, List<DestructuringEntry> entries,
                    Expression iterable, Statement body) {
         super(location);
         this.label = label;
-        this.variables = variables;
+        this.entries = entries;
         this.iterable = iterable;
         this.body = body;
     }
@@ -32,8 +34,17 @@ public class ForStmt extends Statement {
         return label != null;
     }
 
+    public List<DestructuringEntry> getEntries() {
+        return entries;
+    }
+
+    /** 兼容方法：提取所有变量名 */
     public List<String> getVariables() {
-        return variables;
+        List<String> vars = new ArrayList<String>();
+        for (DestructuringEntry e : entries) {
+            vars.add(e.getLocalName() != null ? e.getLocalName() : "_");
+        }
+        return vars;
     }
 
     public Expression getIterable() {

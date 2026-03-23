@@ -6,6 +6,7 @@ import com.novalang.compiler.ast.Modifier;
 import com.novalang.compiler.ast.SourceLocation;
 import com.novalang.compiler.ast.expr.*;
 import com.novalang.compiler.ast.expr.Literal.LiteralKind;
+import com.novalang.compiler.ast.decl.DestructuringEntry;
 import com.novalang.compiler.ast.stmt.*;
 import com.novalang.ir.hir.*;
 import com.novalang.ir.hir.decl.*;
@@ -1956,21 +1957,38 @@ public class HirToMirLowering {
                 MirType.ofObject("java/lang/Object"), loc);
 
         // 绑定循环变量
-        List<String> vars = node.getVariables();
-        if (vars.size() == 1) {
-            int varLocal = builder.newLocal(vars.get(0), MirType.ofObject("java/lang/Object"));
-            builder.emitMoveTo(next, varLocal, loc);
-        } else {
-            // 解构：for ((k, v) in map) → k = componentN(next, 1), v = componentN(next, 2)
-            for (int vi = 0; vi < vars.size(); vi++) {
-                String varName = vars.get(vi);
-                if ("_".equals(varName)) continue;
-                int nConst = builder.emitConstInt(vi + 1, loc);
-                int comp = builder.emitInvokeStatic(
-                        "com/novalang/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
-                        new int[]{next, nConst}, MirType.ofObject("java/lang/Object"), loc);
+        List<DestructuringEntry> entries = node.getEntries();
+        if (entries.size() == 1 && !entries.get(0).isNameBased()) {
+            String varName = entries.get(0).getLocalName();
+            if (varName != null) {
                 int varLocal = builder.newLocal(varName, MirType.ofObject("java/lang/Object"));
-                builder.emitMoveTo(comp, varLocal, loc);
+                builder.emitMoveTo(next, varLocal, loc);
+            }
+        } else {
+            // 解构：支持位置和名称解构
+            for (int vi = 0; vi < entries.size(); vi++) {
+                DestructuringEntry entry = entries.get(vi);
+                if (entry.isSkip()) continue;
+                String varName = entry.getLocalName();
+                if (varName == null) continue;
+
+                int value;
+                if (entry.isNameBased()) {
+                    // 名称解构: NovaDynamic.getMember(next, propertyName)
+                    // 使用动态成员访问（编译模式下 next 类型为 Object，无法用 GETFIELD）
+                    int nameConst = builder.emitConstString(entry.getPropertyName(), loc);
+                    value = builder.emitInvokeStatic(
+                            "com/novalang/runtime/NovaDynamic|getMember|(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                            new int[]{next, nameConst}, MirType.ofObject("java/lang/Object"), loc);
+                } else {
+                    // 位置解构: componentN(next, vi+1)
+                    int nConst = builder.emitConstInt(vi + 1, loc);
+                    value = builder.emitInvokeStatic(
+                            "com/novalang/runtime/NovaCollections|componentN|(Ljava/lang/Object;I)Ljava/lang/Object;",
+                            new int[]{next, nConst}, MirType.ofObject("java/lang/Object"), loc);
+                }
+                int varLocal = builder.newLocal(varName, MirType.ofObject("java/lang/Object"));
+                builder.emitMoveTo(value, varLocal, loc);
             }
         }
 
@@ -2001,7 +2019,7 @@ public class HirToMirLowering {
         int end = lowerExpr(range.getEnd(), builder);
 
         // 创建循环变量（INT 类型，避免装箱开销）
-        String varName = node.getVariables().get(0);
+        String varName = node.getEntries().get(0).getLocalName();
         int loopVar = builder.newLocal(varName, MirType.ofInt());
         builder.emitMoveTo(start, loopVar, loc);
 
