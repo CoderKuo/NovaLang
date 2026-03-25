@@ -2702,7 +2702,7 @@ final class MirInterpreter {
         }
 
         try {
-            Class<?> javaClass = Class.forName(toJavaDotName(className));
+            Class<?> javaClass = JavaInterop.loadClass(toJavaDotName(className));
             Object[] javaArgs = new Object[args.size()];
             for (int i = 0; i < args.size(); i++) {
                 NovaValue v = args.get(i);
@@ -3221,7 +3221,7 @@ final class MirInterpreter {
             if (!interp.getSecurityPolicy().isClassAllowed(javaDotName)) {
                 throw NovaSecurityPolicy.denied("Cannot access class: " + javaDotName);
             }
-            Class<?> javaClass = Class.forName(javaDotName);
+            Class<?> javaClass = JavaInterop.loadClass(javaDotName);
             java.lang.invoke.MethodHandle mh =
                     MethodHandleCache.getInstance().findStaticGetter(javaClass, fieldName);
             if (mh != null) {
@@ -3465,7 +3465,7 @@ final class MirInterpreter {
 
         // Java 类型转换 + SAM 适配（与编译路径统一使用 SamAdapter）
         try {
-            Class<?> targetClass = Class.forName(toJavaDotName(actualType));
+            Class<?> targetClass = JavaInterop.loadClass(toJavaDotName(actualType));
             Object javaVal = value != null ? value.toJavaValue() : null;
             Object result;
             if (safeCast) {
@@ -3497,7 +3497,7 @@ final class MirInterpreter {
     private void executeConstClass(MirFrame frame, MirInst inst) {
         String className = inst.extraAs();
         try {
-            Class<?> cls = Class.forName(toJavaDotName(className));
+            Class<?> cls = JavaInterop.loadClass(toJavaDotName(className));
             frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(cls);
         } catch (ClassNotFoundException e) {
             // 可能是 Nova 类
@@ -3603,7 +3603,7 @@ final class MirInterpreter {
                 }
                 // 精确类型匹配
                 try {
-                    Class<?> exClass = Class.forName(entry.exceptionType.replace('/', '.'));
+                    Class<?> exClass = JavaInterop.loadClass(entry.exceptionType.replace('/', '.'));
                     Throwable cause = (exception instanceof NovaRuntimeException && exception.getCause() != null)
                             ? exception.getCause() : exception;
                     if (exClass.isInstance(cause) || exClass.isInstance(exception)) {

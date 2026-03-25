@@ -3284,22 +3284,71 @@ public class MirCodeGenerator {
         MethodVisitor mv = cw.visitMethod(ACC_STATIC, "<clinit>", "()V", null, null);
         mv.visitCode();
 
+        // 构建注解名 → HirAnnotation 映射
+        java.util.Map<String, com.novalang.ir.hir.HirAnnotation> annMap = new java.util.HashMap<>();
+        if (cls.getHirAnnotations() != null) {
+            for (com.novalang.ir.hir.HirAnnotation ha : cls.getHirAnnotations()) {
+                annMap.put(ha.getName(), ha);
+            }
+        }
+
         for (String annName : runtimeAnns) {
             // 参数 1: 注解名
             mv.visitLdcInsn(annName);
             // 参数 2: 当前类的 Class 对象
             mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(className));
-            // 参数 3: 空 Map（MIR 暂不携带注解参数）
-            mv.visitMethodInsn(INVOKESTATIC, "java/util/Collections", "emptyMap",
-                    "()Ljava/util/Map;", false);
+            // 参数 3: 注解参数 Map
+            com.novalang.ir.hir.HirAnnotation hirAnn = annMap.get(annName);
+            if (hirAnn != null && !hirAnn.getArgs().isEmpty()) {
+                // new HashMap()
+                mv.visitTypeInsn(NEW, "java/util/HashMap");
+                mv.visitInsn(DUP);
+                mv.visitMethodInsn(INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
+                for (java.util.Map.Entry<String, com.novalang.compiler.ast.expr.Expression> e : hirAnn.getArgs().entrySet()) {
+                    mv.visitInsn(DUP); // dup map ref
+                    mv.visitLdcInsn(e.getKey());
+                    Object val = evalAnnotationArgConstant(e.getValue());
+                    if (val instanceof String) {
+                        mv.visitLdcInsn(val);
+                    } else if (val instanceof Integer) {
+                        mv.visitLdcInsn(val);
+                        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                    } else if (val instanceof Long) {
+                        mv.visitLdcInsn(val);
+                        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                    } else if (val instanceof Double) {
+                        mv.visitLdcInsn(val);
+                        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                    } else if (val instanceof Boolean) {
+                        mv.visitLdcInsn((Boolean) val ? 1 : 0);
+                        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+                    } else {
+                        mv.visitLdcInsn(String.valueOf(val));
+                    }
+                    mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Map", "put",
+                            "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true);
+                    mv.visitInsn(POP); // discard put return
+                }
+            } else {
+                mv.visitMethodInsn(INVOKESTATIC, "java/util/Collections", "emptyMap",
+                        "()Ljava/util/Map;", false);
+            }
             // 调用 NovaAnnotations.trigger(String, Class, Map)
             mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaAnnotations", "trigger",
                     "(Ljava/lang/String;Ljava/lang/Class;Ljava/util/Map;)V", false);
         }
 
         mv.visitInsn(RETURN);
-        mv.visitMaxs(3, 0);
+        mv.visitMaxs(6, 0);
         mv.visitEnd();
+    }
+
+    /** 从注解参数表达式中提取编译期常量值 */
+    private Object evalAnnotationArgConstant(com.novalang.compiler.ast.expr.Expression expr) {
+        if (expr instanceof com.novalang.compiler.ast.expr.Literal) {
+            return ((com.novalang.compiler.ast.expr.Literal) expr).getValue();
+        }
+        return expr.toString();
     }
 
     // ========== 自定义注解标注类 ==========

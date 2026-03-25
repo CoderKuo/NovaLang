@@ -6,6 +6,7 @@ import com.novalang.ir.hir.HirAnnotation;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -64,4 +65,9 @@ public class MirClass {
 
     public String getSuperCtorDesc() { return superCtorDesc; }
     public void setSuperCtorDesc(String superCtorDesc) { this.superCtorDesc = superCtorDesc; }
+
+    /** 注解参数默认值（annotation class 构造器参数默认值，参数名 → 默认表达式） */
+    private Map<String, com.novalang.compiler.ast.expr.Expression> annotationDefaults;
+    public Map<String, com.novalang.compiler.ast.expr.Expression> getAnnotationDefaults() { return annotationDefaults; }
+    public void setAnnotationDefaults(Map<String, com.novalang.compiler.ast.expr.Expression> defaults) { this.annotationDefaults = defaults; }
 }

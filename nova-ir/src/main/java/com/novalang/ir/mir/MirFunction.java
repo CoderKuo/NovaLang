@@ -40,7 +40,9 @@ public class MirFunction {
     private int frameSize = -1;
     /** 预缓存的 blockId → BasicBlock 数组（lazy 构建） */
     private BasicBlock[] blockArr;
-    /** ?????????? */
+    /** 原始 HIR 注解（含参数），供解释器注解处理器使用 */
+    private List<com.novalang.ir.hir.HirAnnotation> hirAnnotations = Collections.emptyList();
+    /** 是否缓存（@memoize） */
     private boolean memoized;
     /** ????? */
     private transient Map<Object, Object> memoCache;
@@ -108,6 +110,9 @@ public class MirFunction {
         tryCatchEntries.add(new TryCatchEntry(tryStart, tryEnd, handler,
                 exceptionType, exceptionLocal));
     }
+
+    public List<com.novalang.ir.hir.HirAnnotation> getHirAnnotations() { return hirAnnotations; }
+    public void setHirAnnotations(List<com.novalang.ir.hir.HirAnnotation> anns) { this.hirAnnotations = anns; }
 
     public boolean isMemoized() { return memoized; }
     public void setMemoized(boolean memoized) { this.memoized = memoized; }

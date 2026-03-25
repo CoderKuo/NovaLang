@@ -20,4 +20,7 @@ public interface NovaAnnotationProcessor {
     /** 处理属性注解 */
     default void processProperty(String propertyName, NovaValue propertyValue,
                                   Map<String, NovaValue> args, ExecutionContext ctx) {}
+
+    /** 处理文件级注解（在脚本执行前调用） */
+    default void processFile(Map<String, Object> args) {}
 }

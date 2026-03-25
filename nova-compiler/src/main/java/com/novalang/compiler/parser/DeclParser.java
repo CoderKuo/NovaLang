@@ -78,6 +78,26 @@ class DeclParser {
         }
     }
 
+    /**
+     * 解析文件注解: @file:AnnotationName(args)
+     * 调用前已确认当前 token 是 @ 且为 file annotation 模式。
+     */
+    Annotation parseFileAnnotation() {
+        SourceLocation loc = parser.location();
+        parser.expect(AT, "Expected '@'");
+        parser.expect(IDENTIFIER, "Expected 'file'"); // consume "file"
+        parser.expect(COLON, "Expected ':'");
+        String name = parser.expect(IDENTIFIER, "Expected annotation name").getLexeme();
+
+        List<Annotation.AnnotationArg> args = Collections.emptyList();
+        if (parser.match(LPAREN)) {
+            args = parseAnnotationArgs();
+            parser.expect(RPAREN, "Expected ')'");
+        }
+
+        return new Annotation(loc, "file", name, args);
+    }
+
     List<Annotation> parseAnnotations() {
         List<Annotation> annotations = new ArrayList<Annotation>();
         while (parser.check(AT)) {

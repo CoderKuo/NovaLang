@@ -13,6 +13,7 @@
 </p>
 
 <p align="center">
+  <a href="https://nova.geekyunfu.com">Website</a> •
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#examples">Examples</a> •
@@ -303,7 +304,9 @@ STRICT        # Minimal permissions
 
 ## Project Status
 
-NovaLang is under active development. Current version: `0.1.0-SNAPSHOT`
+NovaLang is under active development. Current version: `0.1.11`
+
+Visit the [official website](https://nova.geekyunfu.com) for interactive playground and documentation.
 
 ---
 

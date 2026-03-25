@@ -59,6 +59,9 @@ public class Interpreter implements ExecutionContext {
     /** 注解处理器注册表（注解名 -> 处理器列表） */
     protected final Map<String, List<NovaAnnotationProcessor>> annotationProcessors;
 
+    /** 脚本级 ClassLoader（用于隔离脚本的 Maven 依赖） */
+    private ClassLoader scriptClassLoader;
+
     /** 安全策略 */
     final NovaSecurityPolicy securityPolicy;
     /** 安全策略是否有循环/超时限制（快速路径标志，避免虚方法调用） */
@@ -387,6 +390,16 @@ public class Interpreter implements ExecutionContext {
     public void unregisterAnnotationProcessor(NovaAnnotationProcessor processor) {
         List<NovaAnnotationProcessor> list = annotationProcessors.get(processor.getAnnotationName());
         if (list != null) list.remove(processor);
+    }
+
+    /** 设置脚本级 ClassLoader */
+    public void setScriptClassLoader(ClassLoader cl) {
+        this.scriptClassLoader = cl;
+    }
+
+    /** 获取脚本级 ClassLoader */
+    public ClassLoader getScriptClassLoader() {
+        return scriptClassLoader;
     }
 
     /**
@@ -718,12 +731,35 @@ public class Interpreter implements ExecutionContext {
         mirPipeline.setExternalClassNames(mirInterpreter.getKnownClassNames());
         mirPipeline.setExternalInterfaceNames(mirInterpreter.getKnownInterfaceNames());
         MirModule mir = mirPipeline.executeToMir(program);
+
+        // 处理文件注解（在执行前）
+        processFileAnnotations(mir);
+
         mirInterpreter.resetState();
         NovaRuntime.setCurrentContext(this);
+        if (scriptClassLoader != null) {
+            JavaInterop.setScriptClassLoader(scriptClassLoader);
+        }
         try {
             return mirInterpreter.executeModule(mir);
         } finally {
+            JavaInterop.setScriptClassLoader(null);
             NovaRuntime.clearCurrentContext();
+        }
+    }
+
+    /**
+     * 处理文件级注解：遍历 MirModule 中的文件注解，调用已注册的处理器。
+     */
+    private void processFileAnnotations(MirModule mir) {
+        if (mir.getFileAnnotations().isEmpty()) return;
+        for (MirModule.FileAnnotationInfo ann : mir.getFileAnnotations()) {
+            List<NovaAnnotationProcessor> processors = annotationProcessors.get(ann.name);
+            if (processors != null) {
+                for (NovaAnnotationProcessor proc : processors) {
+                    proc.processFile(ann.args);
+                }
+            }
         }
     }
 

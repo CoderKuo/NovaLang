@@ -1,7 +1,10 @@
 package com.novalang.ir.mir;
 
 import com.novalang.compiler.ast.Modifier;
+import com.novalang.ir.hir.HirAnnotation;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -32,4 +35,8 @@ public class MirField {
     public String getSetterFunctionName() { return setterFunctionName; }
     public void setSetterFunctionName(String name) { this.setterFunctionName = name; }
     public boolean hasCustomSetter() { return setterFunctionName != null; }
+
+    private List<HirAnnotation> hirAnnotations = Collections.emptyList();
+    public List<HirAnnotation> getHirAnnotations() { return hirAnnotations; }
+    public void setHirAnnotations(List<HirAnnotation> anns) { this.hirAnnotations = anns; }
 }

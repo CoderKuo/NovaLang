@@ -60,6 +60,27 @@ public final class Nova {
         this.interpreter = new Interpreter(policy);
     }
 
+    // ── ClassLoader ────────────────────────────────────────
+
+    /**
+     * 设置脚本级 ClassLoader。
+     * {@code javaClass()} 会优先在此 ClassLoader 中查找类，
+     * 找不到时回退到默认 ClassLoader。
+     * 用于隔离脚本的 Maven 依赖，避免与其他插件的类冲突。
+     */
+    public Nova setScriptClassLoader(ClassLoader classLoader) {
+        this.scriptClassLoader = classLoader;
+        interpreter.setScriptClassLoader(classLoader);
+        return this;
+    }
+
+    /** 获取脚本级 ClassLoader */
+    public ClassLoader getScriptClassLoader() {
+        return scriptClassLoader;
+    }
+
+    private ClassLoader scriptClassLoader;
+
     // ── IO 重定向 ─────────────────────────────────────────
 
     public Nova setStdout(PrintStream out) {
@@ -653,6 +674,10 @@ public final class Nova {
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
         CompiledNova compiled = new CompiledNova(classes, extensionRegistry);
+        // 传递脚本级 ClassLoader
+        if (scriptClassLoader != null) {
+            compiled.setScriptClassLoader(scriptClassLoader);
+        }
         // 注入已注册的值
         for (Map.Entry<String, Object> entry : valRegistry.entrySet()) {
             compiled.set(entry.getKey(), entry.getValue());
@@ -838,6 +863,86 @@ public final class Nova {
      */
     public <T> Nova defineBuilderFunction(String name, java.util.function.Supplier<T> receiverFactory) {
         return defineBuilderFunction(name, receiverFactory, null);
+    }
+
+    // ── 文件注解 ──────────────────────────────────────────
+
+    /**
+     * 注册文件注解处理器。
+     * 处理器在脚本执行前被调用，适用于依赖声明、编译选项等场景。
+     *
+     * <pre>
+     * nova.registerFileAnnotationProcessor("DependsOn", args -> {
+     *     String coord = (String) args.get("value");
+     *     // 下载 Maven 依赖并添加到 classpath
+     * });
+     * </pre>
+     *
+     * @param name    注解名称（不含 @file: 前缀）
+     * @param handler 处理函数，接收注解参数 Map
+     */
+    public Nova registerFileAnnotationProcessor(String name, Consumer<Map<String, Object>> handler) {
+        interpreter.registerAnnotationProcessor(new NovaAnnotationProcessor() {
+            @Override
+            public String getAnnotationName() { return name; }
+            @Override
+            public void processFile(Map<String, Object> args) { handler.accept(args); }
+        });
+        return this;
+    }
+
+    /**
+     * 仅解析源码提取文件注解（不执行脚本）。
+     * 适用于预处理场景：先提取注解 → 下载依赖 → 再执行。
+     *
+     * <pre>
+     * List&lt;Nova.FileAnnotation&gt; anns = Nova.extractFileAnnotations(source);
+     * for (Nova.FileAnnotation a : anns) {
+     *     if ("DependsOn".equals(a.name)) downloadMaven((String) a.args.get("value"));
+     * }
+     * nova.eval(source);
+     * </pre>
+     */
+    public static List<FileAnnotation> extractFileAnnotations(String source) {
+        com.novalang.compiler.lexer.Lexer lexer = new com.novalang.compiler.lexer.Lexer(source, "<extract>");
+        com.novalang.compiler.parser.Parser parser = new com.novalang.compiler.parser.Parser(lexer, "<extract>");
+        com.novalang.compiler.ast.decl.Program program = parser.parse();
+
+        List<FileAnnotation> result = new ArrayList<>();
+        for (com.novalang.compiler.ast.decl.Annotation ann : program.getFileAnnotations()) {
+            Map<String, Object> args = new LinkedHashMap<>();
+            for (com.novalang.compiler.ast.decl.Annotation.AnnotationArg arg : ann.getArgs()) {
+                String key = arg.getName() != null ? arg.getName() : "value";
+                Object val = extractLiteralValue(arg.getValue());
+                args.put(key, val);
+            }
+            result.add(new FileAnnotation(ann.getName(), args));
+        }
+        return result;
+    }
+
+    /** 从 AST 字面量表达式中提取 Java 值 */
+    private static Object extractLiteralValue(com.novalang.compiler.ast.expr.Expression expr) {
+        if (expr instanceof com.novalang.compiler.ast.expr.Literal) {
+            return ((com.novalang.compiler.ast.expr.Literal) expr).getValue();
+        }
+        return expr.toString();
+    }
+
+    /** 文件注解数据 */
+    public static final class FileAnnotation {
+        public final String name;
+        public final Map<String, Object> args;
+
+        public FileAnnotation(String name, Map<String, Object> args) {
+            this.name = name;
+            this.args = args;
+        }
+
+        @Override
+        public String toString() {
+            return "@file:" + name + (args.isEmpty() ? "" : "(" + args + ")");
+        }
     }
 
     // ── 底层访问 ──────────────────────────────────────────

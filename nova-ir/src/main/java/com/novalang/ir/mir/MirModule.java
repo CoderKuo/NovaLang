@@ -51,6 +51,22 @@ public class MirModule {
     public List<String> getWildcardJavaImports() { return wildcardJavaImports; }
     public void setWildcardJavaImports(List<String> imports) { this.wildcardJavaImports = imports; }
 
+    /** 文件注解 (@file:) */
+    private List<FileAnnotationInfo> fileAnnotations = Collections.emptyList();
+    public List<FileAnnotationInfo> getFileAnnotations() { return fileAnnotations; }
+    public void setFileAnnotations(List<FileAnnotationInfo> annotations) { this.fileAnnotations = annotations; }
+
+    /** 文件注解数据 */
+    public static class FileAnnotationInfo {
+        public final String name;
+        public final Map<String, Object> args;
+
+        public FileAnnotationInfo(String name, Map<String, Object> args) {
+            this.name = name;
+            this.args = args;
+        }
+    }
+
     /** Nova 模块 import 元数据 */
     private List<NovaImportInfo> novaImports = Collections.emptyList();
     public List<NovaImportInfo> getNovaImports() { return novaImports; }

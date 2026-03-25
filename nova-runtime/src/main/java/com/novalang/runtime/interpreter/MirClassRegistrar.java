@@ -43,6 +43,26 @@ final class MirClassRegistrar {
 
     // ============ 表达式常量折叠（替代 HirEvaluator） ============
 
+    /**
+     * 构建注解参数 Map，自动合并 annotation class 声明的默认值。
+     */
+    private Map<String, NovaValue> buildAnnotationArgs(HirAnnotation ann, Interpreter interp) {
+        Map<String, NovaValue> args = new HashMap<>();
+        // 先填入注解声明的默认值
+        MirInterpreter.MirClassInfo annClassInfo = mirClasses.get(ann.getName());
+        if (annClassInfo != null && annClassInfo.mirClass != null
+                && annClassInfo.mirClass.getAnnotationDefaults() != null) {
+            for (Map.Entry<String, Expression> def : annClassInfo.mirClass.getAnnotationDefaults().entrySet()) {
+                args.put(def.getKey(), foldExpression(def.getValue(), interp));
+            }
+        }
+        // 再用使用处提供的参数覆盖
+        for (Map.Entry<String, Expression> entry : ann.getArgs().entrySet()) {
+            args.put(entry.getKey(), foldExpression(entry.getValue(), interp));
+        }
+        return args;
+    }
+
     /** 将 AST 表达式折叠为 NovaValue。仅支持字面量和标识符，其他类型报错。 */
     static NovaValue foldExpression(Expression expr, Interpreter interp) {
         if (expr instanceof Literal) {
@@ -203,6 +223,24 @@ final class MirClassRegistrar {
             }
         }
 
+        // 触发函数注解处理器
+        for (MirFunction method : cls.getMethods()) {
+            if (method.getHirAnnotations().isEmpty()) continue;
+            if (SPECIAL_INIT.equals(method.getName()) || SPECIAL_CLINIT.equals(method.getName())) continue;
+            for (HirAnnotation ann : method.getHirAnnotations()) {
+                List<NovaAnnotationProcessor> processors = interp.annotationProcessors.get(ann.getName());
+                if (processors != null) {
+                    Map<String, NovaValue> annArgs = buildAnnotationArgs(ann, interp);
+                    NovaCallable funcCallable = novaClass.getMethods().get(method.getName());
+                    NovaValue funcVal = funcCallable instanceof NovaValue ? (NovaValue) funcCallable
+                            : AbstractNovaValue.fromJava(method.getName());
+                    for (NovaAnnotationProcessor proc : processors) {
+                        proc.processFun(funcVal, annArgs, interp);
+                    }
+                }
+            }
+        }
+
         // 接口默认方法复制
         for (String ifaceName : cls.getInterfaces()) {
             MirInterpreter.MirClassInfo ifaceInfo = mirClasses.get(ifaceName);
@@ -333,6 +371,21 @@ final class MirClassRegistrar {
             }
         }
 
+        // 触发属性注解处理器
+        for (MirField field : cls.getFields()) {
+            if (field.getHirAnnotations().isEmpty()) continue;
+            for (HirAnnotation ann : field.getHirAnnotations()) {
+                List<NovaAnnotationProcessor> processors = interp.annotationProcessors.get(ann.getName());
+                if (processors != null) {
+                    Map<String, NovaValue> annArgs = buildAnnotationArgs(ann, interp);
+                    NovaValue propVal = NovaNull.NULL;
+                    for (NovaAnnotationProcessor proc : processors) {
+                        proc.processProperty(field.getName(), propVal, annArgs, interp);
+                    }
+                }
+            }
+        }
+
         // 计算字段布局
         {
             List<String> instanceFieldNames = new ArrayList<>();
@@ -366,10 +419,7 @@ final class MirClassRegistrar {
             for (HirAnnotation ann : hirAnns) {
                 List<NovaAnnotationProcessor> processors = interp.annotationProcessors.get(ann.getName());
                 if (processors != null) {
-                    Map<String, NovaValue> annArgs = new HashMap<>();
-                    for (Map.Entry<String, Expression> entry : ann.getArgs().entrySet()) {
-                        annArgs.put(entry.getKey(), foldExpression(entry.getValue(), interp));
-                    }
+                    Map<String, NovaValue> annArgs = buildAnnotationArgs(ann, interp);
                     for (NovaAnnotationProcessor proc : processors) {
                         proc.processClass(novaClass, annArgs, interp);
                     }
@@ -519,7 +569,7 @@ final class MirClassRegistrar {
         String dotName = internalName.replace('/', '.');
         for (String prefix : JAVA_PREFIXES) {
             try {
-                Class<?> cls = Class.forName(prefix + dotName);
+                Class<?> cls = JavaInterop.loadClass(prefix + dotName);
                 javaClassCache.put(internalName, cls);
                 return cls;
             } catch (ClassNotFoundException e) { /* continue */ }

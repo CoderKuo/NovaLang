@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://nova.geekyunfu.com">官网</a> •
   <a href="#特性">特性</a> •
   <a href="#快速开始">快速开始</a> •
   <a href="#示例">示例</a> •
@@ -303,7 +304,9 @@ STRICT        # 最小权限
 
 ## 项目状态
 
-NovaLang 正在积极开发中。当前版本：`0.1.0-SNAPSHOT`
+NovaLang 正在积极开发中。当前版本：`0.1.11`
+
+访问[官方网站](https://nova.geekyunfu.com)体验在线 Playground 和完整文档。
 
 ---
 

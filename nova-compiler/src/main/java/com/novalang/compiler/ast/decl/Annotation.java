@@ -11,13 +11,24 @@ import java.util.List;
  * 注解
  */
 public class Annotation extends AstNode {
+    private final String target;  // 注解目标: "file" 等，null 表示普通注解
     private final String name;
     private final List<AnnotationArg> args;
 
     public Annotation(SourceLocation location, String name, List<AnnotationArg> args) {
+        this(location, null, name, args);
+    }
+
+    public Annotation(SourceLocation location, String target, String name, List<AnnotationArg> args) {
         super(location);
+        this.target = target;
         this.name = name;
         this.args = args;
+    }
+
+    /** 注解目标（如 "file"），null 表示普通注解 */
+    public String getTarget() {
+        return target;
     }
 
     public String getName() {

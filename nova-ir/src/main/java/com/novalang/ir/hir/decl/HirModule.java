@@ -16,6 +16,7 @@ public class HirModule extends HirDecl {
     private final String packageName;
     private final List<HirImport> imports;
     private final List<HirDecl> declarations;
+    private List<HirAnnotation> fileAnnotations = Collections.emptyList();
 
     public HirModule(SourceLocation location, String packageName,
                      List<HirImport> imports, List<HirDecl> declarations) {
@@ -35,6 +36,14 @@ public class HirModule extends HirDecl {
 
     public List<HirDecl> getDeclarations() {
         return declarations;
+    }
+
+    public List<HirAnnotation> getFileAnnotations() {
+        return fileAnnotations;
+    }
+
+    public void setFileAnnotations(List<HirAnnotation> fileAnnotations) {
+        this.fileAnnotations = fileAnnotations;
     }
 
     @Override

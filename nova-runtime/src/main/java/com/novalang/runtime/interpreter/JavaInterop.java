@@ -10,6 +10,8 @@ import java.util.List;
  * Java 互操作模块
  *
  * <p>提供从 Nova 代码调用 Java 的能力，使用 MethodHandle 实现高效调用。</p>
+ * <p>支持通过 {@link #setScriptClassLoader} 设置脚本级 ClassLoader，
+ * {@code javaClass()} 会优先在该 ClassLoader 中查找类。</p>
  *
  * <p>使用示例：</p>
  * <pre>
@@ -26,6 +28,36 @@ import java.util.List;
  * </pre>
  */
 public final class JavaInterop {
+
+    /** 脚本级 ClassLoader（ThreadLocal，线程安全） */
+    private static final ThreadLocal<ClassLoader> SCRIPT_CLASS_LOADER = new ThreadLocal<>();
+
+    /** 设置当前线程的脚本 ClassLoader（脚本执行前调用） */
+    public static void setScriptClassLoader(ClassLoader cl) {
+        if (cl != null) {
+            SCRIPT_CLASS_LOADER.set(cl);
+        } else {
+            SCRIPT_CLASS_LOADER.remove();
+        }
+    }
+
+    /** 获取当前线程的脚本 ClassLoader */
+    public static ClassLoader getScriptClassLoader() {
+        return SCRIPT_CLASS_LOADER.get();
+    }
+
+    /** 通过脚本 ClassLoader 或默认 ClassLoader 加载类 */
+    public static Class<?> loadClass(String name) throws ClassNotFoundException {
+        ClassLoader cl = SCRIPT_CLASS_LOADER.get();
+        if (cl != null) {
+            try {
+                return Class.forName(name, true, cl);
+            } catch (ClassNotFoundException ignored) {
+                // 脚本 ClassLoader 找不到，回退默认
+            }
+        }
+        return Class.forName(name);
+    }
 
     private static final MethodHandleCache cache = MethodHandleCache.getInstance();
 
@@ -190,7 +222,7 @@ public final class JavaInterop {
     private static Class<?> resolveClassUnchecked(String className) {
         // 直接尝试加载
         try {
-            return Class.forName(className);
+            return loadClass(className);
         } catch (ClassNotFoundException e) {
             // 继续尝试其他包
         }
@@ -210,7 +242,7 @@ public final class JavaInterop {
 
         for (String pkg : packages) {
             try {
-                return Class.forName(pkg + className);
+                return loadClass(pkg + className);
             } catch (ClassNotFoundException e) {
                 // 继续尝试
             }
@@ -234,7 +266,7 @@ public final class JavaInterop {
             throw NovaSecurityPolicy.denied("Cannot access Java class: " + name);
         }
         try {
-            return new NovaJavaClass(Class.forName(name));
+            return new NovaJavaClass(loadClass(name));
         } catch (ClassNotFoundException e) {
             throw new NovaException("Java class not found: " + name);
         }

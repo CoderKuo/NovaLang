@@ -68,7 +68,7 @@ class TypeResolver {
             String fullName = prefix + typeName;
             if (classNotFoundCache.contains(fullName)) continue;
             try {
-                result = Class.forName(fullName);
+                result = JavaInterop.loadClass(fullName);
                 resolvedClassCache.put(typeName, result);
                 return result;
             } catch (ClassNotFoundException ignored) {
@@ -89,7 +89,7 @@ class TypeResolver {
         Class<?> cached = resolvedClassCache.get(fullName);
         if (cached != null) return cached;
         try {
-            Class<?> clazz = Class.forName(fullName);
+            Class<?> clazz = JavaInterop.loadClass(fullName);
             resolvedClassCache.put(fullName, clazz);
             return clazz;
         } catch (ClassNotFoundException e) {

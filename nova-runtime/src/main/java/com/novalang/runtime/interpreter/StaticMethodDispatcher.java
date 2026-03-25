@@ -786,7 +786,7 @@ final class StaticMethodDispatcher {
         try {
             String dotName = toJavaDotName(owner);
             Class<?> javaClass = classNameCache.computeIfAbsent(dotName, n -> {
-                try { return Class.forName(n); } catch (ClassNotFoundException e) { return null; }
+                try { return JavaInterop.loadClass(n); } catch (ClassNotFoundException e) { return null; }
             });
             if (javaClass == null) return null;
             Object[] javaArgs = new Object[args.size()];

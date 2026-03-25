@@ -49,6 +49,8 @@ public final class CompiledNova {
     private final ExtensionRegistry extensionRegistry;  // nullable
     /** 函数名 → 所属编译类（惰性缓存，避免每次全表扫描） */
     private final Map<String, Class<?>> funcClassCache = new HashMap<>();
+    /** 脚本级 ClassLoader（编译模式用于 javaClass() 类隔离） */
+    private ClassLoader scriptClassLoader;
 
     /** 解释器模式构造 — 预解析源代码为 AST，run() 时跳过词法分析和解析 */
     CompiledNova(String source, String fileName, Nova nova) {
@@ -296,6 +298,11 @@ public final class CompiledNova {
         return nova;
     }
 
+    /** 设置脚本级 ClassLoader */
+    public void setScriptClassLoader(ClassLoader cl) {
+        this.scriptClassLoader = cl;
+    }
+
     // ── 内部方法 ──
 
     private Object runInterpreted() {
@@ -308,6 +315,9 @@ public final class CompiledNova {
         NovaScriptContext.init(bindings);
         if (extensionRegistry != null) {
             NovaScriptContext.setExtensionRegistry(extensionRegistry);
+        }
+        if (scriptClassLoader != null) {
+            com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(scriptClassLoader);
         }
         try {
             Object result = mainHandle.invoke();
@@ -324,6 +334,7 @@ public final class CompiledNova {
         } catch (Throwable e) {
             throw new RuntimeException(e.getMessage(), e);
         } finally {
+            com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(null);
             NovaScriptContext.clear();
         }
     }

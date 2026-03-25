@@ -284,7 +284,7 @@ final class MirCallDispatcher {
                 continue;
             }
             try {
-                Class<?> clazz = Class.forName(fullName);
+                Class<?> clazz = JavaInterop.loadClass(fullName);
                 interp.typeResolver.resolvedClassCache.put(fullName, clazz);
                 if (interp.getSecurityPolicy().isClassAllowed(clazz.getName())) {
                     JavaInterop.NovaJavaClass javaClass = new JavaInterop.NovaJavaClass(clazz);

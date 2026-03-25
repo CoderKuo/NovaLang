@@ -559,6 +559,20 @@ public class HirToMirLowering {
         if (!novaImportInfos.isEmpty()) {
             module.setNovaImports(novaImportInfos);
         }
+
+        // 文件注解透传
+        if (!hirModule.getFileAnnotations().isEmpty()) {
+            List<MirModule.FileAnnotationInfo> fileAnns = new ArrayList<>();
+            for (HirAnnotation ann : hirModule.getFileAnnotations()) {
+                Map<String, Object> evalArgs = new LinkedHashMap<>();
+                for (Map.Entry<String, Expression> e : ann.getArgs().entrySet()) {
+                    evalArgs.put(e.getKey(), evalConstantExpr(e.getValue()));
+                }
+                fileAnns.add(new MirModule.FileAnnotationInfo(ann.getName(), evalArgs));
+            }
+            module.setFileAnnotations(fileAnns);
+        }
+
         return module;
     }
 
@@ -609,6 +623,9 @@ public class HirToMirLowering {
             MirField mf = new MirField(f.getName(), hirTypeToMir(f.getType()), f.getModifiers());
             if (f.hasCustomGetter()) mf.setGetterFunctionName("get$" + f.getName());
             if (f.hasCustomSetter()) mf.setSetterFunctionName("set$" + f.getName());
+            if (f.getAnnotations() != null && !f.getAnnotations().isEmpty()) {
+                mf.setHirAnnotations(f.getAnnotations());
+            }
             fields.add(mf);
         }
 
@@ -781,6 +798,18 @@ public class HirToMirLowering {
         if (hirClass.getAnnotations() != null && !hirClass.getAnnotations().isEmpty()) {
             mirClass.setHirAnnotations(hirClass.getAnnotations());
         }
+        // annotation class 参数默认值提取
+        if (hirClass.getClassKind() == ClassKind.ANNOTATION) {
+            Map<String, Expression> defaults = new LinkedHashMap<>();
+            for (HirField f : hirClass.getFields()) {
+                if (f.getInitializer() != null) {
+                    defaults.put(f.getName(), f.getInitializer());
+                }
+            }
+            if (!defaults.isEmpty()) {
+                mirClass.setAnnotationDefaults(defaults);
+            }
+        }
         return mirClass;
     }
 
@@ -893,6 +922,9 @@ public class HirToMirLowering {
                 params, funcModifiers);
         func.setMemoized(hasAnnotation(hirFunc.getAnnotations(), "memoized", "memoize")
                 && ownerClass == null && !hirFunc.isConstructor() && !hirFunc.hasReifiedTypeParams());
+        if (hirFunc.getAnnotations() != null && !hirFunc.getAnnotations().isEmpty()) {
+            func.setHirAnnotations(hirFunc.getAnnotations());
+        }
         if (hirFunc.getTypeParams() != null && !hirFunc.getTypeParams().isEmpty()) {
             func.setTypeParams(hirFunc.getTypeParams());
             currentFunctionTypeParams = new HashSet<>(hirFunc.getTypeParams());
@@ -5767,6 +5799,15 @@ public class HirToMirLowering {
      * 从表达式中提取 javaClass("className") 的字面类名。
      * 返回 "java.lang.Integer" 或 null（非 javaClass 调用或非字面参数）。
      */
+    /** 将注解参数中的字面量表达式求值为 Java 值 */
+    private Object evalConstantExpr(Expression expr) {
+        if (expr instanceof Literal) {
+            return ((Literal) expr).getValue();
+        }
+        // 非字面量：返回表达式的字符串表示
+        return expr.toString();
+    }
+
     private String extractJavaClassName(Expression expr) {
         if (!(expr instanceof HirCall)) return null;
         HirCall call = (HirCall) expr;

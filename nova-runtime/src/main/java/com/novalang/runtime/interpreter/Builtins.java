@@ -231,7 +231,7 @@ public final class Builtins {
                 throw NovaSecurityPolicy.denied("Cannot access Java class: " + name);
             }
             try {
-                Class<?> clazz = Class.forName(name);
+                Class<?> clazz = JavaInterop.loadClass(name);
                 return new JavaInterop.NovaJavaClass(clazz);
             } catch (ClassNotFoundException e) {
                 throw new NovaRuntimeException("Java class not found: " + name);

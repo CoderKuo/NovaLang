@@ -297,7 +297,14 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             if (mainFunc != null) filteredDecls.add(mainFunc);
         }
 
-        return new HirModule(node.getLocation(), pkg, imports, filteredDecls);
+        HirModule module = new HirModule(node.getLocation(), pkg, imports, filteredDecls);
+
+        // 文件注解透传
+        if (!node.getFileAnnotations().isEmpty()) {
+            module.setFileAnnotations(lowerAnnotations(node.getFileAnnotations(), ctx));
+        }
+
+        return module;
     }
 
     @Override

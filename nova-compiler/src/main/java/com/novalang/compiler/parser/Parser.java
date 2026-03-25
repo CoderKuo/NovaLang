@@ -386,6 +386,9 @@ public class Parser {
         SourceLocation loc = location();
         skipSeparators();
 
+        // 文件注解 (@file:AnnotationName)
+        List<Annotation> fileAnnotations = parseFileAnnotations();
+
         // 包声明
         PackageDecl packageDecl = null;
         if (check(KW_PACKAGE)) {
@@ -443,7 +446,7 @@ public class Parser {
         imports.addAll(hoistedImports);
 
         lexer.releaseSource(); // 解析完成，释放源码字符串
-        return new Program(loc, packageDecl, imports, declarations);
+        return new Program(loc, fileAnnotations, packageDecl, imports, declarations);
     }
 
     /**
@@ -454,6 +457,9 @@ public class Parser {
         SourceLocation loc = location();
         skipSeparators();
         List<ParseError> errors = new ArrayList<ParseError>();
+
+        // 文件注解 (@file:AnnotationName)
+        List<Annotation> fileAnnotations = parseFileAnnotations();
 
         // 包声明
         PackageDecl packageDecl = null;
@@ -503,7 +509,7 @@ public class Parser {
             }
         }
 
-        Program program = new Program(loc, packageDecl, imports, declarations);
+        Program program = new Program(loc, fileAnnotations, packageDecl, imports, declarations);
         lexer.releaseSource(); // 容错解析完成，释放源码字符串
         return new ParseResult(program, errors, topLevelStatements);
     }
@@ -571,6 +577,37 @@ public class Parser {
         if (check(IDENTIFIER) && "annotation".equals(current.getLexeme()) && checkAhead(KW_CLASS)) return true;
         if (check(IDENTIFIER) && "infix".equals(current.getLexeme())) return true;
         return false;
+    }
+
+    /**
+     * 检测当前位置是否为 @file: 文件注解起始。
+     * 使用 mark/reset 前看三个 token: @ "file" :
+     */
+    private boolean isFileAnnotationStart() {
+        if (!check(AT)) return false;
+        mark();
+        try {
+            advance(); // consume @
+            if (check(IDENTIFIER) && "file".equals(current.getLexeme())) {
+                advance(); // consume "file"
+                return check(COLON);
+            }
+            return false;
+        } finally {
+            reset();
+        }
+    }
+
+    /**
+     * 解析文件级注解列表（@file:Name(args)）
+     */
+    private List<Annotation> parseFileAnnotations() {
+        List<Annotation> fileAnnotations = new ArrayList<Annotation>();
+        while (isFileAnnotationStart()) {
+            fileAnnotations.add(declParser.parseFileAnnotation());
+            skipSeparators();
+        }
+        return fileAnnotations;
     }
 
     // ============ 包和导入 ============
