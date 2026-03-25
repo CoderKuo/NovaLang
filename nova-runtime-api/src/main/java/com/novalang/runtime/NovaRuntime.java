@@ -939,6 +939,55 @@ public final class NovaRuntime {
     public static void setCurrentContext(ExecutionContext ctx) { CURRENT_CONTEXT.set(ctx); }
     public static void clearCurrentContext() { CURRENT_CONTEXT.remove(); }
 
+    // ============ 作用域接收者调用（编译模式 $ScopeCall） ============
+
+    /**
+     * 以 receiver 为作用域接收者调用 callable（编译模式的 $ScopeCall 实现）。
+     * 通过 ThreadLocal 获取当前 ExecutionContext 并委托其 invokeWithScopeReceiver。
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static Object scopeCall(Object callable, Object receiver, Object[] args) {
+        ExecutionContext ctx = currentContext();
+        if (ctx != null) {
+            // 解释器模式：通过 withScopeReceiver 绑定接收者
+            NovaCallable novaCallable = ctx.extractCallable(
+                    callable instanceof NovaValue ? (NovaValue) callable : AbstractNovaValue.fromJava(callable));
+            if (novaCallable != null) {
+                NovaValue novaReceiver = receiver instanceof NovaValue
+                        ? (NovaValue) receiver : AbstractNovaValue.fromJava(receiver);
+                java.util.List<NovaValue> novaArgs = new java.util.ArrayList<>();
+                for (Object arg : args) {
+                    novaArgs.add(arg instanceof NovaValue ? (NovaValue) arg : AbstractNovaValue.fromJava(arg));
+                }
+                NovaValue result = ctx.invokeWithScopeReceiver(novaCallable, novaReceiver, novaArgs);
+                return result != null ? result.toJavaValue() : null;
+            }
+        }
+        // 编译模式（无 ExecutionContext 或 NovaCallable 提取失败）：
+        // 通过 NovaScopeFunctions thread-local 传递 scopeReceiver，
+        // lambda 内的 NovaScriptContext.get/set/call 会自动检查 scope receiver
+        Object prevReceiver = com.novalang.runtime.stdlib.NovaScopeFunctions.getScopeReceiver();
+        com.novalang.runtime.stdlib.NovaScopeFunctions.setScopeReceiver(receiver);
+        try {
+            if (callable instanceof NovaCallable) {
+                java.util.List<NovaValue> novaArgs = new java.util.ArrayList<>();
+                for (Object arg : args) {
+                    novaArgs.add(arg instanceof NovaValue ? (NovaValue) arg : AbstractNovaValue.fromJava(arg));
+                }
+                NovaValue result = ((NovaCallable) callable).call(null, novaArgs);
+                return result != null ? result.toJavaValue() : null;
+            }
+            // FunctionN 接口（编译模式的 lambda）
+            if (callable instanceof Function0) return ((Function0) callable).invoke();
+            if (callable instanceof Function1) return ((Function1) callable).invoke(args.length > 0 ? args[0] : null);
+            if (callable instanceof Function2) return ((Function2) callable).invoke(
+                    args.length > 0 ? args[0] : null, args.length > 1 ? args[1] : null);
+            throw new RuntimeException("scopeCall: not callable: " + callable.getClass().getName());
+        } finally {
+            com.novalang.runtime.stdlib.NovaScopeFunctions.setScopeReceiver(prevReceiver);
+        }
+    }
+
     // ============ 静态内置函数调用入口 ============
 
     public static final Object NOT_FOUND = new Object();

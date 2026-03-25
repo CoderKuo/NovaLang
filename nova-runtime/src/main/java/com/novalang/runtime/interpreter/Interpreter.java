@@ -698,6 +698,7 @@ public class Interpreter implements ExecutionContext {
         p.addHirPass(new HirDeadCodeElimination());
         p.addMirPass(new DeadBlockElimination());
         p.addMirPass(new LoopInvariantCodeMotion());
+        p.addMirPass(new LoopDeadStoreElimination());
         p.addMirPass(new TailCallElimination());
         p.addMirPass(new StrengthReduction());
         p.addMirPass(new MirLocalCSE());
@@ -1041,6 +1042,30 @@ public class Interpreter implements ExecutionContext {
     @Override
     public Object getMirInterpreter() {
         return mirInterpreter;
+    }
+
+    /**
+     * 以 receiver 为作用域接收者调用 NovaCallable。
+     * receiver 的成员在 block 内可直接访问。
+     */
+    public NovaValue invokeWithReceiver(NovaCallable callable, NovaValue receiver,
+                                         java.util.List<NovaValue> args) {
+        return mirInterpreter.callDispatcher.withScopeReceiver(receiver,
+                () -> callable.call(this, args));
+    }
+
+    @Override
+    public NovaValue invokeWithScopeReceiver(NovaCallable callable, NovaValue receiver,
+                                              java.util.List<NovaValue> args) {
+        return invokeWithReceiver(callable, receiver, args);
+    }
+
+    /**
+     * 从 NovaValue 提取 NovaCallable（直接 callable 或含 invoke 方法的对象）。
+     */
+    @Override
+    public NovaCallable extractCallable(NovaValue value) {
+        return mirInterpreter.callDispatcher.extractCallable(value);
     }
 
     @Override

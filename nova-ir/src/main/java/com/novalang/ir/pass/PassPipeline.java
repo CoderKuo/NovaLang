@@ -16,6 +16,7 @@ import com.novalang.ir.pass.hir.HirDeadCodeElimination;
 import com.novalang.ir.pass.hir.HirInlineExpansion;
 import com.novalang.ir.pass.mir.BlockMerging;
 import com.novalang.ir.pass.mir.DeadBlockElimination;
+import com.novalang.ir.pass.mir.LoopDeadStoreElimination;
 import com.novalang.ir.pass.mir.LoopInvariantCodeMotion;
 import com.novalang.ir.pass.mir.StrengthReduction;
 import com.novalang.ir.pass.mir.MirLocalCSE;
@@ -80,6 +81,7 @@ public class PassPipeline {
         // MIR P0
         pipeline.addMirPass(new DeadBlockElimination());
         pipeline.addMirPass(new LoopInvariantCodeMotion());
+        pipeline.addMirPass(new LoopDeadStoreElimination());
         pipeline.addMirPass(new TailCallElimination());
         pipeline.addMirPass(new StrengthReduction());
         pipeline.addMirPass(new MirLocalCSE());

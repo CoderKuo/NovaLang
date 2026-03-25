@@ -278,6 +278,12 @@ public class MirFunction {
         return blockArr;
     }
 
+    /** 重置缓存（MIR pass 修改块/局部变量后调用） */
+    public void resetBlockArr() {
+        this.blockArr = null;
+        this.frameSize = -1;
+    }
+
     private void buildBlockArr() {
         int maxId = 0;
         for (BasicBlock b : blocks) {

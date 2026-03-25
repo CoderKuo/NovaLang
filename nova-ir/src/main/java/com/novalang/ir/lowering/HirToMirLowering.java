@@ -96,6 +96,10 @@ public class HirToMirLowering {
     // Java import 映射: 简单名 → JVM 内部名（如 "System" → "java/lang/System"）
     private final Map<String, String> javaImports = new HashMap<>();
 
+    // javaClass() 常量传播: 变量名 → JVM 内部名（如 "Integer" → "java/lang/Integer"）
+    // val X = javaClass("java.lang.Integer") 时记录，后续 X.FIELD/X.method() 直接静态解析
+    private final Map<String, String> javaClassBindings = new HashMap<>();
+
     // Java 方法查找缓存: "className#methodName#argCount" → Method
     private final Map<String, java.lang.reflect.Method> javaMethodCache = new HashMap<>();
 
@@ -348,6 +352,13 @@ public class HirToMirLowering {
                             if (stmt instanceof HirDeclStmt && ((HirDeclStmt) stmt).getDeclaration() instanceof HirField) {
                                 HirField hf = (HirField) ((HirDeclStmt) stmt).getDeclaration();
                                 topLevelFieldNames.put(hf.getName(), hf.isVal());
+                                // javaClass() 常量传播预扫描
+                                if (hf.isVal() && hf.hasInitializer()) {
+                                    String jcName = extractJavaClassName(hf.getInitializer());
+                                    if (jcName != null) {
+                                        javaClassBindings.put(hf.getName(), jcName.replace('.', '/'));
+                                    }
+                                }
                             }
                         }
                     }
@@ -1604,6 +1615,13 @@ public class HirToMirLowering {
                     int doneLocal = builder.newLocal(field.getName() + "$done", MirType.ofBoolean());
                     builder.emitMoveTo(builder.emitConstBool(false, field.getLocation()), doneLocal, field.getLocation());
                     lazyVarLocals.put(field.getName(), new int[]{local, cacheLocal, doneLocal});
+                }
+                // javaClass() 常量传播：val X = javaClass("literal") → 记录绑定
+                if (field.isVal()) {
+                    String jcClassName = extractJavaClassName(field.getInitializer());
+                    if (jcClassName != null) {
+                        javaClassBindings.put(field.getName(), jcClassName.replace('.', '/'));
+                    }
                 }
                 // 顶层变量 → $Module 静态字段（PUTSTATIC 初始化）
                 // 块作用域内（while/if/for/try）的变量仅通过寄存器访问，跳过静态字段注册
@@ -4246,6 +4264,8 @@ public class HirToMirLowering {
             if (javaClass != null) {
                 return lowerJavaStaticCall(javaClass, fieldAccess.getMember(), expr, builder);
             }
+            // javaClass() 常量传播（仅字段访问在 lowerFieldAccess 中处理）
+            // 方法调用不做传播，因为 SAM 适配需要 invokedynamic 路径
             // Java.type("className") → fall through 到通用方法调用路径，运行时处理
             // 安全策略检查在 VirtualMethodDispatcher / NovaDynamic 中统一生效
         }
@@ -4652,6 +4672,34 @@ public class HirToMirLowering {
         // 如果 target 是类名引用（不是局部变量），使用 GETSTATIC
         if (expr.getTarget() instanceof Identifier) {
             String targetName = ((Identifier) expr.getTarget()).getName();
+            // javaClass() 常量传播：val Integer = javaClass("java.lang.Integer")
+            // → Integer.MAX_VALUE 编译为 GETSTATIC java/lang/Integer.MAX_VALUE
+            String jcClass = javaClassBindings.get(targetName);
+            if (jcClass != null) {
+                String fieldName = expr.getMember();
+                // 尝试反射确认静态字段存在
+                Class<?> cls = resolveJavaClass(jcClass);
+                if (cls != null) {
+                    try {
+                        java.lang.reflect.Field f = cls.getField(fieldName);
+                        if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                            String desc = classToDescriptor(f.getType());
+                            MirType retType = descriptorToMirType(desc);
+                            return builder.emitGetStatic(jcClass, fieldName, desc, retType,
+                                    expr.getLocation());
+                        }
+                    } catch (NoSuchFieldException ignored) {}
+                    // 非静态字段或不存在 → 尝试无参方法
+                    java.lang.reflect.Method m = findJavaMethod(cls, fieldName, 0);
+                    if (m != null && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                        String desc = buildJavaMethodDescriptor(m);
+                        String retDesc = desc.substring(desc.indexOf(')') + 1);
+                        MirType retType = descriptorToMirType(retDesc);
+                        String extra = jcClass + "|" + fieldName + "|" + desc;
+                        return builder.emitInvokeStatic(extra, new int[0], retType, expr.getLocation());
+                    }
+                }
+            }
             if (classNames.contains(targetName)) {
                 // 拦截 ClassName.annotations → 内联构建注解列表
                 if ("annotations".equals(expr.getMember())) {
@@ -5713,6 +5761,23 @@ public class HirToMirLowering {
             sb.append('.').append(parts.get(i));
         }
         return sb.toString();
+    }
+
+    /**
+     * 从表达式中提取 javaClass("className") 的字面类名。
+     * 返回 "java.lang.Integer" 或 null（非 javaClass 调用或非字面参数）。
+     */
+    private String extractJavaClassName(Expression expr) {
+        if (!(expr instanceof HirCall)) return null;
+        HirCall call = (HirCall) expr;
+        if (!(call.getCallee() instanceof Identifier)) return null;
+        if (!"javaClass".equals(((Identifier) call.getCallee()).getName())) return null;
+        if (call.getArgs().size() != 1) return null;
+        Expression arg = call.getArgs().get(0);
+        if (arg instanceof Literal && ((Literal) arg).getKind() == LiteralKind.STRING) {
+            return (String) ((Literal) arg).getValue();
+        }
+        return null;
     }
 
     private String extractJavaTypeClassName(HirCall call) {

@@ -335,3 +335,66 @@ Interpreter interpreter = new Interpreter(policy);
 3. 类所在包在黑名单 → 拒绝
 4. 包白名单非空且不在白名单中 → 拒绝
 5. 以上都不匹配 → 允许
+
+## Builder DSL / 接收者 Lambda（Java 嵌入 API）
+
+### invokeWithReceiver — 以接收者调用 Nova Lambda
+
+从 Java 侧以指定对象为作用域接收者调用 Nova callable。接收者的成员在 lambda 内可直接访问。
+
+```java
+Nova nova = new Nova();
+nova.eval("val block = { put(\"key\", \"value\") }");
+Object block = nova.get("block");
+
+Map<String, String> map = new HashMap<>();
+nova.invokeWithReceiver(block, map);
+// map 现在包含 {"key": "value"}
+```
+
+### defineBuilderFunction — 定义 Builder 风格函数
+
+注册一个函数：每次调用时创建接收者实例，以其为作用域执行 Nova lambda，最后返回处理结果。
+
+```java
+// 定义 builder 函数
+nova.defineBuilderFunction("serverConfig", ServerConfig::new, config -> {
+    config.validate();
+    return config;
+});
+
+// 简化版：直接返回接收者
+nova.defineBuilderFunction("config", Config::new);
+```
+
+Nova 脚本中使用：
+
+```nova
+val cfg = serverConfig {
+    host = "0.0.0.0"
+    port = 8080
+}
+
+val c = config {
+    host = "localhost"
+}
+```
+
+### 嵌套 Builder
+
+Builder 函数支持嵌套，内层 lambda 的接收者自动切换：
+
+```java
+nova.defineBuilderFunction("server", ServerConfig::new);
+nova.defineBuilderFunction("database", DatabaseConfig::new);
+```
+
+```nova
+val srv = server {
+    host = "0.0.0.0"
+    val db = database {
+        url = "jdbc:mysql://localhost/mydb"
+        maxConnections = 10
+    }
+}
+```

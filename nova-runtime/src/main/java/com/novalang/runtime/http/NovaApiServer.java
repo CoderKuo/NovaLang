@@ -103,13 +103,25 @@ public class NovaApiServer extends NanoHTTPD {
                 }
             }
 
-            // 启动新实例
-            defaultInstance = new NovaApiServer(port);
-            try {
-                defaultInstance.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true);
-                defaultInstance.warmupClassPathCache();
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to start Nova API server on port " + port, e);
+            // 启动新实例（端口被占时自动递增重试，避免多 JVM 冲突）
+            int maxRetries = 10;
+            int currentPort = port;
+            for (int attempt = 0; attempt < maxRetries; attempt++) {
+                defaultInstance = new NovaApiServer(currentPort);
+                try {
+                    defaultInstance.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true);
+                    defaultInstance.warmupClassPathCache();
+                    break;
+                } catch (IOException e) {
+                    defaultInstance = null;
+                    if (attempt == maxRetries - 1) {
+                        // 所有端口都被占，静默跳过（API 服务非关键功能，不应阻塞主流程）
+                        System.getProperties().remove(GLOBAL_SERVER_KEY);
+                        System.getProperties().remove(GLOBAL_VERSION_KEY);
+                        return null;
+                    }
+                    currentPort++;
+                }
             }
 
             System.getProperties().put(GLOBAL_SERVER_KEY, defaultInstance);

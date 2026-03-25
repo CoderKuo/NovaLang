@@ -62,6 +62,15 @@ public class NovaScriptContext {
             Object val = ctx.bindings.get(name);
             if (val != null) return val == NULL_SENTINEL ? null : val;
         }
+        // scope receiver 字段读取（receiver.block() 内裸字段访问）
+        Object scopeReceiver = NovaScopeFunctions.getScopeReceiver();
+        if (scopeReceiver != null) {
+            try {
+                return NovaDynamic.getMember(scopeReceiver, name);
+            } catch (Exception ignored) {
+                // receiver 上没有此成员 → 继续回退
+            }
+        }
         // 回退到 shared() 全局注册表（变量 + 函数 + 命名空间代理）
         NovaRuntime.RegisteredEntry entry = NovaRuntime.shared().lookup(name);
         if (entry != null) return entry.getValue();
@@ -77,6 +86,16 @@ public class NovaScriptContext {
     private static final Object NULL_SENTINEL = new Object();
 
     public static void set(String name, Object value) {
+        // scope receiver 字段写入（receiver.block() 内裸字段赋值）
+        Object scopeReceiver = NovaScopeFunctions.getScopeReceiver();
+        if (scopeReceiver != null) {
+            try {
+                NovaDynamic.setMember(scopeReceiver, name, value);
+                return;
+            } catch (Exception ignored) {
+                // receiver 上没有此字段 → 写到 bindings
+            }
+        }
         NovaScriptContext ctx = CURRENT.get();
         if (ctx != null) {
             ctx.bindings.put(name, value != null ? value : NULL_SENTINEL);

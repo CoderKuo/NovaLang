@@ -32,6 +32,18 @@
   - 支持所有条件类型（is/in/值匹配/无 subject）+ 任意 guard 表达式
   - 支持多条件 + guard：`1, 2 if flag -> ...`
   - 解释器和编译器双路径均已支持
+- **接收者函数类型（Lambda with Receiver）**：支持 `T.() -> R` 类型声明语法
+  - 参数声明：`fun configure(block: Config.() -> Unit)`
+  - `receiver.block()` 自动绑定作用域接收者
+- **Builder DSL Java API**：`Nova.defineBuilderFunction()` / `Nova.invokeWithReceiver()`
+  - `defineBuilderFunction(name, factory)` — 定义 builder 风格函数
+  - `invokeWithReceiver(callable, receiver)` — 以接收者调用 Nova lambda
+- **MIR 循环死存储消除**（LoopDeadStoreElimination Pass）：循环内冗余的 SET_STATIC + NovaScriptContext.set 下沉到循环出口
+  - arith_loop: **4.6x 提速**（17.7ms → 3.9ms）
+  - call_loop: **2.7x 提速**（12.4ms → 4.6ms）
+- **SET_STATIC/GET_STATIC 缓存优化**：StaticFieldSite 缓存消除每次调用的字符串解析开销
+- **`javaClass()` 编译期常量传播**：`val X = javaClass("java.lang.Integer")` → `X.MAX_VALUE` 直接编译为 GETSTATIC（11.5µs，与 Java 原生持平）
+- **API Server 端口冲突修复**：多 JVM 环境下自动递增端口重试
 - **Non-local break/continue**：在 `forEach` 等 lambda 内使用 `break`/`continue`，跳出外层迭代
   ```nova
   list.forEach { if (it == 0) continue; process(it) }

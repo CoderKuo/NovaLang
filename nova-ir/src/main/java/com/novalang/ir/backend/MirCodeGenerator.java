@@ -762,6 +762,18 @@ public class MirCodeGenerator {
                 String fieldName = (String) inst.getExtra();
                 int obj = inst.operand(0);
                 MirType objType = getLocalType(func, obj);
+                // Lambda 类的未知字段：通过 NovaScriptContext.get 动态分派
+                {
+                    String gfOwner = objType.getKind() == MirType.Kind.OBJECT && objType.getClassName() != null
+                            ? objType.getClassName() : null;
+                    if (gfOwner != null && gfOwner.contains("$Lambda$") && !hasField(gfOwner, fieldName)) {
+                        mv.visitLdcInsn(fieldName);
+                        mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaScriptContext",
+                                "get", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+                        mv.visitVarInsn(ASTORE, inst.getDest());
+                        break;
+                    }
+                }
                 String owner = objType.getKind() == MirType.Kind.OBJECT && objType.getClassName() != null
                         ? objType.getClassName() : "java/lang/Object";
                 // 数组类型: size/length → ARRAYLENGTH
@@ -806,6 +818,15 @@ public class MirCodeGenerator {
                 MirType objType = getLocalType(func, obj);
                 String owner = objType.getKind() == MirType.Kind.OBJECT && objType.getClassName() != null
                         ? objType.getClassName() : "java/lang/Object";
+                // Lambda 类的未知字段：通过 NovaScriptContext.set 动态分派
+                // （scope receiver 内的字段赋值 host = "x" → NovaScriptContext.set 检查 scope receiver）
+                if (owner.contains("$Lambda$") && !hasField(owner, fieldName)) {
+                    mv.visitLdcInsn(fieldName);
+                    loadObject(mv, value);
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaScriptContext",
+                            "set", "(Ljava/lang/String;Ljava/lang/Object;)V", false);
+                    break;
+                }
                 String fieldDesc = lookupFieldDesc(owner, fieldName);
                 loadObject(mv, obj);
                 if (!"java/lang/Object".equals(owner)) {
@@ -1004,6 +1025,30 @@ public class MirCodeGenerator {
                     }
                     mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaScriptContext", "call",
                             "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    if (inst.getDest() >= 0) {
+                        mv.visitVarInsn(ASTORE, inst.getDest());
+                    }
+                    break;
+                }
+
+                // $ScopeCall: receiver.block() → NovaDynamic.scopeCall(callable, receiver, args)
+                if ("$ScopeCall".equals(extra)) {
+                    int[] ops = inst.getOperands();
+                    loadObject(mv, ops[0]);  // callable
+                    loadObject(mv, ops[1]);  // receiver
+                    int extraArgCount = ops.length - 2;
+                    pushInt(mv, extraArgCount);
+                    mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
+                    for (int i = 0; i < extraArgCount; i++) {
+                        mv.visitInsn(DUP);
+                        pushInt(mv, i);
+                        loadObject(mv, ops[i + 2]);
+                        mv.visitInsn(AASTORE);
+                    }
+                    mv.visitMethodInsn(INVOKESTATIC,
+                            "com/novalang/runtime/NovaDynamic", "scopeCall",
+                            "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+                            false);
                     if (inst.getDest() >= 0) {
                         mv.visitVarInsn(ASTORE, inst.getDest());
                     }
@@ -2450,6 +2495,17 @@ public class MirCodeGenerator {
             return func.getLocals().get(localIdx).getType();
         }
         return MirType.ofObject("java/lang/Object");
+    }
+
+    /** 检查 Nova 类是否定义了指定字段 */
+    private boolean hasField(String owner, String fieldName) {
+        String current = owner;
+        while (current != null) {
+            Map<String, String> descs = allFieldDescs.get(current);
+            if (descs != null && descs.containsKey(fieldName)) return true;
+            current = classSuperClass.get(current);
+        }
+        return false;
     }
 
     /** 按 owner 类名查找字段描述符，沿继承链查找，找不到则回退 Object */

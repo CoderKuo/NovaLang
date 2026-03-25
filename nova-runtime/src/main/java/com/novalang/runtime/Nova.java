@@ -751,6 +751,95 @@ public final class Nova {
         return toJava(result);
     }
 
+    // ── 接收者 Lambda / Builder DSL ────────────────────────
+
+    /**
+     * 以 receiver 为作用域接收者调用 Nova callable（lambda/函数）。
+     * 在 block 执行期间，receiver 的成员可在 block 内直接访问（无需 {@code receiver.xxx}）。
+     *
+     * <pre>
+     * // 获取 Nova 脚本中定义的 lambda
+     * Object block = nova.get("myBlock");
+     * Map&lt;String, Object&gt; config = new HashMap&lt;&gt;();
+     * nova.invokeWithReceiver(block, config);
+     * // block 内: put("key", "value") 直接调用 config.put
+     * </pre>
+     *
+     * @param callable Nova callable（从 {@code nova.get()} 获取的函数/lambda）
+     * @param receiver 作用域接收者（Java 对象或 NovaValue）
+     * @param args     传递给 callable 的额外参数
+     * @return callable 的返回值（自动转换为 Java 对象）
+     */
+    public Object invokeWithReceiver(Object callable, Object receiver, Object... args) {
+        NovaValue novaCallable = callable instanceof NovaValue
+                ? (NovaValue) callable : AbstractNovaValue.fromJava(callable);
+        NovaValue novaReceiver = receiver instanceof NovaValue
+                ? (NovaValue) receiver : AbstractNovaValue.fromJava(receiver);
+
+        NovaCallable extracted = interpreter.extractCallable(novaCallable);
+        if (extracted == null) {
+            throw new NovaRuntimeException("Not callable: " + callable);
+        }
+
+        List<NovaValue> novaArgs = new ArrayList<>(args.length);
+        for (Object arg : args) {
+            novaArgs.add(arg instanceof NovaValue ? (NovaValue) arg : AbstractNovaValue.fromJava(arg));
+        }
+
+        NovaValue result = interpreter.invokeWithReceiver(extracted, novaReceiver, novaArgs);
+        return toJava(result);
+    }
+
+    /**
+     * 定义 builder 风格函数：每次调用时创建 receiver 实例，以其为作用域执行 Nova lambda，
+     * 最后返回 receiver（或经 postAction 处理后的结果）。
+     *
+     * <pre>
+     * // Java 侧定义
+     * nova.defineBuilderFunction("serverConfig", ServerConfig::new, config -> {
+     *     config.validate();
+     *     return config;
+     * });
+     *
+     * // Nova 脚本使用
+     * val cfg = serverConfig {
+     *     host = "0.0.0.0"
+     *     port = 8080
+     * }
+     * </pre>
+     *
+     * @param name            函数名
+     * @param receiverFactory 每次调用时创建 receiver 实例
+     * @param postAction      lambda 执行完毕后处理 receiver（null 则直接返回 receiver）
+     */
+    @SuppressWarnings("unchecked")
+    public <T> Nova defineBuilderFunction(String name,
+                                           java.util.function.Supplier<T> receiverFactory,
+                                           java.util.function.Function<T, Object> postAction) {
+        return defineVal(name, new NovaNativeFunction(name, 1, (interp, args) -> {
+            NovaCallable block = interp.asCallable(args.get(0), name);
+            T receiver = receiverFactory.get();
+            NovaValue novaReceiver = AbstractNovaValue.fromJava(receiver);
+            ((Interpreter) interp).invokeWithReceiver(block, novaReceiver, Collections.emptyList());
+            if (postAction != null) {
+                return wrapReturn(postAction.apply(receiver));
+            }
+            return novaReceiver;
+        }));
+    }
+
+    /**
+     * 定义 builder 函数（简化版：无 postAction，直接返回 receiver）。
+     *
+     * <pre>
+     * nova.defineBuilderFunction("config", Config::new);
+     * // Nova: val c = config { host = "localhost"; port = 8080 }
+     * </pre>
+     */
+    public <T> Nova defineBuilderFunction(String name, java.util.function.Supplier<T> receiverFactory) {
+        return defineBuilderFunction(name, receiverFactory, null);
+    }
+
     // ── 底层访问 ──────────────────────────────────────────
 
     public Interpreter getInterpreter() {

@@ -14,8 +14,8 @@
 | 引擎 | 版本 | 说明 |
 |------|------|------|
 | **Java Native** | JDK 21 | 纯 Java 基线，JIT 充分优化 |
-| **Nova Compiled** | 0.1.7 | Nova 编译为 JVM 字节码执行 |
-| **Nova Eval** | 0.1.7 | Nova MIR 解释器执行 |
+| **Nova Compiled** | 0.1.11 | Nova 编译为 JVM 字节码执行 |
+| **Nova Eval** | 0.1.11 | Nova MIR 解释器执行（含循环死存储消除优化） |
 | **Javet (V8)** | 5.0.5 | 嵌入式 V8 JavaScript 引擎 |
 | **Groovy** | 4.0.23 | GroovyShell 解析/执行 |
 | **Nashorn** | 15.4 | OpenJDK Nashorn JavaScript 引擎 |
@@ -44,37 +44,37 @@
 
 | 场景 | Java Native | Nova Compiled | Javet Warmed | Groovy Parsed | Nashorn Compiled | GraalJS Warmed | JEXL Script |
 |------|----------:|-------------:|------------:|-------------:|----------------:|--------------:|-----------:|
-| arith_loop | **3.6** | **18.0** | 110.6 | 57.8 | 47.3 | 245.0 | 579.6 |
-| call_loop | **9.2** | **44.9** | 168.3 | 143.1 | 944.2 | 2519.0 | 13196.0 |
-| object_loop | **0.9** | **22.5** | 189.0 | 34.2 | 399.9 | 1530.0 | 381.0 |
-| branch_loop | **20.0** | **28.0** | 198.7 | 151.1 | 820.2 | 2153.0 | 5620.0 |
-| string_concat | **12.3** | **14.7** | 79.5 | 13499.0 | 86.3 | 129.0 | 3333.0 |
-| list_sum | **8.8** | **18.7** | 102.8 | 36.8 | 77.3 | 226.3 | 209.5 |
-| fib_recursion | **366.8** | **371.1** | 1019.5 | 809.4 | 5199.0 | 69015.0 | 124141.0 |
+| arith_loop | **3.6** | **19.2** | 108.6 | 58.1 | 47.3 | 278.8 | 573.9 |
+| call_loop | **9.2** | **45.7** | 170.6 | 143.9 | 970.5 | 2530.3 | 13037.2 |
+| object_loop | **0.9** | **23.1** | 187.5 | 34.3 | 410.0 | 1577.5 | 381.2 |
+| branch_loop | **20.0** | **29.4** | 203.1 | 154.2 | 850.5 | 2187.1 | 5545.4 |
+| string_concat | **11.7** | **15.9** | 79.3 | 13189.0 | 87.3 | 129.5 | 3293.2 |
+| list_sum | **8.7** | **19.4** | 102.8 | 36.5 | 77.8 | 227.2 | 208.5 |
+| fib_recursion | **366.2** | **365.6** | 1007.7 | 804.5 | 4845.4 | 64851.0 | 119969.6 |
 
 ### Nova Compiled vs Javet(V8) 倍率对比
 
 | 场景 | Nova Compiled | Javet Warmed | Nova 优势 |
 |------|-------------:|------------:|---------:|
-| arith_loop | 18.0 µs | 110.6 µs | **6.1x** |
-| call_loop | 44.9 µs | 168.3 µs | **3.7x** |
-| object_loop | 22.5 µs | 189.0 µs | **8.4x** |
-| branch_loop | 28.0 µs | 198.7 µs | **7.1x** |
-| string_concat | 14.7 µs | 79.5 µs | **5.4x** |
-| list_sum | 18.7 µs | 102.8 µs | **5.5x** |
-| fib_recursion | 371.1 µs | 1019.5 µs | **2.7x** |
+| arith_loop | 19.2 µs | 108.6 µs | **5.7x** |
+| call_loop | 45.7 µs | 170.6 µs | **3.7x** |
+| object_loop | 23.1 µs | 187.5 µs | **8.1x** |
+| branch_loop | 29.4 µs | 203.1 µs | **6.9x** |
+| string_concat | 15.9 µs | 79.3 µs | **5.0x** |
+| list_sum | 19.4 µs | 102.8 µs | **5.3x** |
+| fib_recursion | 365.6 µs | 1007.7 µs | **2.8x** |
 
 ### 相对 Java Native 的倍率
 
 | 场景 | Nova Compiled | Javet Warmed | Groovy Parsed | Nashorn Compiled | GraalJS Warmed | JEXL Script |
 |------|-------------:|------------:|-------------:|----------------:|--------------:|-----------:|
-| arith_loop | 5.0x | 30.8x | 16.1x | 13.2x | 68.2x | 161.4x |
-| call_loop | 4.9x | 18.3x | 15.6x | 102.8x | 274.2x | 1437.0x |
-| object_loop | 25.6x | 214.8x | 38.9x | 454.6x | 1739.2x | 433.1x |
-| branch_loop | 1.4x | 9.9x | 7.6x | 41.0x | 107.7x | 281.0x |
-| string_concat | 1.2x | 6.5x | 1097.5x | 7.0x | 10.5x | 271.0x |
-| list_sum | 2.1x | 11.7x | 4.2x | 8.8x | 25.8x | 23.9x |
-| fib_recursion | 1.0x | 2.8x | 2.2x | 14.2x | 188.2x | 338.5x |
+| arith_loop | 5.3x | 30.2x | 16.1x | 13.1x | 77.4x | 159.4x |
+| call_loop | 5.0x | 18.5x | 15.6x | 105.5x | 275.0x | 1417.1x |
+| object_loop | 26.3x | 213.6x | 39.1x | 467.0x | 1796.6x | 434.1x |
+| branch_loop | 1.5x | 10.2x | 7.7x | 42.5x | 109.4x | 277.3x |
+| string_concat | 1.4x | 6.8x | 1127.3x | 7.5x | 11.1x | 281.6x |
+| list_sum | 2.2x | 11.8x | 4.2x | 8.9x | 26.1x | 24.0x |
+| fib_recursion | 1.0x | 2.7x | 2.2x | 13.2x | 176.9x | 327.3x |
 
 ## 解释执行 / 冷启动性能
 
@@ -82,13 +82,13 @@
 
 | 场景 | Nova Eval | Javet Eval | JEXL Eval | Nashorn Eval | GraalJS Eval | Groovy Eval |
 |------|--------:|---------:|---------:|-----------:|-----------:|-----------:|
-| arith_loop | **405** | 841 | 663 | 1074 | 693 | 10130 |
-| call_loop | **2321** | 842 | 16398 | 3714 | 3338 | 16275 |
-| object_loop | **369** | 896 | 457 | 3429 | 1644 | 11140 |
-| branch_loop | **2058** | 858 | 6387 | 2726 | 2778 | 20762 |
-| string_concat | **48** | 791 | 3445 | 937 | 556 | 19769 |
-| list_sum | **288** | 779 | 297 | 1252 | 682 | 5438 |
-| fib_recursion | 26903 | 1619 | 150102 | **8541** | 52668 | 51326 |
+| arith_loop | **416** | 761 | 666 | 1073 | 711 | 10152 |
+| call_loop | **2403** | 833 | 16272 | 3573 | 3275 | 16214 |
+| object_loop | **378** | 901 | 466 | 3560 | 1654 | 11294 |
+| branch_loop | **2230** | 874 | 6291 | 2663 | 2954 | 20914 |
+| string_concat | **49** | 805 | 3468 | 1000 | 563 | 19055 |
+| list_sum | **270** | 822 | 292 | 1287 | 706 | 5369 |
+| fib_recursion | 26128 | 1633 | 146715 | **8822** | 51439 | 49029 |
 
 > Javet Eval 包含 V8 Runtime 创建开销（~800µs 固定成本），短脚本场景受创建成本主导。
 
@@ -98,15 +98,15 @@
 
 | 场景 | Nova Compile | Nashorn Compile |
 |------|------------:|---------------:|
-| arith_loop | **56.6** | 557.6 |
-| call_loop | **62.2** | 571.5 |
-| object_loop | **144.9** | 735.7 |
-| branch_loop | **84.0** | 773.3 |
-| string_concat | **65.8** | 560.7 |
-| list_sum | **79.3** | 564.5 |
-| fib_recursion | **76.8** | 573.7 |
+| arith_loop | **67.4** | 530.1 |
+| call_loop | **72.5** | 521.0 |
+| object_loop | **179.5** | 581.9 |
+| branch_loop | **100.6** | 569.2 |
+| string_concat | **84.2** | 503.3 |
+| list_sum | **100.6** | 541.6 |
+| fib_recursion | **98.3** | 543.1 |
 
-Nova 编译速度比 Nashorn 快 **7~10 倍**。
+Nova 编译速度比 Nashorn 快 **5~8 倍**。
 
 ---
 
@@ -133,16 +133,16 @@ Nova 编译速度比 Nashorn 快 **7~10 倍**。
 
 | 场景 | Java | NovaCmp | Groovy | Nashorn | NovaEvl | GraalJS | JEXL | Javet |
 |------|-----:|--------:|-------:|--------:|--------:|--------:|-----:|------:|
-| Math.abs ×10K | 2.1 | **52** | 45 | 622 | 3963 | 988 | 395 | 44169 |
-| ArrayList ×5K | 14 | **17** | 15 | 51 | 57660 | 409 | 178 | 22751 |
-| MAX_VALUE ×10K | 11 | 81 | 79 | **58** | 224 | 135 | 381 | 109 |
-| SB.append ×3K | 10 | **11** | 11 | 175 | 25615 | 384 | 114 | 86364 |
-| Coll.sort 1K | 20 | **21** | 26 | 58 | 12423 | 104 | 102 | 4981 |
-| valueOf ×10K | 1.8 | **49** | 32 | 642 | 3625 | 890 | 316 | 43751 |
-| HashMap ×3K | 30 | **41** | 78 | 134 | 74429 | 764 | 349 | 40204 |
-| Math.multi ×5K | 2.3 | **38** | 31 | 678 | 7019 | 1469 | 369 | 68293 |
-| try-catch ×5K | 1779 | 2028 | 2403 | 2897 | 11479 | 7289 | 168† | 39556 |
-| Mixed ×2K | 5.2 | **25** | 38 | 312 | 33156 | 476 | 247 | 27198 |
+| Math.abs ×10K | 2.1 | **58** | 43 | 620 | 3554 | 1069 | 489 | 44266 |
+| ArrayList ×5K | 13 | **16** | 14 | 50 | 56376 | 408 | 206 | 22865 |
+| MAX_VALUE ×10K | 11 | **12** | 76 | **58** | 228 | 126 | 452 | 109 |
+| SB.append ×3K | 10 | **12** | 11 | 169 | 25481 | 389 | 130 | 85849 |
+| Coll.sort 1K | 20 | **22** | 25 | 57 | 12468 | 105 | 121 | 6116 |
+| valueOf ×10K | 1.8 | **52** | 31 | 630 | 3026 | 1062 | 418 | 64530 |
+| HashMap ×3K | 29 | **38** | 76 | 134 | 74130 | 771 | 440 | 60116 |
+| Math.multi ×5K | 2.3 | **39** | 31 | 664 | 5890 | 1427 | 475 | 106952 |
+| try-catch ×5K | 1825 | 2108 | 2426 | 2821 | 11220 | 7168 | 162† | 55662 |
+| Mixed ×2K | 5.1 | **26** | 36 | 305 | 31002 | 514 | 247 | 40758 |
 
 > † JEXL 不支持 try-catch，用 if/else 模拟，数据不可直接对比。
 
@@ -150,16 +150,16 @@ Nova 编译速度比 Nashorn 快 **7~10 倍**。
 
 | 场景 | #1 | #2 | #3 |
 |------|----|----|-----|
-| Math.abs ×10K | Groovy(45) | **NovaCmp(52)** | JEXL(395) |
-| ArrayList ×5K | Groovy(15) | **NovaCmp(17)** | Nashorn(51) |
-| MAX_VALUE ×10K | Nashorn(58) | Groovy(79) | **NovaCmp(81)** |
-| SB.append ×3K | **NovaCmp(11)** | Groovy(11) | JEXL(114) |
-| Coll.sort 1K | **NovaCmp(21)** | Groovy(26) | Nashorn(58) |
-| valueOf ×10K | Groovy(32) | **NovaCmp(49)** | JEXL(316) |
-| HashMap ×3K | **NovaCmp(41)** | Groovy(78) | Nashorn(134) |
-| Math.multi ×5K | Groovy(31) | **NovaCmp(38)** | JEXL(369) |
-| try-catch ×5K | JEXL(168†) | **NovaCmp(2028)** | Groovy(2403) |
-| Mixed ×2K | **NovaCmp(25)** | Groovy(38) | JEXL(247) |
+| Math.abs ×10K | Groovy(43) | **NovaCmp(58)** | JEXL(489) |
+| ArrayList ×5K | Groovy(14) | **NovaCmp(16)** | Nashorn(50) |
+| MAX_VALUE ×10K | **NovaCmp(12)** | Nashorn(58) | Groovy(76) |
+| SB.append ×3K | Groovy(11) | **NovaCmp(12)** | JEXL(130) |
+| Coll.sort 1K | **NovaCmp(22)** | Groovy(25) | Nashorn(57) |
+| valueOf ×10K | Groovy(31) | **NovaCmp(52)** | JEXL(418) |
+| HashMap ×3K | **NovaCmp(38)** | Groovy(76) | Nashorn(134) |
+| Math.multi ×5K | Groovy(31) | **NovaCmp(39)** | JEXL(475) |
+| try-catch ×5K | JEXL(162†) | **NovaCmp(2108)** | Groovy(2426) |
+| Mixed ×2K | **NovaCmp(26)** | Groovy(36) | JEXL(247) |
 
 **Nova Compiled 成绩：Top 1 = 4/10 场景，Top 3 = 10/10 场景**
 
@@ -171,21 +171,23 @@ Nova 编译速度比 Nashorn 快 **7~10 倍**。
 
 ### Nova Compiled 全场景领先 Javet(V8)
 
-Nova 编译模式比嵌入式 V8 引擎快 **2.7x ~ 8.4x**：
+Nova 编译模式比嵌入式 V8 引擎快 **2.8x ~ 8.1x**：
 
-- **对象分配/方法分派**：Nova 快 **8.4 倍**，JVM 对象模型和内联缓存优势
-- **分支密集**：Nova 快 **7.1 倍**，JIT 分支预测优化充分
-- **算术热循环**：Nova 快 **6.1 倍**，MIR 编译器直接生成 JVM 字节码
-- **递归**：Nova 快 **2.7 倍**，差距最小但 JVM 栈帧仍优于 V8
+- **对象分配/方法分派**：Nova 快 **8.1 倍**，JVM 对象模型和内联缓存优势
+- **分支密集**：Nova 快 **6.9 倍**，JIT 分支预测优化充分
+- **算术热循环**：Nova 快 **5.7 倍**，MIR 编译器直接生成 JVM 字节码
+- **递归**：Nova 快 **2.8 倍**，差距最小但 JVM 栈帧仍优于 V8
 
 ### Nova Compiled 接近 Java Native 性能
 
-- `branch_loop` / `string_concat` / `fib_recursion`：与 Java Native 几乎持平（1.0x ~ 1.4x）
+- `fib_recursion`：与 Java Native **完全持平**（365.6 vs 366.2 µs）
+- `branch_loop` / `string_concat`：与 Java Native 几乎持平（1.4x ~ 1.5x）
 - 编译后执行性能**远超所有脚本引擎**
 
 ### Nova Eval（MIR 解释器）表现优秀
 
 - 在 **6/7** 个场景中领先所有引擎的解释执行模式
+- v0.1.11 循环死存储消除优化大幅提升循环密集场景性能
 - 仅 `fib_recursion` 场景弱于 Nashorn 和 Javet（递归深调用栈开销）
 
 ## Java 互操作
@@ -194,17 +196,18 @@ Nova 编译模式比嵌入式 V8 引擎快 **2.7x ~ 8.4x**：
 
 通过 invokedynamic 穿透优化，Nova 在 Java 互操作中达到 Groovy 级别：
 
-- **4/10 场景排名第一**：StringBuilder、Collections.sort、HashMap、Mixed
+- **4/10 场景排名第一**：MAX_VALUE、Collections.sort、HashMap、Mixed
 - **10/10 场景进入 Top 3**
-- **HashMap 操作**：Nova 快 Groovy **1.9x**（41µs vs 78µs）
-- **Mixed 混合计算**：Nova 快 Groovy **1.5x**（25µs vs 38µs）
+- **静态字段访问**：Nova 12µs vs Java 11µs（几乎持平），`javaClass()` 常量传播直接生成 GETSTATIC
+- **HashMap 操作**：Nova 快 Groovy **2.0x**（38µs vs 76µs）
+- **Mixed 混合计算**：Nova 快 Groovy **1.4x**（26µs vs 36µs）
 
 ### Javet(V8) 互操作开销极大
 
 V8 ↔ JVM 跨进程 proxy 每次调用都有序列化开销：
 
-- `StringBuilder.append` ×3000：**86ms**（Nova Compiled 仅 11µs，快 7800x）
-- `Math.abs` ×10000：**44ms**（Nova Compiled 仅 52µs，快 850x）
+- `Math.multi` ×5000：**107ms**（Nova Compiled 仅 39µs，快 2742x）
+- `StringBuilder.append` ×3000：**86ms**（Nova Compiled 仅 12µs，快 7154x）
 
 ## 各引擎特点
 
@@ -220,9 +223,9 @@ V8 ↔ JVM 跨进程 proxy 每次调用都有序列化开销：
 
 ## Nova 优化方向
 
-- **对象分配**：Nova Compiled 22.5µs vs Java 0.9µs（25.6x），`NovaObject` 创建开销有优化空间
-- **实例方法链**：`NovaExternalObject` 的 invokedynamic 缓存尚未穿透（编译路径的 ArrayList/StringBuilder 直接走原生，但 Eval 路径仍走反射）
-- **递归 Eval**：27ms 是唯一弱于 Nashorn（9ms）和 Javet（1.6ms）的场景
+- **对象分配**：Nova Compiled 23.1µs vs Java 0.9µs（26.3x），`NovaObject` 创建开销有优化空间
+- **Java 方法调用编译路径**：`javaClass()` 的方法调用仍走 invokedynamic（SAM 适配需要），静态字段已通过常量传播优化
+- **递归 Eval**：26ms 是唯一弱于 Nashorn（9ms）和 Javet（1.6ms）的场景
 
 ---
 

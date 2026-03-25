@@ -524,7 +524,16 @@ final class StaticMethodDispatcher {
         // 4. 回退: shared() 全局注册表
         NovaValue sharedResult = trySharedRegistryLookup(methodName, args);
         if (sharedResult != null) return sharedResult;
-        // 5. 回退: args[0].methodName(args[1:])
+        // 5. 回退: scopeReceiver 方法调用（receiver lambda / with 块内裸方法调用）
+        if (dispatcher.scopeReceiver != null) {
+            try {
+                return virtualDispatcher.invokeVirtualMethod(
+                        dispatcher.scopeReceiver, methodName, null, args);
+            } catch (NovaRuntimeException ignored) {
+                // scopeReceiver 上也找不到此方法 → 继续下面的回退
+            }
+        }
+        // 6. 回退: args[0].methodName(args[1:])
         if (!args.isEmpty()) {
             NovaValue target = args.get(0);
             List<NovaValue> methodArgs = args.size() > 1 ? args.subList(1, args.size()) : Collections.emptyList();

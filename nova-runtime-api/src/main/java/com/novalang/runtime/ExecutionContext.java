@@ -171,6 +171,29 @@ public interface ExecutionContext {
      */
     NovaValue executeHirLambda(NovaValue lambda, List<NovaValue> args);
 
+    // ============ 作用域接收者 ============
+
+    /**
+     * 从 NovaValue 提取 NovaCallable（直接 callable 或含 invoke 方法的对象）。
+     */
+    default NovaCallable extractCallable(NovaValue value) {
+        return value instanceof NovaCallable ? (NovaCallable) value : null;
+    }
+
+    /**
+     * 以 receiver 为作用域接收者调用 callable。
+     * 在 callable 执行期间，receiver 的成员可在 callable 内直接访问。
+     *
+     * @param callable Nova callable
+     * @param receiver 作用域接收者
+     * @param args     额外参数
+     * @return callable 的返回值
+     */
+    default NovaValue invokeWithScopeReceiver(NovaCallable callable, NovaValue receiver, List<NovaValue> args) {
+        // 默认实现：不绑定 receiver，直接调用
+        return callable.call(this, args);
+    }
+
     // ============ 注解处理器 ============
 
     /**

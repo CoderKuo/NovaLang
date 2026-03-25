@@ -151,6 +151,20 @@ public final class NovaDynamic {
         invokeSetter(setter, target, value, memberName);
     }
 
+    /**
+     * 以 receiver 为作用域接收者调用 callable（编译模式的 $ScopeCall 实现）。
+     * 在 callable 执行期间，receiver 的成员可通过 NovaScriptContext 的作用域链访问。
+     *
+     * @param callable Nova lambda/函数（NovaCallable 或含 invoke 方法的对象）
+     * @param receiver 作用域接收者
+     * @param args     传递给 callable 的额外参数
+     * @return callable 的返回值
+     */
+    public static Object scopeCall(Object callable, Object receiver, Object[] args) {
+        // 编译模式：通过 NovaRuntime.scopeCall 委托到解释器的 withScopeReceiver
+        return NovaRuntime.scopeCall(callable, receiver, args);
+    }
+
     public static Object invokeMethod(Object target, String methodName, Object... args) {
         switch (args.length) {
             case 0:

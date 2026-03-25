@@ -2833,7 +2833,6 @@ final class MirInterpreter {
             }
             case "bootstrapStaticInvoke": {
                 // 委托给 StaticMethodDispatcher 的 $PipeCall 分派链
-                // （环境查找 → 类构造器 → scope receiver → stdlib → Java 类等）
                 MirInst pipeInst = new MirInst(
                         MirOp.INVOKE_STATIC,
                         inst.getDest(), ops, "$PipeCall|" + info.methodName, inst.getLocation());
@@ -3124,17 +3123,48 @@ final class MirInterpreter {
     private Map<String, NovaValue> moduleStaticFields = new java.util.concurrent.ConcurrentHashMap<>();
 
     private void executeGetStatic(MirFrame frame, MirInst inst) {
-        String extra = inst.extraAs();
-        int pipe = extra.indexOf('|');
-        String owner = extra.substring(0, pipe);
-        int pipe2 = extra.indexOf('|', pipe + 1);
-        String fieldName = pipe2 >= 0 ? extra.substring(pipe + 1, pipe2) : extra.substring(pipe + 1);
-
-        // $Module 顶层静态字段
-        if (owner.endsWith("$Module")) {
-            NovaValue val = moduleStaticFields.get(fieldName);
-            frame.locals[inst.getDest()] = val != null ? val : NovaNull.NULL;
+        // 缓存字符串解析结果
+        Object cached = inst.cache;
+        String owner, fieldName;
+        if (cached instanceof StaticFieldSite) {
+            StaticFieldSite site = (StaticFieldSite) cached;
+            owner = site.owner;
+            fieldName = site.fieldName;
+            // $Module 快速路径（缓存命中）
+            if (site.isModule) {
+                NovaValue val = moduleStaticFields.get(fieldName);
+                frame.locals[inst.getDest()] = val != null ? val : NovaNull.NULL;
+                return;
+            }
+        } else if (cached instanceof java.lang.invoke.MethodHandle) {
+            // Java 静态字段缓存命中
+            try {
+                frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(
+                        ((java.lang.invoke.MethodHandle) cached).invoke());
+                return;
+            } catch (Throwable e) {
+                String extra = inst.extraAs();
+                throw new NovaRuntimeException("Failed to access static field " + extra + ": " + e.getMessage(), e);
+            }
+        } else if (cached == STATIC_FIELD_MISS) {
+            frame.locals[inst.getDest()] = NovaNull.NULL;
             return;
+        } else {
+            // 首次调用：解析字符串
+            String extra = inst.extraAs();
+            int pipe = extra.indexOf('|');
+            owner = extra.substring(0, pipe);
+            int pipe2 = extra.indexOf('|', pipe + 1);
+            fieldName = pipe2 >= 0 ? extra.substring(pipe + 1, pipe2) : extra.substring(pipe + 1);
+            StaticFieldSite site = new StaticFieldSite(owner, fieldName);
+            inst.cache = site;
+
+            // $Module 顶层静态字段
+            if (site.isModule) {
+                NovaValue val = moduleStaticFields.get(fieldName);
+                frame.locals[inst.getDest()] = val != null ? val : NovaNull.NULL;
+                return;
+            }
         }
 
         // 特殊处理 System.out
@@ -3156,7 +3186,6 @@ final class MirInterpreter {
         }
 
         // Nova 类的静态字段
-        String normalizedOwner = toJavaDotName(owner);
         MirClassInfo classInfo = mirClasses.get(owner);
         if (classInfo != null) {
             NovaValue staticVal = classInfo.novaClass.getStaticField(fieldName);
@@ -3167,6 +3196,7 @@ final class MirInterpreter {
         }
 
         // 从环境查找类
+        String normalizedOwner = toJavaDotName(owner);
         NovaValue classVal = interp.getEnvironment().tryGet(normalizedOwner);
         if (classVal == null) classVal = interp.getEnvironment().tryGet(owner);
 
@@ -3185,23 +3215,7 @@ final class MirInterpreter {
             }
         }
 
-        // Java 静态字段：inst.cache 缓存 MethodHandle（避免每次反射）
-        Object cached = inst.cache;
-        if (cached instanceof java.lang.invoke.MethodHandle) {
-            try {
-                frame.locals[inst.getDest()] = AbstractNovaValue.fromJava(
-                        ((java.lang.invoke.MethodHandle) cached).invoke());
-                return;
-            } catch (Throwable e) {
-                throw new NovaRuntimeException("Failed to access static field "
-                        + owner + "." + fieldName + ": " + e.getMessage(), e);
-            }
-        }
-        if (cached == STATIC_FIELD_MISS) {
-            frame.locals[inst.getDest()] = NovaNull.NULL;
-            return;
-        }
-        // 首次执行：解析并缓存
+        // Java 静态字段：首次解析并缓存 MethodHandle（覆盖 StaticFieldSite）
         try {
             String javaDotName = toJavaDotName(owner);
             if (!interp.getSecurityPolicy().isClassAllowed(javaDotName)) {
@@ -3229,30 +3243,39 @@ final class MirInterpreter {
     }
 
     private void executeSetStatic(MirFrame frame, MirInst inst) {
-        String extra = inst.extraAs();
-        int pipe = extra.indexOf('|');
-        String owner = extra.substring(0, pipe);
-        int pipe2 = extra.indexOf('|', pipe + 1);
-        String fieldName = pipe2 >= 0 ? extra.substring(pipe + 1, pipe2) : extra.substring(pipe + 1);
+        // 缓存字符串解析结果（避免每次 indexOf + substring）
+        Object cached = inst.cache;
+        StaticFieldSite site;
+        if (cached instanceof StaticFieldSite) {
+            site = (StaticFieldSite) cached;
+        } else {
+            String extra = inst.extraAs();
+            int pipe = extra.indexOf('|');
+            String owner = extra.substring(0, pipe);
+            int pipe2 = extra.indexOf('|', pipe + 1);
+            String fieldName = pipe2 >= 0 ? extra.substring(pipe + 1, pipe2) : extra.substring(pipe + 1);
+            site = new StaticFieldSite(owner, fieldName);
+            inst.cache = site;
+        }
         NovaValue value = frame.get(inst.operand(0));
 
         // $Module 顶层静态字段
-        if (owner.endsWith("$Module")) {
-            moduleStaticFields.put(fieldName, value);
+        if (site.isModule) {
+            moduleStaticFields.put(site.fieldName, value);
             return;
         }
 
-        MirClassInfo classInfo = mirClasses.get(owner);
+        MirClassInfo classInfo = mirClasses.get(site.owner);
         if (classInfo != null) {
-            classInfo.novaClass.setStaticField(fieldName, value);
+            classInfo.novaClass.setStaticField(site.fieldName, value);
             return;
         }
 
-        String normalizedOwner = toJavaDotName(owner);
+        String normalizedOwner = toJavaDotName(site.owner);
         NovaValue classVal = interp.getEnvironment().tryGet(normalizedOwner);
-        if (classVal == null) classVal = interp.getEnvironment().tryGet(owner);
+        if (classVal == null) classVal = interp.getEnvironment().tryGet(site.owner);
         if (classVal instanceof NovaClass) {
-            ((NovaClass) classVal).setStaticField(fieldName, value);
+            ((NovaClass) classVal).setStaticField(site.fieldName, value);
         }
     }
 
@@ -3622,6 +3645,19 @@ final class MirInterpreter {
     private static final class FieldAccessSite {
         NovaClass cachedClass;
         int fieldIndex = -1;
+    }
+
+    /** SET_STATIC/GET_STATIC 字符串解析缓存（避免每次 indexOf + substring） */
+    private static final class StaticFieldSite {
+        final String owner;
+        final String fieldName;
+        final boolean isModule;
+
+        StaticFieldSite(String owner, String fieldName) {
+            this.owner = owner;
+            this.fieldName = fieldName;
+            this.isModule = owner.endsWith("$Module");
+        }
     }
 
     NovaValue[] collectArgsArray(MirFrame frame, int[] ops) {
