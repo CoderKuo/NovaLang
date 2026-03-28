@@ -5,6 +5,15 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/CoderKuo/NovaLang/actions/workflows/release.yml"><img src="https://github.com/CoderKuo/NovaLang/actions/workflows/release.yml/badge.svg" alt="构建"></a>
+  <a href="https://jitpack.io/#CoderKuo/NovaLang"><img src="https://jitpack.io/v/CoderKuo/NovaLang.svg" alt="JitPack"></a>
+  <a href="https://github.com/CoderKuo/NovaLang/releases/latest"><img src="https://img.shields.io/github/v/release/CoderKuo/NovaLang?color=blue&label=release" alt="版本"></a>
+  <img src="https://img.shields.io/badge/Java-8%2B-orange" alt="Java 8+">
+  <img src="https://img.shields.io/github/languages/code-size/CoderKuo/NovaLang" alt="代码量">
+  <a href="https://github.com/CoderKuo/NovaLang/stargazers"><img src="https://img.shields.io/github/stars/CoderKuo/NovaLang?style=social" alt="Stars"></a>
+</p>
+
+<p align="center">
   Kotlin 风格语法 · 无缝 Java 互操作 · Async/Await · 类型安全
 </p>
 

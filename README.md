@@ -9,6 +9,15 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/CoderKuo/NovaLang/actions/workflows/release.yml"><img src="https://github.com/CoderKuo/NovaLang/actions/workflows/release.yml/badge.svg" alt="Build"></a>
+  <a href="https://jitpack.io/#CoderKuo/NovaLang"><img src="https://jitpack.io/v/CoderKuo/NovaLang.svg" alt="JitPack"></a>
+  <a href="https://github.com/CoderKuo/NovaLang/releases/latest"><img src="https://img.shields.io/github/v/release/CoderKuo/NovaLang?color=blue&label=release" alt="Release"></a>
+  <img src="https://img.shields.io/badge/Java-8%2B-orange" alt="Java 8+">
+  <img src="https://img.shields.io/github/languages/code-size/CoderKuo/NovaLang" alt="Code Size">
+  <a href="https://github.com/CoderKuo/NovaLang/stargazers"><img src="https://img.shields.io/github/stars/CoderKuo/NovaLang?style=social" alt="Stars"></a>
+</p>
+
+<p align="center">
   Kotlin-inspired syntax · Seamless Java interop · Async/await · TypeScript-friendly
 </p>
 
