@@ -1,11 +1,11 @@
 # NovaLang
 
 <p align="center">
-  <a href="README.md">English</a> | <a href="README_CN.md">简体中文</a>
+  <img src="docs/nova-banner.svg" alt="NovaLang" width="480">
 </p>
 
 <p align="center">
-  <strong>A modern scripting language running on the JVM</strong>
+  <a href="README.md">English</a> | <a href="README_CN.md">简体中文</a>
 </p>
 
 <p align="center">

@@ -1,6 +1,10 @@
 # NovaLang
 
 <p align="center">
+  <img src="docs/nova-banner.svg" alt="NovaLang" width="480">
+</p>
+
+<p align="center">
   <strong>运行在 JVM 上的现代脚本语言</strong>
 </p>
 

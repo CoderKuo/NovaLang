@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160" width="480" height="160">
+  <defs>
+    <linearGradient id="ng" x1="8" y1="8" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c4b5fd"/>
+      <stop offset="0.5" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <radialGradient id="ngl" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Logo: centered, scaled 2x -->
+  <g transform="translate(170,52) scale(2) translate(-24,-24)">
+    <!-- Core -->
+    <circle cx="24" cy="24" r="7" fill="url(#ng)"/>
+    <circle cx="24" cy="24" r="4" fill="#ede9fe"/>
+
+    <!-- Main rays -->
+    <polygon points="24,2 28,18 20,18" fill="url(#ng)"/>
+    <polygon points="46,24 30,20 30,28" fill="url(#ng)"/>
+    <polygon points="24,46 20,30 28,30" fill="url(#ng)"/>
+    <polygon points="2,24 18,28 18,20" fill="url(#ng)"/>
+
+    <!-- Diagonal rays -->
+    <polygon points="38,10 28,20 30,22" fill="url(#ng)" opacity="0.55"/>
+    <polygon points="38,38 28,28 30,26" fill="url(#ng)" opacity="0.55"/>
+    <polygon points="10,38 20,28 18,26" fill="url(#ng)" opacity="0.55"/>
+    <polygon points="10,10 20,20 18,22" fill="url(#ng)" opacity="0.55"/>
+
+    <!-- Glow -->
+    <circle cx="24" cy="24" r="22" fill="url(#ngl)" opacity="0.8"/>
+  </g>
+
+  <!-- Text: NovaLang -->
+  <text x="310" y="62" text-anchor="start" font-family="'Segoe UI', system-ui, sans-serif" font-size="36" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="#2d2d3a">Nova</tspan><tspan fill="#7c3aed">Lang</tspan>
+  </text>
+
+  <!-- Subtitle -->
+  <text x="310" y="85" text-anchor="start" font-family="'Segoe UI', system-ui, sans-serif" font-size="13" letter-spacing="0.3" fill="#6b6b80">
+    A modern scripting language for the JVM
+  </text>
+
+  <!-- Decorative line -->
+  <rect x="310" y="96" width="160" height="1.5" rx="0.75" fill="#7c3aed" opacity="0.4"/>
+</svg>
