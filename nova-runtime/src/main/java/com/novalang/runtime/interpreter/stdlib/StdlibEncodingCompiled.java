@@ -22,11 +22,19 @@ public final class StdlibEncodingCompiled {
     }
 
     public static Object urlEncode(Object text) {
-        return URLEncoder.encode(str(text), StandardCharsets.UTF_8);
+        try {
+            return URLEncoder.encode(str(text), "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new RuntimeException(e); // UTF-8 always available
+        }
     }
 
     public static Object urlDecode(Object text) {
-        return URLDecoder.decode(str(text), StandardCharsets.UTF_8);
+        try {
+            return URLDecoder.decode(str(text), "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static Object hexEncode(Object text) {
