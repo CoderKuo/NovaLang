@@ -3449,6 +3449,20 @@ final class MirInterpreter {
         boolean safeCast = typeName.startsWith("?|");
         String actualType = safeCast ? typeName.substring(2) : typeName;
 
+        // 可空目标类型标记 "|?" — null 直接通过
+        boolean nullableTarget = actualType.endsWith("|?");
+        if (nullableTarget) {
+            actualType = actualType.substring(0, actualType.length() - 2);
+        }
+
+        // null 值处理：as? 或可空目标类型允许 null 通过
+        if (value == null || value.isNull()) {
+            if (safeCast || nullableTarget) {
+                frame.locals[inst.getDest()] = NovaNull.NULL;
+                return;
+            }
+        }
+
         // Result/Ok/Err 特殊处理（与编译路径统一使用 NovaResult.castResult）
         if ("Ok".equals(actualType) || "Err".equals(actualType) || "Result".equals(actualType)) {
             Object javaVal = value != null ? value.toJavaValue() : null;

@@ -1,28 +1,40 @@
 package com.novalang.runtime.interpreter.stdlib;
 
 import com.novalang.runtime.interpreter.NovaRuntimeException;
+import com.novalang.runtime.stdlib.spi.SerializationProviders;
 
 import java.util.*;
 
 /**
  * nova.json 模块的编译模式运行时实现。
  *
- * <p>使用原生 Java 类型：Map/List/String/Number/Boolean/null。</p>
+ * <p>委托给 {@link SerializationProviders#json()} 选择的 provider。
+ * 默认使用内置手写 parser，classpath 有 Gson/FastJSON2 时自动切换。</p>
  */
 public final class StdlibJsonCompiled {
 
     private StdlibJsonCompiled() {}
 
     public static Object jsonParse(Object text) {
-        return new RawJsonParser(str(text)).parse();
+        return SerializationProviders.json().parse(str(text));
     }
 
     public static Object jsonStringify(Object value) {
-        return stringify(value, false, 0, 2);
+        return SerializationProviders.json().stringify(value);
     }
 
     public static Object jsonStringifyPretty(Object value) {
-        return stringify(value, true, 0, 2);
+        return SerializationProviders.json().stringifyPretty(value, 2);
+    }
+
+    // ========== 内置实现入口（供 BuiltinJsonProvider 调用） ==========
+
+    public static Object builtinParse(String text) {
+        return new RawJsonParser(text).parse();
+    }
+
+    public static String builtinStringify(Object value, boolean pretty, int depth, int indent) {
+        return stringify(value, pretty, depth, indent);
     }
 
     // ========== JSON Serializer（原生 Java 类型） ==========

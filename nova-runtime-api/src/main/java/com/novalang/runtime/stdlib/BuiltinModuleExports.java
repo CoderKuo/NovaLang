@@ -44,6 +44,9 @@ public final class BuiltinModuleExports {
         moduleClasses.put(LANG_DOT + "text", stdlib + "StdlibRegexCompiled");
         moduleClasses.put(LANG_DOT + "http", stdlib + "StdlibHttpCompiled");
         moduleClasses.put(LANG_DOT + "test", stdlib + "StdlibTestCompiled");
+        moduleClasses.put(LANG_DOT + "yaml", stdlib + "StdlibYamlCompiled");
+        moduleClasses.put(LANG_DOT + "encoding", stdlib + "StdlibEncodingCompiled");
+        moduleClasses.put(LANG_DOT + "crypto", stdlib + "StdlibCryptoCompiled");
     }
 
     private BuiltinModuleExports() {}

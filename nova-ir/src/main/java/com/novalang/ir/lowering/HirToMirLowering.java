@@ -3547,22 +3547,29 @@ public class HirToMirLowering {
      * @param symbol 指定符号名（null 表示通配符导入，注册所有方法）
      */
     private void discoverModuleFunctions(String moduleClass, String symbol) {
+        String className = moduleClass.replace('/', '.');
+        Class<?> cls = null;
         try {
-            Class<?> cls = Class.forName(moduleClass.replace('/', '.'));
-            for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
-                int mod = m.getModifiers();
-                if (!java.lang.reflect.Modifier.isPublic(mod) || !java.lang.reflect.Modifier.isStatic(mod)) continue;
-                if (m.getReturnType() != Object.class) continue;
-                String name = m.getName();
-                if (symbol != null && !name.equals(symbol)) continue;
-                int paramCount = m.getParameterCount();
-                StringBuilder desc = new StringBuilder("(");
-                for (int i = 0; i < paramCount; i++) desc.append("Ljava/lang/Object;");
-                desc.append(")Ljava/lang/Object;");
-                builtinModuleFunctions.put(name, moduleClass + "|" + name + "|" + desc);
-            }
+            cls = Class.forName(className);
         } catch (ClassNotFoundException ignored) {
-            // 编译类不在 classpath（纯编译场景），跳过
+            // 尝试上下文 ClassLoader（Bukkit 等插件环境）
+            try {
+                ClassLoader tcl = Thread.currentThread().getContextClassLoader();
+                if (tcl != null) cls = Class.forName(className, true, tcl);
+            } catch (ClassNotFoundException ignored2) {}
+        }
+        if (cls == null) return; // 编译类不在 classpath（纯编译场景），跳过
+        for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
+            int mod = m.getModifiers();
+            if (!java.lang.reflect.Modifier.isPublic(mod) || !java.lang.reflect.Modifier.isStatic(mod)) continue;
+            if (m.getReturnType() != Object.class) continue;
+            String name = m.getName();
+            if (symbol != null && !name.equals(symbol)) continue;
+            int paramCount = m.getParameterCount();
+            StringBuilder desc = new StringBuilder("(");
+            for (int i = 0; i < paramCount; i++) desc.append("Ljava/lang/Object;");
+            desc.append(")Ljava/lang/Object;");
+            builtinModuleFunctions.put(name, moduleClass + "|" + name + "|" + desc);
         }
     }
 
@@ -5103,6 +5110,11 @@ public class HirToMirLowering {
         if (expr.isSafe()) {
             typeName = "?|" + typeName;
         }
+        // 可空目标类型 as T? → 后缀 "|?" 标记，运行时允许 null 通过
+        HirType targetType = expr.getHirTargetType();
+        if (targetType != null && targetType.isNullable() && !expr.isSafe()) {
+            typeName = typeName + "|?";
+        }
         return builder.emitTypeCast(operand, typeName,
                 hirTypeToMir(expr.getHirTargetType()), expr.getLocation());
     }
@@ -5426,6 +5438,33 @@ public class HirToMirLowering {
             if (deepVarRefCollection) {
                 collectVarRefs(lambda.getBody(), refs);
             }
+        } else if (node instanceof ForStmt) {
+            ForStmt forStmt = (ForStmt) node;
+            collectVarRefs(forStmt.getIterable(), refs);
+            collectVarRefs(forStmt.getBody(), refs);
+        } else if (node instanceof CStyleForStmt) {
+            CStyleForStmt cfor = (CStyleForStmt) node;
+            collectVarRefs(cfor.getInit(), refs);
+            collectVarRefs(cfor.getCondition(), refs);
+            collectVarRefs(cfor.getUpdate(), refs);
+            collectVarRefs(cfor.getBody(), refs);
+        } else if (node instanceof WhileStmt) {
+            WhileStmt ws = (WhileStmt) node;
+            collectVarRefs(ws.getCondition(), refs);
+            collectVarRefs(ws.getBody(), refs);
+        } else if (node instanceof DoWhileStmt) {
+            DoWhileStmt dws = (DoWhileStmt) node;
+            collectVarRefs(dws.getBody(), refs);
+            collectVarRefs(dws.getCondition(), refs);
+        } else if (node instanceof ThrowStmt) {
+            collectVarRefs(((ThrowStmt) node).getException(), refs);
+        } else if (node instanceof ElvisExpr) {
+            collectVarRefs(((ElvisExpr) node).getLeft(), refs);
+            collectVarRefs(((ElvisExpr) node).getRight(), refs);
+        } else if (node instanceof SpreadExpr) {
+            collectVarRefs(((SpreadExpr) node).getOperand(), refs);
+        } else if (node instanceof ErrorPropagationExpr) {
+            collectVarRefs(((ErrorPropagationExpr) node).getOperand(), refs);
         }
     }
 

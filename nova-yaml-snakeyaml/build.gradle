@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang YAML Provider — SnakeYAML'
+
+dependencies {
+    api project(':nova-runtime-api')
+    implementation 'org.yaml:snakeyaml:2.0'
+}

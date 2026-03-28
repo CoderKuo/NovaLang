@@ -1,0 +1,17 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang YAML Provider — Bukkit Configuration API'
+
+repositories {
+    maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
+    maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
+}
+
+dependencies {
+    api project(':nova-runtime-api')
+    compileOnly('org.spigotmc:spigot-api:1.12.2-R0.1-SNAPSHOT') {
+        exclude group: 'net.md-5', module: 'bungeecord-chat'
+    }
+}

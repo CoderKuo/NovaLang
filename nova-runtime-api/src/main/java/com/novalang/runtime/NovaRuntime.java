@@ -46,8 +46,9 @@ public final class NovaRuntime {
     // 实现不同插件 relocate 后的 NovaRuntime 之间的函数/变量共享。
     // 函数用 java.util.function.Function<Object[], Object>（bootstrap ClassLoader）传递。
 
-    private static final String GLOBAL_REGISTRY_KEY = "nova.global.registry";
-    private static final String GLOBAL_NS_KEY = "nova.global.namespaces";
+    // 使用不含 "nova." 或 "com.novalang." 前缀的 key，避免被 shadow relocate 改写
+    private static final String GLOBAL_REGISTRY_KEY = "__novalang_shared_registry__";
+    private static final String GLOBAL_NS_KEY = "__novalang_shared_namespaces__";
 
     /** 获取 JVM 全局函数注册表（跨 ClassLoader 共享） */
     @SuppressWarnings("unchecked")
@@ -119,6 +120,30 @@ public final class NovaRuntime {
                 global.remove(e.getKey(), e.getValue());
             }
         }
+    }
+
+    /** 将 JVM 全局桥接 entry (Object[]) 转为 RegisteredEntry */
+    @SuppressWarnings("unchecked")
+    private static RegisteredEntry globalEntryToRegistered(Object[] entry) {
+        String name = (String) entry[0];
+        String namespace = (String) entry[1];
+        String description = (String) entry[2];
+        boolean isFunction = (Boolean) entry[3];
+        if (isFunction) {
+            java.util.function.Function<Object[], Object> invoker =
+                    (java.util.function.Function<Object[], Object>) entry[4];
+            return new RegisteredEntry(name, namespace, "global-bridge", description,
+                    (NativeFunction<Object>) invoker::apply, new Class<?>[0], Object.class);
+        } else {
+            return new RegisteredEntry(name, namespace, "global-bridge", description, entry[5]);
+        }
+    }
+
+    /** 获取 JVM 全局桥接 entry 的 qualifiedName */
+    private static String globalEntryQualifiedName(Object[] entry) {
+        String name = (String) entry[0];
+        String namespace = (String) entry[1];
+        return namespace != null ? namespace + "." + name : name;
     }
 
     /** 获取全局共享运行时（懒初始化，线程安全，自动启动 HTTP API 服务） */
@@ -589,15 +614,27 @@ public final class NovaRuntime {
 
     // ============ 查找 API ============
 
-    /** 短名查找（返回最后注册的同名函数） */
+    /** 短名查找（返回最后注册的同名函数，回退 JVM 全局桥接） */
     public RegisteredEntry lookup(String name) {
-        return globalFunctions.get(name);
+        RegisteredEntry local = globalFunctions.get(name);
+        if (local != null) return local;
+        Object[] globalEntry = getGlobalRegistry().get(name);
+        return globalEntry != null ? globalEntryToRegistered(globalEntry) : null;
     }
 
-    /** 全限定查找：namespace + funcName */
+    /** 全限定查找：namespace + funcName（回退 JVM 全局桥接） */
     public RegisteredEntry lookup(String namespace, String funcName) {
         Map<String, RegisteredEntry> ns = namespacedFunctions.get(namespace);
-        return ns != null ? ns.get(funcName) : null;
+        if (ns != null) {
+            RegisteredEntry e = ns.get(funcName);
+            if (e != null) return e;
+        }
+        ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(namespace);
+        if (globalNs != null) {
+            Object[] entry = globalNs.get(funcName);
+            if (entry != null) return globalEntryToRegistered(entry);
+        }
+        return null;
     }
 
     /** 点分全限定查找："ns.func" */
@@ -609,9 +646,9 @@ public final class NovaRuntime {
         return lookup(qualifiedName);
     }
 
-    /** 查找命名空间代理对象（供解释器/编译器 ns.func() 语法使用） */
+    /** 查找命名空间代理对象（供解释器/编译器 ns.func() 语法使用，合并 JVM 全局桥接） */
     public NovaNamespace getNamespaceProxy(String namespace) {
-        if (!namespacedFunctions.containsKey(namespace)) return null;
+        if (!namespacedFunctions.containsKey(namespace) && !getGlobalNamespaces().containsKey(namespace)) return null;
         return namespaceProxies.computeIfAbsent(namespace, ns -> new NovaNamespace(ns, this));
     }
 
@@ -631,9 +668,8 @@ public final class NovaRuntime {
 
     // ============ 可发现性 API ============
 
-    /** 列出所有已注册函数 */
+    /** 列出所有已注册函数（合并本实例 + JVM 全局桥接） */
     public List<RegisteredEntry> listFunctions() {
-        // 合并全局 + 所有命名空间（去重用 qualifiedName）
         Map<String, RegisteredEntry> all = new LinkedHashMap<>();
         for (RegisteredEntry e : globalFunctions.values()) {
             all.put(e.getQualifiedName(), e);
@@ -643,18 +679,40 @@ public final class NovaRuntime {
                 all.put(e.getQualifiedName(), e);
             }
         }
+        // 合并 JVM 全局桥接
+        for (Map.Entry<String, Object[]> entry : getGlobalRegistry().entrySet()) {
+            String qn = globalEntryQualifiedName(entry.getValue());
+            if (!all.containsKey(qn)) {
+                all.put(qn, globalEntryToRegistered(entry.getValue()));
+            }
+        }
         return new ArrayList<>(all.values());
     }
 
-    /** 列出指定命名空间的函数 */
+    /** 列出指定命名空间的函数（合并本实例 + JVM 全局桥接） */
     public List<RegisteredEntry> listFunctions(String namespace) {
-        Map<String, RegisteredEntry> ns = namespacedFunctions.get(namespace);
-        return ns != null ? new ArrayList<>(ns.values()) : Collections.emptyList();
+        Map<String, RegisteredEntry> local = namespacedFunctions.get(namespace);
+        Map<String, RegisteredEntry> result = new LinkedHashMap<>();
+        if (local != null) {
+            for (RegisteredEntry e : local.values()) result.put(e.getName(), e);
+        }
+        // 合并 JVM 全局桥接
+        ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(namespace);
+        if (globalNs != null) {
+            for (Map.Entry<String, Object[]> entry : globalNs.entrySet()) {
+                if (!result.containsKey(entry.getKey())) {
+                    result.put(entry.getKey(), globalEntryToRegistered(entry.getValue()));
+                }
+            }
+        }
+        return new ArrayList<>(result.values());
     }
 
-    /** 列出所有命名空间 */
+    /** 列出所有命名空间（合并本实例 + JVM 全局桥接） */
     public List<String> listNamespaces() {
-        return new ArrayList<>(namespacedFunctions.keySet());
+        Set<String> all = new LinkedHashSet<>(namespacedFunctions.keySet());
+        all.addAll(getGlobalNamespaces().keySet());
+        return new ArrayList<>(all);
     }
 
     /** 描述函数 */
@@ -685,8 +743,77 @@ public final class NovaRuntime {
         unpublishNamespace(namespace);
     }
 
-    /** 清空所有注册（测试用） */
+    /**
+     * 检查命名空间中是否存在指定函数/变量。
+     * 无命名空间时检查全局注册表。
+     */
+    public boolean has(String name) {
+        if (globalFunctions.containsKey(name)) return true;
+        return getGlobalRegistry().containsKey(name);
+    }
+
+    public boolean has(String namespace, String name) {
+        Map<String, RegisteredEntry> ns = namespacedFunctions.get(namespace);
+        if (ns != null && ns.containsKey(name)) return true;
+        ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(namespace);
+        return globalNs != null && globalNs.containsKey(name);
+    }
+
+    /**
+     * 从命名空间中移除单个函数/变量。
+     * 同时从 globalFunctions 移除（引用相等匹配，不影响其他命名空间同名函数）。
+     */
+    public void remove(String namespace, String name) {
+        // 本实例
+        Map<String, RegisteredEntry> ns = namespacedFunctions.get(namespace);
+        if (ns != null) {
+            RegisteredEntry removed = ns.remove(name);
+            if (removed != null) {
+                globalFunctions.remove(name, removed);
+            }
+            if (ns.isEmpty()) {
+                namespacedFunctions.remove(namespace);
+                namespaceProxies.remove(namespace);
+            }
+        }
+        // JVM 全局桥接
+        ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(namespace);
+        if (globalNs != null) {
+            Object[] removed = globalNs.remove(name);
+            if (removed != null) {
+                getGlobalRegistry().remove(name, removed);
+            }
+            if (globalNs.isEmpty()) {
+                getGlobalNamespaces().remove(namespace);
+            }
+        }
+    }
+
+    /** 从全局注册表中移除（无命名空间） */
+    public void remove(String name) {
+        globalFunctions.remove(name);
+        getGlobalRegistry().remove(name);
+    }
+
+    /** 清空本实例所有注册（不影响其他插件的全局桥接） */
     public void clearAll() {
+        // 只从全局桥接中移除本实例注册的条目（按引用匹配）
+        ConcurrentHashMap<String, Object[]> globalReg = getGlobalRegistry();
+        for (Map.Entry<String, RegisteredEntry> e : globalFunctions.entrySet()) {
+            globalReg.remove(e.getKey());
+        }
+        for (Map.Entry<String, Map<String, RegisteredEntry>> nsEntry : namespacedFunctions.entrySet()) {
+            ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(nsEntry.getKey());
+            if (globalNs != null) {
+                for (String funcName : nsEntry.getValue().keySet()) {
+                    globalNs.remove(funcName);
+                }
+                if (globalNs.isEmpty()) {
+                    getGlobalNamespaces().remove(nsEntry.getKey());
+                }
+            }
+        }
+        // 清空本实例
         globalFunctions.clear();
         namespacedFunctions.clear();
         namespaceProxies.clear();

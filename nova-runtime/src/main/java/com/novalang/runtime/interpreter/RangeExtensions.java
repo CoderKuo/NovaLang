@@ -28,7 +28,22 @@ public final class RangeExtensions {
         return ((NovaRange) range).getEnd();
     }
 
+    @ExtProperty
+    public static Object step(Object range) {
+        return ((NovaRange) range).getStep();
+    }
+
     // ========== 方法 ==========
+
+    /** 设置步长，返回新 Range */
+    public static Object step(Object range, Object stepVal) {
+        return ((NovaRange) range).step(((Number) stepVal).intValue());
+    }
+
+    public static Object reversed(Object range) {
+        NovaRange r = (NovaRange) range;
+        return new NovaRange(r.getEnd(), r.getStart(), r.isInclusive(), -r.getStep());
+    }
 
     public static Object size(Object range) {
         return ((NovaRange) range).size();

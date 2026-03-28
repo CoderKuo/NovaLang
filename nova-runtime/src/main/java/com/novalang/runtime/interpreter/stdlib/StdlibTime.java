@@ -127,6 +127,12 @@ public final class StdlibTime {
         map.put(NovaString.of("toString"), NovaNativeFunction.create("toString", () ->
             NovaString.of(dt.toString())));
 
+        // Hutool 启发：日期判断
+        map.put(NovaString.of("isWeekend"), NovaBoolean.of(
+                dt.getDayOfWeek().getValue() >= 6));
+        map.put(NovaString.of("isAM"), NovaBoolean.of(dt.getHour() < 12));
+        map.put(NovaString.of("isPM"), NovaBoolean.of(dt.getHour() >= 12));
+
         return map;
     }
 

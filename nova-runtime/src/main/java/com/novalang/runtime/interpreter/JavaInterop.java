@@ -52,11 +52,25 @@ public final class JavaInterop {
         if (cl != null) {
             try {
                 return Class.forName(name, true, cl);
-            } catch (ClassNotFoundException ignored) {
-                // 脚本 ClassLoader 找不到，回退默认
-            }
+            } catch (ClassNotFoundException ignored) {}
         }
-        return Class.forName(name);
+        try {
+            return Class.forName(name);
+        } catch (ClassNotFoundException e) {
+            // 内部类回退：逐级尝试将最后的 . 替换为 $
+            // java.util.Map.Entry → java.util.Map$Entry
+            // java.util.concurrent.AbstractExecutorService.RunnableAdapter → ...
+            String attempt = name;
+            int lastDot;
+            while ((lastDot = attempt.lastIndexOf('.')) > 0) {
+                attempt = attempt.substring(0, lastDot) + "$" + attempt.substring(lastDot + 1);
+                try {
+                    Class<?> cls = cl != null ? Class.forName(attempt, true, cl) : Class.forName(attempt);
+                    return cls;
+                } catch (ClassNotFoundException ignored) {}
+            }
+            throw e; // 全部失败，抛原始异常
+        }
     }
 
     private static final MethodHandleCache cache = MethodHandleCache.getInstance();

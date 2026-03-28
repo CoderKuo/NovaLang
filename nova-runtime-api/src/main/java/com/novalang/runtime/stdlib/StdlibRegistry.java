@@ -406,6 +406,7 @@ public final class StdlibRegistry {
         Concurrency.register();
         StdlibUtils.register();
         StdlibConversions.register();
+        StdlibJavaInterop.register();
         StdlibCore.register();
         registerExtensionMethods(ListExtensions.class);
         registerExtensionMethods(MapExtensions.class);
@@ -413,5 +414,6 @@ public final class StdlibRegistry {
         registerExtensionMethods(SetExtensions.class);
         registerExtensionMethods(CharExtensions.class);
         registerExtensionMethods(NumberExtensions.class);
+        registerExtensionMethods(BooleanExtensions.class);
     }
 }

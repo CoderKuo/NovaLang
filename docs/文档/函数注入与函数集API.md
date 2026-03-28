@@ -788,3 +788,87 @@ if (maybeNull.isNull()) {
     // 处理空值
 }
 ```
+
+## 共享函数 API (NovaRuntime.shared())
+
+`NovaRuntime.shared()` 是全局单例注册表，一次注册所有 Nova 实例自动可见。适用于插件间共享函数、脚本热更新等场景。
+
+### Java 侧注册
+
+```java
+NovaRuntime shared = NovaRuntime.shared();
+
+// 注册函数（带命名空间）
+shared.register("getHP", (Object player) -> getHealth(player), "rpg");
+shared.register("getDMG", (Object player) -> getDamage(player), "rpg");
+
+// 注册变量
+shared.set("VERSION", "2.0", "config");
+
+// 定义函数库（Builder 模式）
+shared.defineLibrary("http", lib -> {
+    lib.function("get", (url) -> httpGet(url));
+    lib.function("post", (url, body) -> httpPost(url, body));
+    lib.constant("TIMEOUT", 30000);
+});
+```
+
+### Nova 脚本侧操作
+
+```nova
+// 注册
+sharedRegister("greet", { name -> "Hello $name" }, "myLib")
+sharedSet("MAX_HP", 100, "myLib")
+
+// 查询
+val libs = sharedLibraries()           // ["myLib", "rpg", ...]
+val fns = sharedFunctions("myLib")     // ["myLib.greet", "myLib.MAX_HP"]
+val desc = sharedDescribe("greet")     // 函数签名描述
+
+// 存在检查
+if (sharedHas("myLib", "greet")) { ... }
+
+// 修改（覆盖更新）
+sharedSet("MAX_HP", 200, "myLib")
+
+// 移除单个函数
+sharedRemove("myLib", "greet")
+
+// 移除整个命名空间
+sharedRemove("myLib")
+```
+
+### 使用场景：脚本间通信
+
+宿主控制脚本加载顺序，先加载的脚本可注册函数供后加载的脚本使用：
+
+```nova
+// lib.nova（先加载）
+sharedRegister("calcDamage", { base, crit ->
+    base * (1.0 + crit)
+}, "combat")
+
+// main.nova（后加载）
+if (sharedHas("combat", "calcDamage")) {
+    val dmg = combat.calcDamage(100.0, 0.5)  // 通过命名空间调用
+    println(dmg)  // 150.0
+}
+```
+
+### Java 侧查询与修改
+
+```java
+NovaRuntime shared = NovaRuntime.shared();
+
+// 查询
+shared.has("rpg", "getHP");                // true
+shared.listNamespaces();                   // ["rpg", "config", ...]
+shared.listFunctions("rpg");              // [RegisteredEntry...]
+shared.describe("getHP");                 // "rpg.getHP(Object) → Object"
+
+// 单函数移除
+shared.remove("rpg", "getHP");            // 移除单个，其他不受影响
+
+// 命名空间整体注销
+shared.unregisterNamespace("rpg");        // 移除整个命名空间
+```

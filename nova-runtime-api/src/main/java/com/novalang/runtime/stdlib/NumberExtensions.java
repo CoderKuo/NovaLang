@@ -15,12 +15,11 @@ public final class NumberExtensions {
 
     // ========== 范围方法 ==========
 
+    /** 倒序范围（惰性 Range，step=-1） */
     public static Object downTo(Object num, Object to) {
         int from = ((Number) num).intValue();
         int target = ((Number) to).intValue();
-        List<Object> result = new ArrayList<>();
-        for (int i = from; i >= target; i--) result.add(i);
-        return result;
+        return new NovaRange(from, target, true, -1);
     }
 
     public static Object until(Object num, Object to) {
@@ -107,5 +106,42 @@ public final class NumberExtensions {
         if (num instanceof Double) return Double.isFinite((Double) num);
         if (num instanceof Float) return Float.isFinite((Float) num);
         return true;
+    }
+
+    // ========== Hutool 启发 ==========
+
+    /** 精确四舍五入到 N 位小数 */
+    public static Object round(Object num, Object scale) {
+        double d = ((Number) num).doubleValue();
+        int s = ((Number) scale).intValue();
+        java.math.BigDecimal bd = java.math.BigDecimal.valueOf(d);
+        return bd.setScale(s, java.math.RoundingMode.HALF_UP).doubleValue();
+    }
+
+    /** 格式化为百分比字符串，如 0.156 → "15.6%" */
+    public static Object formatPercent(Object num, Object scale) {
+        double d = ((Number) num).doubleValue();
+        int s = ((Number) scale).intValue();
+        java.math.BigDecimal bd = java.math.BigDecimal.valueOf(d * 100);
+        return bd.setScale(s, java.math.RoundingMode.HALF_UP).toPlainString() + "%";
+    }
+
+    /** 判断是否为质数 */
+    public static Object isPrime(Object num) {
+        int n = ((Number) num).intValue();
+        if (n < 2) return false;
+        if (n < 4) return true;
+        if (n % 2 == 0 || n % 3 == 0) return false;
+        for (int i = 5; i * i <= n; i += 6) {
+            if (n % i == 0 || n % (i + 2) == 0) return false;
+        }
+        return true;
+    }
+
+    /** 向上取整除法 */
+    public static Object ceilDiv(Object num, Object divisor) {
+        int a = ((Number) num).intValue();
+        int b = ((Number) divisor).intValue();
+        return (a + b - 1) / b;
     }
 }

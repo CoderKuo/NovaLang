@@ -191,6 +191,9 @@ final class MemberResolver {
         }
         NovaValue builtinResult = resolveBuiltinMember(obj, memberName);
         if (builtinResult != null) return builtinResult;
+        if (obj instanceof NovaArray && "length".equals(memberName)) {
+            return new NovaInt(((NovaArray) obj).size());
+        }
         if (obj instanceof NovaResult) {
             NovaValue m = resolveResultMember((NovaResult) obj, memberName);
             if (m != null) return m;
@@ -344,6 +347,11 @@ final class MemberResolver {
                 throw NovaSecurityPolicy.denied(
                         "Cannot call method '" + memberName + "' on " + className);
             }
+        }
+
+        // Java 数组特殊处理：length 是 JVM 内置属性，反射不可见
+        if (javaObj != null && javaObj.getClass().isArray() && "length".equals(memberName)) {
+            return new NovaInt(java.lang.reflect.Array.getLength(javaObj));
         }
 
         // 字段优先：如果存在同名字段，直接返回字段值（而非方法引用）

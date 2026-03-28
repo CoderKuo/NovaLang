@@ -1510,10 +1510,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             elements = new ArrayList<>();
             for (CollectionLiteral.MapEntry entry : node.getMapEntries()) {
                 Expression rawKey = entry.getKey();
-                // 裸标识符作为 Map key 时自动转为字符串字面量（类似 JSON/JS 语法）
-                Expression key = (rawKey instanceof Identifier)
-                        ? new Literal(rawKey.getLocation(), ((Identifier) rawKey).getName(), LiteralKind.STRING)
-                        : lowerExpr(rawKey, ctx);
+                Expression key = lowerExpr(rawKey, ctx);
                 Expression value = lowerExpr(entry.getValue(), ctx);
                 // key to value → BinaryExpr(key, TO, value)
                 elements.add(new BinaryExpr(entry.getLocation(), null,

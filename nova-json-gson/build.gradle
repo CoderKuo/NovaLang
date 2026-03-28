@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang JSON Provider — Gson'
+
+dependencies {
+    api project(':nova-runtime-api')
+    implementation 'com.google.code.gson:gson:2.10.1'
+}

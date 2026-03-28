@@ -222,6 +222,76 @@ public final class StdlibIOCompiled {
         }
     }
 
+    // ============ Hutool 启发 ============
+
+    /** 递归列出目录下所有文件（返回绝对路径列表） */
+    public static Object loopFiles(Object dirPath) {
+        java.io.File dir = new java.io.File(str(dirPath));
+        List<String> result = new java.util.ArrayList<>();
+        walkFiles(dir, result);
+        return result;
+    }
+
+    /** 递归列出目录下匹配扩展名的文件 */
+    public static Object loopFiles(Object dirPath, Object extension) {
+        java.io.File dir = new java.io.File(str(dirPath));
+        String ext = str(extension).toLowerCase();
+        List<String> result = new java.util.ArrayList<>();
+        walkFilesFiltered(dir, ext, result);
+        return result;
+    }
+
+    private static void walkFiles(java.io.File dir, List<String> result) {
+        if (!dir.isDirectory()) return;
+        java.io.File[] files = dir.listFiles();
+        if (files == null) return;
+        for (java.io.File f : files) {
+            if (f.isFile()) result.add(f.getAbsolutePath());
+            else if (f.isDirectory()) walkFiles(f, result);
+        }
+    }
+
+    private static void walkFilesFiltered(java.io.File dir, String ext, List<String> result) {
+        if (!dir.isDirectory()) return;
+        java.io.File[] files = dir.listFiles();
+        if (files == null) return;
+        for (java.io.File f : files) {
+            if (f.isFile() && f.getName().toLowerCase().endsWith("." + ext)) {
+                result.add(f.getAbsolutePath());
+            } else if (f.isDirectory()) {
+                walkFilesFiltered(f, ext, result);
+            }
+        }
+    }
+
+    /** 统计文件行数 */
+    public static Object fileLineCount(Object path) {
+        try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(
+                java.nio.file.Paths.get(str(path)), java.nio.charset.StandardCharsets.UTF_8)) {
+            int count = 0;
+            while (reader.readLine() != null) count++;
+            return count;
+        } catch (IOException e) {
+            throw new NovaRuntimeException("fileLineCount failed: " + e.getMessage());
+        }
+    }
+
+    /** 比较两个文件内容是否相同 */
+    public static Object contentEquals(Object path1, Object path2) {
+        try {
+            byte[] b1 = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(str(path1)));
+            byte[] b2 = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(str(path2)));
+            return java.util.Arrays.equals(b1, b2);
+        } catch (IOException e) {
+            throw new NovaRuntimeException("contentEquals failed: " + e.getMessage());
+        }
+    }
+
+    /** 获取文件最后修改时间（毫秒时间戳） */
+    public static Object lastModified(Object path) {
+        return new java.io.File(str(path)).lastModified();
+    }
+
     // ============ 工具方法 ============
 
     private static String str(Object o) {

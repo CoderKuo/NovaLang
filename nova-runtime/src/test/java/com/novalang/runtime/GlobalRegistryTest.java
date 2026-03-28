@@ -506,10 +506,10 @@ class GlobalRegistryTest {
             @SuppressWarnings("unchecked")
             java.util.concurrent.ConcurrentHashMap<String, Object[]> registry =
                     (java.util.concurrent.ConcurrentHashMap<String, Object[]>)
-                            System.getProperties().get("nova.global.registry");
+                            System.getProperties().get("__novalang_shared_registry__");
             if (registry == null) {
                 registry = new java.util.concurrent.ConcurrentHashMap<>();
-                System.getProperties().put("nova.global.registry", registry);
+                System.getProperties().put("__novalang_shared_registry__", registry);
             }
             // 用 java.util.function.Function（bootstrap ClassLoader）注册
             java.util.function.Function<Object[], Object> invoker =
@@ -534,10 +534,10 @@ class GlobalRegistryTest {
             @SuppressWarnings("unchecked")
             java.util.concurrent.ConcurrentHashMap<String, Object[]> registry =
                     (java.util.concurrent.ConcurrentHashMap<String, Object[]>)
-                            System.getProperties().get("nova.global.registry");
+                            System.getProperties().get("__novalang_shared_registry__");
             if (registry == null) {
                 registry = new java.util.concurrent.ConcurrentHashMap<>();
-                System.getProperties().put("nova.global.registry", registry);
+                System.getProperties().put("__novalang_shared_registry__", registry);
             }
             java.util.function.Function<Object[], Object> invoker =
                     args -> ((Number) args[0]).intValue() * 10;
@@ -559,10 +559,10 @@ class GlobalRegistryTest {
             @SuppressWarnings("unchecked")
             java.util.concurrent.ConcurrentHashMap<String, Object[]> registry =
                     (java.util.concurrent.ConcurrentHashMap<String, Object[]>)
-                            System.getProperties().get("nova.global.registry");
+                            System.getProperties().get("__novalang_shared_registry__");
             if (registry == null) {
                 registry = new java.util.concurrent.ConcurrentHashMap<>();
-                System.getProperties().put("nova.global.registry", registry);
+                System.getProperties().put("__novalang_shared_registry__", registry);
             }
             registry.put("crossVar", new Object[] {
                     "crossVar", null, null, false, null, "shared-value"

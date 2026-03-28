@@ -238,5 +238,26 @@ public final class StdlibIO {
                 throw new NovaRuntimeException("tempFile failed: " + e.getMessage());
             }
         }));
+
+        // ---- Hutool 启发 ----
+        env.defineVal("loopFiles", new NovaNativeFunction("loopFiles", -1, (ctx, args) -> {
+            checkFileIO(interp);
+            if (args.size() >= 2) {
+                return AbstractNovaValue.fromJava(StdlibIOCompiled.loopFiles(args.get(0).asString(), args.get(1).asString()));
+            }
+            return AbstractNovaValue.fromJava(StdlibIOCompiled.loopFiles(args.get(0).asString()));
+        }));
+        env.defineVal("fileLineCount", NovaNativeFunction.create("fileLineCount", path -> {
+            checkFileIO(interp);
+            return com.novalang.runtime.NovaInt.of((Integer) StdlibIOCompiled.fileLineCount(path.asString()));
+        }));
+        env.defineVal("contentEquals", NovaNativeFunction.create("contentEquals", (p1, p2) -> {
+            checkFileIO(interp);
+            return com.novalang.runtime.NovaBoolean.of((Boolean) StdlibIOCompiled.contentEquals(p1.asString(), p2.asString()));
+        }));
+        env.defineVal("lastModified", NovaNativeFunction.create("lastModified", path -> {
+            checkFileIO(interp);
+            return com.novalang.runtime.NovaLong.of((Long) StdlibIOCompiled.lastModified(path.asString()));
+        }));
     }
 }

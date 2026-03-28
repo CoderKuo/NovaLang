@@ -60,6 +60,75 @@ public final class Nova {
         this.interpreter = new Interpreter(policy);
     }
 
+    // ── 序列化 Provider ──────────────────────────────────────
+
+    /**
+     * 设置 JSON 序列化 provider（全局生效）。
+     *
+     * <pre>
+     * Nova.setJsonProvider(new GsonJsonProvider());
+     * </pre>
+     *
+     * @param provider JSON provider 实现
+     */
+    public static void setJsonProvider(com.novalang.runtime.stdlib.spi.JsonProvider provider) {
+        com.novalang.runtime.stdlib.spi.SerializationProviders.registerJsonProvider(provider);
+    }
+
+    /**
+     * 设置 YAML 序列化 provider（全局生效）。
+     *
+     * <pre>
+     * Nova.setYamlProvider(new SnakeYamlProvider());
+     * </pre>
+     *
+     * @param provider YAML provider 实现
+     */
+    public static void setYamlProvider(com.novalang.runtime.stdlib.spi.YamlProvider provider) {
+        com.novalang.runtime.stdlib.spi.SerializationProviders.registerYamlProvider(provider);
+    }
+
+    /**
+     * 按名称切换 JSON provider。
+     *
+     * <pre>
+     * Nova.setJsonProvider("gson");
+     * </pre>
+     *
+     * @param name provider 名称（"builtin"、"gson"、"fastjson2"）
+     * @throws IllegalArgumentException 如果指定名称的 provider 不可用
+     */
+    public static void setJsonProvider(String name) {
+        String result = com.novalang.runtime.stdlib.spi.SerializationProviders.setJsonProvider(name);
+        if (result == null) throw new IllegalArgumentException(
+                "JSON provider not found: " + name + ". Available: "
+                        + com.novalang.runtime.stdlib.spi.SerializationProviders.listJsonProviders());
+    }
+
+    /**
+     * 按名称切换 YAML provider。
+     *
+     * @param name provider 名称（"builtin"、"snakeyaml"、"bukkit"）
+     */
+    public static void setYamlProvider(String name) {
+        String result = com.novalang.runtime.stdlib.spi.SerializationProviders.setYamlProvider(name);
+        if (result == null) throw new IllegalArgumentException(
+                "YAML provider not found: " + name + ". Available: "
+                        + com.novalang.runtime.stdlib.spi.SerializationProviders.listYamlProviders());
+    }
+
+    /** 获取当前 JSON provider 名称 */
+    public static String getJsonProvider() {
+        com.novalang.runtime.stdlib.spi.JsonProvider p = com.novalang.runtime.stdlib.spi.SerializationProviders.json();
+        return p != null ? p.name() : "none";
+    }
+
+    /** 获取当前 YAML provider 名称 */
+    public static String getYamlProvider() {
+        com.novalang.runtime.stdlib.spi.YamlProvider p = com.novalang.runtime.stdlib.spi.SerializationProviders.yaml();
+        return p != null ? p.name() : "none";
+    }
+
     // ── ClassLoader ────────────────────────────────────────
 
     /**

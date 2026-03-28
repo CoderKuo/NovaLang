@@ -124,6 +124,7 @@ class DeclParser {
         List<Annotation.AnnotationArg> args = new ArrayList<Annotation.AnnotationArg>();
         if (!parser.check(RPAREN)) {
             do {
+                if (parser.check(RPAREN)) break;  // 尾随逗号容忍
                 args.add(parseAnnotationArg());
             } while (parser.match(COMMA));
         }
@@ -533,8 +534,9 @@ class DeclParser {
     List<Parameter> parseParamList() {
         List<Parameter> params = new ArrayList<Parameter>();
         do {
+            if (parser.check(RPAREN)) break;  // 尾随逗号容忍
             params.add(parseParameter());
-        } while (parser.match(COMMA) && !parser.check(RPAREN));
+        } while (parser.match(COMMA));
         return params;
     }
 
@@ -628,6 +630,7 @@ class DeclParser {
     List<DestructuringEntry> parseDestructuringEntries() {
         List<DestructuringEntry> entries = new ArrayList<DestructuringEntry>();
         do {
+            if (parser.check(RPAREN)) break;  // 尾随逗号容忍
             if (parser.match(UNDERSCORE)) {
                 entries.add(new DestructuringEntry(null, null));
             } else if (parser.check(IDENTIFIER)) {

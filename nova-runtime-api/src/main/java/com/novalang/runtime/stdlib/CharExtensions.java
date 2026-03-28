@@ -45,4 +45,16 @@ public final class CharExtensions {
         if (c >= '0' && c <= '9') return c - '0';
         throw new RuntimeException("'" + c + "' is not a digit");
     }
+
+    public static Object isLetterOrDigit(Object ch) {
+        return Character.isLetterOrDigit((Character) ch);
+    }
+
+    public static Object toInt(Object ch) {
+        return (int) (char) (Character) ch;
+    }
+
+    public static Object compareTo(Object ch, Object other) {
+        return Character.compare((Character) ch, (Character) other);
+    }
 }

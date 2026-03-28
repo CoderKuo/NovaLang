@@ -489,10 +489,11 @@ class StdlibExpansionTest {
         @DisplayName("Int: downTo / until")
         void testIntRanges() {
             NovaValue downTo = interpreter.evalRepl("5.downTo(1)");
-            assertTrue(downTo instanceof NovaList);
-            assertEquals(5, ((NovaList) downTo).size());
-            assertEquals(5, ((NovaList) downTo).get(0).asInt());
-            assertEquals(1, ((NovaList) downTo).get(4).asInt());
+            assertTrue(downTo instanceof NovaRange, "downTo 应返回惰性 NovaRange");
+            NovaRange downRange = (NovaRange) downTo;
+            assertEquals(5, downRange.size());
+            assertEquals(5, downRange.get(0).asInt());
+            assertEquals(1, downRange.get(4).asInt());
 
             NovaValue until = interpreter.evalRepl("1.until(5)");
             // until 返回 NovaRange，半开区间 [1, 5)

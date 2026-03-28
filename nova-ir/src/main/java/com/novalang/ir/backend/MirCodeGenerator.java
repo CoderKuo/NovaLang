@@ -1190,6 +1190,11 @@ public class MirCodeGenerator {
                 // 解析安全转换标记
                 boolean safeCast = typeName.startsWith("?|");
                 String actualType = safeCast ? typeName.substring(2) : typeName;
+                // 解析可空目标类型标记（null as T? 允许 null 通过）
+                boolean nullableTarget = actualType.endsWith("|?");
+                if (nullableTarget) {
+                    actualType = actualType.substring(0, actualType.length() - 2);
+                }
 
                 // Result/Ok/Err 特殊处理
                 if ("Ok".equals(actualType) || "Err".equals(actualType) || "Result".equals(actualType)) {
@@ -1201,18 +1206,35 @@ public class MirCodeGenerator {
                     break;
                 }
 
-                // 安全转换 as? → SamAdapter.safeCastOrAdapt（处理 SAM + 普通类型）
-                if (safeCast) {
-                    mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(actualType));
-                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/SamAdapter",
-                            "safeCastOrAdapt", "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
+                // 可空目标类型或安全转换：null 值直接通过
+                if (nullableTarget || safeCast) {
+                    Label nonNull = new Label();
+                    Label end = new Label();
+                    mv.visitInsn(DUP);
+                    mv.visitJumpInsn(IFNONNULL, nonNull);
+                    // null 路径：直接存 null
+                    mv.visitVarInsn(ASTORE, inst.getDest());
+                    mv.visitJumpInsn(GOTO, end);
+                    // 非 null 路径：正常转换
+                    mv.visitLabel(nonNull);
+                    if (safeCast) {
+                        mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(actualType));
+                        mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/SamAdapter",
+                                "safeCastOrAdapt", "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
+                    } else {
+                        mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(actualType));
+                        mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/SamAdapter",
+                                "castOrAdapt", "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
+                    }
+                    mv.visitVarInsn(ASTORE, inst.getDest());
+                    mv.visitLabel(end);
                 } else {
                     // 强制转换 as → SamAdapter.castOrAdapt（处理 SAM + 普通类型）
                     mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(actualType));
                     mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/SamAdapter",
                             "castOrAdapt", "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
+                    mv.visitVarInsn(ASTORE, inst.getDest());
                 }
-                mv.visitVarInsn(ASTORE, inst.getDest());
                 break;
             }
             case NEW_ARRAY: {

@@ -86,6 +86,29 @@ public final class NovaCollections {
             "pairOf", 2, OWNER, "pairOf",
             "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
             args -> new Object[]{args[0], args[1]}));
+
+        // Triple
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "Triple", 3, OWNER, "tripleOf",
+            "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+            args -> tripleOf(args[0], args[1], args[2]), true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "tripleOf", 3, OWNER, "tripleOf",
+            "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+            args -> tripleOf(args[0], args[1], args[2])));
+
+        // listOfNotNull
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "listOfNotNull", -1, OWNER, "listOfNotNull", VARARG_DESC,
+            NovaCollections::listOfNotNull));
+
+        // sortedMapOf / sortedSetOf / linkedMapOf
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sortedMapOf", -1, OWNER, "sortedMapOf", VARARG_DESC,
+            NovaCollections::sortedMapOf));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sortedSetOf", -1, OWNER, "sortedSetOf", VARARG_DESC,
+            NovaCollections::sortedSetOf));
     }
 
     // ========== 编译路径静态方法（INVOKESTATIC 目标） ==========
@@ -161,5 +184,50 @@ public final class NovaCollections {
 
     public static Object pairOf(Object first, Object second) {
         return new Object[]{first, second};
+    }
+
+    public static Object tripleOf(Object first, Object second, Object third) {
+        return new com.novalang.runtime.NovaTriple(first, second, third);
+    }
+
+    /** 创建列表，自动过滤 null */
+    public static Object listOfNotNull(Object... args) {
+        List<Object> list = new ArrayList<>();
+        for (Object a : args) {
+            if (a != null) list.add(a);
+        }
+        return list;
+    }
+
+    /** 有序 Map（TreeMap，按 key 自然排序） */
+    @SuppressWarnings("unchecked")
+    public static Object sortedMapOf(Object... args) {
+        java.util.TreeMap<Object, Object> map = new java.util.TreeMap<>();
+        if (args.length == 0) return map;
+        if (args[0] instanceof Object[] && ((Object[]) args[0]).length == 2) {
+            for (Object arg : args) {
+                Object[] pair = (Object[]) arg;
+                map.put(pair[0], pair[1]);
+            }
+            return map;
+        }
+        if (args[0] instanceof com.novalang.runtime.NovaPair) {
+            for (Object arg : args) {
+                com.novalang.runtime.NovaPair pair = (com.novalang.runtime.NovaPair) arg;
+                map.put(pair.getFirst(), pair.getSecond());
+            }
+            return map;
+        }
+        if (args.length % 2 != 0) throw new IllegalArgumentException("sortedMapOf requires even number of arguments");
+        for (int i = 0; i < args.length; i += 2) map.put(args[i], args[i + 1]);
+        return map;
+    }
+
+    /** 有序 Set（TreeSet，自然排序） */
+    @SuppressWarnings("unchecked")
+    public static Object sortedSetOf(Object... args) {
+        java.util.TreeSet<Object> set = new java.util.TreeSet<>();
+        Collections.addAll(set, args);
+        return set;
     }
 }

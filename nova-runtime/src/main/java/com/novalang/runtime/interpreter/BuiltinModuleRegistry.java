@@ -25,6 +25,9 @@ public final class BuiltinModuleRegistry {
         modules.put("nova.test", StdlibTest::register);
         modules.put("nova.system", StdlibSystem::register);
         modules.put("nova.concurrent", StdlibConcurrent::register);
+        modules.put("nova.yaml", StdlibYaml::register);
+        modules.put("nova.encoding", StdlibEncoding::register);
+        modules.put("nova.crypto", StdlibCrypto::register);
     }
 
     private BuiltinModuleRegistry() {}

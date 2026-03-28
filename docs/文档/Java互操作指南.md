@@ -279,6 +279,65 @@ val pi = Java.field("java.lang.Math", "PI")
 val max = Java.static("java.lang.Math", "max", 3, 5)
 ```
 
+### 数组访问
+
+Java 数组支持 `.length` 属性和索引访问：
+
+```nova
+val arr = toJavaArray([1, 2, 3])
+println(arr.length)         // 3
+println(arr[0])             // 1
+```
+
+## 反射查询
+
+内置函数提供对 Java 类/对象的反射能力，无需手动导入 `java.lang.reflect`。
+
+参数可以是**对象实例**（查询其运行时类型）或**类名字符串**（含 `.` 视为全限定名）。
+
+```nova
+// 查询方法列表
+val methods = javaMethods("hello")
+println(methods)  // [length, isEmpty, charAt, substring, toUpperCase, ...]
+
+// 查询字段
+val fields = javaFields("java.lang.Integer")
+println(fields)  // [MAX_VALUE, MIN_VALUE, TYPE, SIZE, BYTES]
+
+// 继承关系
+println(javaSuperclass(42))       // java.lang.Number
+println(javaInterfaces(42))       // [java.lang.Comparable]
+println(javaSuperclass("java.lang.Object"))  // null
+
+// 类型判断
+println(javaTypeName(3.14))                           // java.lang.Double
+println(javaInstanceOf([1, 2], "java.util.List"))     // true
+println(javaInstanceOf("hello", "java.lang.Number"))  // false
+println(javaInstanceOf(null, "java.lang.String"))     // false（null 安全）
+```
+
+## 集合互转
+
+将 Nova 集合显式转换为 Java 标准集合类型，适用于需要传递给 Java API 的场景：
+
+```nova
+// Nova List → java.util.ArrayList
+val jList = toJavaList([1, 2, 3])
+jList.add(4)  // 可变操作
+
+// Nova Map → java.util.HashMap
+val jMap = toJavaMap(#{"host": "localhost", "port": 8080})
+jMap.put("timeout", 3000)
+
+// Nova Collection → java.util.HashSet（自动去重）
+val jSet = toJavaSet([1, 2, 2, 3, 3])
+println(jSet.size())  // 3
+
+// Nova List → Object[]（支持 .length）
+val jArr = toJavaArray(["a", "b", "c"])
+println(jArr.length)  // 3
+```
+
 ## 安全限制
 
 不同沙箱级别对 Java 互操作的限制：

@@ -86,6 +86,158 @@ public final class SetExtensions {
         return result;
     }
 
+    // ========== 查询方法 ==========
+
+    public static Object first(Object set) {
+        Set<?> s = (Set<?>) set;
+        if (s.isEmpty()) throw new RuntimeException("Set is empty");
+        return s.iterator().next();
+    }
+
+    public static Object firstOrNull(Object set) {
+        Set<?> s = (Set<?>) set;
+        return s.isEmpty() ? null : s.iterator().next();
+    }
+
+    public static Object last(Object set) {
+        Set<?> s = (Set<?>) set;
+        if (s.isEmpty()) throw new RuntimeException("Set is empty");
+        Object last = null;
+        for (Object item : s) last = item;
+        return last;
+    }
+
+    public static Object lastOrNull(Object set) {
+        Set<?> s = (Set<?>) set;
+        if (s.isEmpty()) return null;
+        Object last = null;
+        for (Object item : s) last = item;
+        return last;
+    }
+
+    public static Object count(Object set) {
+        return ((Set<?>) set).size();
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object count(Object set, Object predicate) {
+        int c = 0;
+        for (Object item : (Set<?>) set) {
+            if (isTruthy(invoke1(predicate, item))) c++;
+        }
+        return c;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object any(Object set, Object predicate) {
+        for (Object item : (Set<?>) set) {
+            if (isTruthy(invoke1(predicate, item))) return true;
+        }
+        return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object all(Object set, Object predicate) {
+        for (Object item : (Set<?>) set) {
+            if (!isTruthy(invoke1(predicate, item))) return false;
+        }
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object none(Object set, Object predicate) {
+        for (Object item : (Set<?>) set) {
+            if (isTruthy(invoke1(predicate, item))) return false;
+        }
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object find(Object set, Object predicate) {
+        for (Object item : (Set<?>) set) {
+            if (isTruthy(invoke1(predicate, item))) return item;
+        }
+        return null;
+    }
+
+    // ========== 变换方法 ==========
+
+    @SuppressWarnings("unchecked")
+    public static Object filterNot(Object set, Object predicate) {
+        Set<Object> result = new LinkedHashSet<>();
+        for (Object item : (Set<?>) set) {
+            if (!isTruthy(invoke1(predicate, item))) result.add(item);
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object flatMap(Object set, Object transform) {
+        List<Object> result = new ArrayList<>();
+        for (Object item : (Set<?>) set) {
+            Object mapped = invoke1(transform, item);
+            if (mapped instanceof Collection) {
+                result.addAll((Collection<?>) mapped);
+            } else {
+                result.add(mapped);
+            }
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object sorted(Object set) {
+        List<Object> list = new ArrayList<>((Set<?>) set);
+        list.sort((a, b) -> ((Comparable<Object>) a).compareTo(b));
+        return new LinkedHashSet<>(list);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object sortedBy(Object set, Object selector) {
+        List<Object> list = new ArrayList<>((Set<?>) set);
+        list.sort((a, b) -> {
+            Comparable<Object> ka = (Comparable<Object>) invoke1(selector, a);
+            Comparable<Object> kb = (Comparable<Object>) invoke1(selector, b);
+            return ka.compareTo((Object) kb);
+        });
+        return new LinkedHashSet<>(list);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object groupBy(Object set, Object keySelector) {
+        Map<Object, List<Object>> groups = new LinkedHashMap<>();
+        for (Object item : (Set<?>) set) {
+            Object key = invoke1(keySelector, item);
+            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
+        }
+        return groups;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object joinToString(Object set) {
+        return joinToString(set, ", ");
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object joinToString(Object set, Object separator) {
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (Object item : (Set<?>) set) {
+            if (!first) sb.append(String.valueOf(separator));
+            sb.append(String.valueOf(item));
+            first = false;
+        }
+        return sb.toString();
+    }
+
+    public static Object toMutableSet(Object set) {
+        return new LinkedHashSet<>((Set<?>) set);
+    }
+
+    public static Object toSet(Object set) {
+        return new LinkedHashSet<>((Set<?>) set);
+    }
+
     // ========== 集合操作 ==========
 
     @SuppressWarnings("unchecked")

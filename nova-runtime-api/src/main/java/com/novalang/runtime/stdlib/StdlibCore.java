@@ -3,12 +3,13 @@ package com.novalang.runtime.stdlib;
 import com.novalang.runtime.NovaArray;
 import com.novalang.runtime.NovaPair;
 import com.novalang.runtime.NovaResult;
+import com.novalang.runtime.NovaRuntime;
 import com.novalang.runtime.NovaValue;
+import com.novalang.runtime.stdlib.spi.SerializationProviders;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 /**
  * 核心内置函数的 stdlib 实现：error / Pair / range / with / repeat / runCatching 等。
@@ -86,6 +87,45 @@ public final class StdlibCore {
             "readLine", -1, OWNER, "readLine", VARARG_DESC, StdlibCore::readLine, true));
         StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
             "input", -1, OWNER, "input", VARARG_DESC, StdlibCore::input, true));
+
+        // ---- 序列化 provider 查询/切换 ----
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "jsonProvider", -1, OWNER, "jsonProvider", VARARG_DESC, StdlibCore::jsonProviderFn));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "yamlProvider", -1, OWNER, "yamlProvider", VARARG_DESC, StdlibCore::yamlProviderFn));
+
+        // ---- Hutool 启发：集合/字符串工具 ----
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "similar", 2, OWNER, "similar", OO_O, args -> similar(args[0], args[1])));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "disjunction", 2, OWNER, "disjunction", OO_O, args -> disjunction(args[0], args[1])));
+
+        // ---- shared 查询 ----
+        String V_O = "()Ljava/lang/Object;";
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedLibraries", 0, OWNER, "sharedLibraries", V_O, args -> sharedLibraries()));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedFunctions", -1, OWNER, "sharedFunctions", VARARG_DESC, StdlibCore::sharedFunctions));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedDescribe", 1, OWNER, "sharedDescribe", O_O, args -> sharedDescribe(args[0])));
+
+        // ---- shared 注册（脚本间共享） ----
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedRegister", -1, OWNER, "sharedRegister", VARARG_DESC, StdlibCore::sharedRegister, true));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedSet", -1, OWNER, "sharedSet", VARARG_DESC, StdlibCore::sharedSet));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedRemove", -1, OWNER, "sharedRemove", VARARG_DESC, StdlibCore::sharedRemove));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedHas", -1, OWNER, "sharedHas", VARARG_DESC, StdlibCore::sharedHas));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "sharedGet", -1, OWNER, "sharedGet", VARARG_DESC, StdlibCore::sharedGet));
+
+        // ---- stdlib 模块查询 ----
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "stdlibModules", 0, OWNER, "stdlibModules", V_O, args -> stdlibModules()));
+        StdlibRegistry.register(new StdlibRegistry.NativeFunctionInfo(
+            "stdlibFunctions", 1, OWNER, "stdlibFunctions", O_O, args -> stdlibFunctions(args[0])));
     }
 
     // ============ 实现（编译器 INVOKESTATIC 直接调用） ============
@@ -277,6 +317,250 @@ public final class StdlibCore {
         List<Object> result = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             result.add(LambdaUtils.invoke1(init, i));
+        }
+        return result;
+    }
+
+    // ============ shared 查询 ============
+
+    /** 返回 NovaRuntime.shared() 中所有命名空间（库）列表 */
+    public static Object sharedLibraries() {
+        return NovaRuntime.shared().listNamespaces();
+    }
+
+    /** 无参: 全部函数名；1参: 指定命名空间的函数名 */
+    public static Object sharedFunctions(Object[] args) {
+        List<NovaRuntime.RegisteredEntry> entries;
+        if (args.length == 0) {
+            entries = NovaRuntime.shared().listFunctions();
+        } else {
+            entries = NovaRuntime.shared().listFunctions(String.valueOf(args[0]));
+        }
+        List<String> names = new ArrayList<>(entries.size());
+        for (NovaRuntime.RegisteredEntry e : entries) {
+            names.add(e.getQualifiedName());
+        }
+        return names;
+    }
+
+    /** 返回函数签名描述 */
+    public static Object sharedDescribe(Object name) {
+        String desc = NovaRuntime.shared().describe(String.valueOf(name));
+        return desc != null ? desc : "unknown function: " + name;
+    }
+
+    // ============ stdlib 模块查询 ============
+
+    /** 返回标准库模块名列表（全局函数模块 + import 模块） */
+    public static Object stdlibModules() {
+        Set<String> modules = new LinkedHashSet<>();
+        // 全局函数按 jvmOwner 分组
+        for (StdlibRegistry.NativeFunctionInfo nf : StdlibRegistry.getNativeFunctions()) {
+            modules.add(categoryFromOwner(nf.jvmOwner));
+        }
+        // import 模块（nova.time / nova.io 等）
+        for (String m : IMPORT_MODULES) modules.add(m);
+        return new ArrayList<>(modules);
+    }
+
+    private static final String[] IMPORT_MODULES = {
+        "nova.time", "nova.io", "nova.json", "nova.text",
+        "nova.http", "nova.system", "nova.test", "nova.concurrent",
+        "nova.yaml", "nova.encoding", "nova.crypto"
+    };
+
+    /** 返回指定模块的函数名列表 */
+    public static Object stdlibFunctions(Object moduleName) {
+        String mod = String.valueOf(moduleName);
+        List<String> fns = new ArrayList<>();
+        for (StdlibRegistry.NativeFunctionInfo nf : StdlibRegistry.getNativeFunctions()) {
+            if (mod.equals(categoryFromOwner(nf.jvmOwner))) {
+                fns.add(nf.name);
+            }
+        }
+        return fns;
+    }
+
+    /** 从 jvmOwner 提取模块短名 */
+    private static String categoryFromOwner(String jvmOwner) {
+        if (jvmOwner == null) return "unknown";
+        int lastSlash = jvmOwner.lastIndexOf('/');
+        String className = lastSlash >= 0 ? jvmOwner.substring(lastSlash + 1) : jvmOwner;
+        if (className.startsWith("Stdlib")) className = className.substring(6);
+        return className.substring(0, 1).toLowerCase() + className.substring(1);
+    }
+
+    // ============ shared 注册（脚本间共享） ============
+
+    /**
+     * 注册函数到 shared：
+     * <ul>
+     *   <li>{@code sharedRegister("name", lambda)} — 全局注册</li>
+     *   <li>{@code sharedRegister("name", lambda, "namespace")} — 带命名空间</li>
+     * </ul>
+     * rawNovaArgs = true，接收 NovaValue 参数（lambda 保持原样）。
+     */
+    public static Object sharedRegister(Object[] args) {
+        if (args.length < 2) throw new RuntimeException("sharedRegister requires at least 2 args: name, function");
+        String name = String.valueOf(args[0] instanceof NovaValue ? ((NovaValue) args[0]).toJavaValue() : args[0]);
+        Object func = args[1] instanceof NovaValue ? args[1] : args[1];
+        String namespace = args.length >= 3
+                ? String.valueOf(args[2] instanceof NovaValue ? ((NovaValue) args[2]).toJavaValue() : args[2])
+                : null;
+
+        // 包装 Nova lambda 为 vararg function
+        final Object captured = func;
+        com.novalang.runtime.Function1<Object[], Object> wrapper = javaArgs -> {
+            switch (javaArgs.length) {
+                case 0: return LambdaUtils.invoke0(captured);
+                case 1: return LambdaUtils.invoke1(captured, javaArgs[0]);
+                case 2: return LambdaUtils.invoke2(captured, javaArgs[0], javaArgs[1]);
+                default:
+                    return LambdaUtils.invokeN(captured, javaArgs.length, javaArgs);
+            }
+        };
+
+        if (namespace != null) {
+            NovaRuntime.shared().registerVararg(name, wrapper, namespace);
+        } else {
+            NovaRuntime.shared().registerVararg(name, wrapper);
+        }
+        return null;
+    }
+
+    /**
+     * 设置值到 shared：
+     * <ul>
+     *   <li>{@code sharedSet("name", value)} — 全局设置</li>
+     *   <li>{@code sharedSet("name", value, "namespace")} — 带命名空间</li>
+     * </ul>
+     */
+    public static Object sharedSet(Object[] args) {
+        if (args.length < 2) throw new RuntimeException("sharedSet requires at least 2 args: name, value");
+        String name = String.valueOf(args[0]);
+        Object value = args[1];
+        if (args.length >= 3) {
+            NovaRuntime.shared().set(name, value, String.valueOf(args[2]));
+        } else {
+            NovaRuntime.shared().set(name, value);
+        }
+        return null;
+    }
+
+    /**
+     * 从 shared 注销：
+     * <ul>
+     *   <li>{@code sharedRemove("name")} — 注销全局函数</li>
+     *   <li>{@code sharedRemove("namespace")} — 注销整个命名空间</li>
+     * </ul>
+     */
+    /**
+     * 从 shared 移除：
+     * <ul>
+     *   <li>{@code sharedRemove("name")} — 移除全局函数/变量</li>
+     *   <li>{@code sharedRemove("namespace", "name")} — 移除命名空间中单个函数/变量</li>
+     * </ul>
+     */
+    public static Object sharedRemove(Object[] args) {
+        if (args.length < 1) throw new RuntimeException("sharedRemove requires at least 1 arg");
+        String first = String.valueOf(args[0]);
+        if (args.length >= 2) {
+            // sharedRemove("namespace", "funcName") — 移除命名空间中单个函数
+            String funcName = String.valueOf(args[1]);
+            NovaRuntime.shared().remove(first, funcName);
+        } else {
+            // sharedRemove("name") — 移除全局函数 + 注销同名命名空间
+            NovaRuntime.shared().remove(first);
+            NovaRuntime.shared().unregisterNamespace(first);
+        }
+        return null;
+    }
+
+    /**
+     * 检查 shared 中是否存在：
+     * <ul>
+     *   <li>{@code sharedHas("name")} — 检查全局函数/变量是否存在</li>
+     *   <li>{@code sharedHas("namespace", "name")} — 检查命名空间中是否存在</li>
+     * </ul>
+     */
+    public static Object sharedHas(Object[] args) {
+        if (args.length < 1) throw new RuntimeException("sharedHas requires at least 1 arg");
+        String first = String.valueOf(args[0]);
+        if (args.length >= 2) {
+            return NovaRuntime.shared().has(first, String.valueOf(args[1]));
+        } else {
+            return NovaRuntime.shared().has(first);
+        }
+    }
+
+    /**
+     * 读取 shared 中的值：
+     * <ul>
+     *   <li>{@code sharedGet("name")} — 读取全局函数/变量</li>
+     *   <li>{@code sharedGet("namespace", "name")} — 读取命名空间中的函数/变量</li>
+     * </ul>
+     */
+    public static Object sharedGet(Object[] args) {
+        if (args.length < 1) throw new RuntimeException("sharedGet requires at least 1 arg");
+        String first = String.valueOf(args[0]);
+        NovaRuntime.RegisteredEntry entry;
+        if (args.length >= 2) {
+            entry = NovaRuntime.shared().lookup(first, String.valueOf(args[1]));
+        } else {
+            entry = NovaRuntime.shared().lookup(first);
+        }
+        if (entry == null) return null;
+        return entry.isFunction() ? entry.getFunction() : entry.getValue();
+    }
+
+    // ============ Hutool 启发：全局工具函数 ============
+
+    /** 字符串相似度（Levenshtein，0.0~1.0） */
+    public static Object similar(Object a, Object b) {
+        return StringExtensions.similar(String.valueOf(a), b);
+    }
+
+    /** 对称差集：两个集合中不重复的元素 */
+    @SuppressWarnings("unchecked")
+    public static Object disjunction(Object col1, Object col2) {
+        Collection<?> c1 = (Collection<?>) col1;
+        Collection<?> c2 = (Collection<?>) col2;
+        List<Object> result = new ArrayList<>();
+        for (Object item : c1) {
+            if (!c2.contains(item)) result.add(item);
+        }
+        for (Object item : c2) {
+            if (!c1.contains(item)) result.add(item);
+        }
+        return result;
+    }
+
+    // ============ 序列化 provider 查询/切换 ============
+
+    /** 无参: 返回当前 JSON provider 名称；1参: 切换 provider */
+    public static Object jsonProviderFn(Object[] args) {
+        if (args.length == 0) {
+            return SerializationProviders.json() != null ? SerializationProviders.json().name() : "none";
+        }
+        String name = String.valueOf(args[0]);
+        String result = SerializationProviders.setJsonProvider(name);
+        if (result == null) {
+            throw new RuntimeException("JSON provider not found: " + name
+                    + ". Available: " + SerializationProviders.listJsonProviders());
+        }
+        return result;
+    }
+
+    /** 无参: 返回当前 YAML provider 名称；1参: 切换 provider */
+    public static Object yamlProviderFn(Object[] args) {
+        if (args.length == 0) {
+            return SerializationProviders.yaml() != null ? SerializationProviders.yaml().name() : "none";
+        }
+        String name = String.valueOf(args[0]);
+        String result = SerializationProviders.setYamlProvider(name);
+        if (result == null) {
+            throw new RuntimeException("YAML provider not found: " + name
+                    + ". Available: " + SerializationProviders.listYamlProviders());
         }
         return result;
     }

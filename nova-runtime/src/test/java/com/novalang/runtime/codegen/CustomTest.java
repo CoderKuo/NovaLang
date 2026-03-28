@@ -550,7 +550,7 @@ public class CustomTest {
         void testMapDotAccess() throws Exception {
             Nova nova = new Nova();
             CompiledNova compiled = nova.compileToBytecode(
-                    "val m = #{name: \"Alice\", age: 30}\nm.name", "test.nova");
+                    "val m = #{\"name\": \"Alice\", \"age\": 30}\nm.name", "test.nova");
             assertEquals("Alice", compiled.run());
         }
 
@@ -559,7 +559,7 @@ public class CustomTest {
         void testMapDotAccessInt() throws Exception {
             Nova nova = new Nova();
             CompiledNova compiled = nova.compileToBytecode(
-                    "val m = #{x: 10, y: 20}\nm.x + m.y", "test.nova");
+                    "val m = #{\"x\": 10, \"y\": 20}\nm.x + m.y", "test.nova");
             assertEquals(30, compiled.run());
         }
 
@@ -617,7 +617,7 @@ public class CustomTest {
         void testNestedMapListAccess() throws Exception {
             Nova nova = new Nova();
             CompiledNova compiled = nova.compileToBytecode(
-                    "val data = #{items: [1, 2, 3]}\ndata.items[2]", "test.nova");
+                    "val data = #{\"items\": [1, 2, 3]}\ndata.items[2]", "test.nova");
             assertEquals(3, compiled.run());
         }
     }
@@ -754,5 +754,185 @@ public class CustomTest {
                 System.err.println("      " + block.getTerminator());
             }
         }
+    }
+
+    // ============ null as T? 可空类型转换修复 ============
+
+    @Nested
+    @DisplayName("null as T? 可空类型转换")
+    class NullableCastTests {
+
+        @Test
+        @DisplayName("null as String? 应返回 null 而非抛异常")
+        void testNullAsNullableType() {
+            Interpreter interp = new Interpreter();
+            NovaValue result = interp.eval("null as String?", "test.nova");
+            assertTrue(result.isNull());
+        }
+
+        @Test
+        @DisplayName("null as String? + safe call + elvis")
+        void testNullSafeCallElvis() {
+            Interpreter interp = new Interpreter();
+            NovaValue result = interp.eval("(null as String?)?.toUpperCase() ?: \"UNKNOWN\"", "test.nova");
+            assertEquals("UNKNOWN", result.toJavaValue());
+        }
+
+        @Test
+        @DisplayName("非 null as String? 正常转换")
+        void testNonNullAsNullableType() {
+            Interpreter interp = new Interpreter();
+            NovaValue result = interp.eval("\"hello\" as String?", "test.nova");
+            assertEquals("hello", result.toJavaValue());
+        }
+
+        @Test
+        @DisplayName("null as String 应抛异常")
+        void testNullAsNonNullableThrows() {
+            Interpreter interp = new Interpreter();
+            assertThrows(Exception.class, () -> interp.eval("null as String", "test.nova"));
+        }
+
+        @Test
+        @DisplayName("null as? String 安全转换返回 null")
+        void testNullSafeCast() {
+            Interpreter interp = new Interpreter();
+            NovaValue result = interp.eval("null as? String", "test.nova");
+            assertTrue(result.isNull());
+        }
+
+        // ---- 编译模式 ----
+
+        @Test
+        @DisplayName("[编译] null as String? 应返回 null")
+        void testNullAsNullableCompiled() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode("null as String?", "test.nova");
+            assertNull(compiled.run());
+        }
+
+        @Test
+        @DisplayName("[编译] null as String? + safe call + elvis")
+        void testNullSafeCallElvisCompiled() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "(null as String?)?.toUpperCase() ?: \"UNKNOWN\"", "test.nova");
+            assertEquals("UNKNOWN", compiled.run());
+        }
+
+        @Test
+        @DisplayName("[编译] 非 null as String? 正常转换")
+        void testNonNullAsNullableCompiled() throws Exception {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode("\"hello\" as String?", "test.nova");
+            assertEquals("hello", compiled.run());
+        }
+
+        @Test
+        @DisplayName("[编译] null as String 应抛异常")
+        void testNullAsNonNullableCompiledThrows() {
+            Nova nova = new Nova();
+            assertThrows(Exception.class, () -> {
+                CompiledNova compiled = nova.compileToBytecode("null as String", "test.nova");
+                compiled.run();
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("[编译+运行] NovaScript 并行任务代码")
+    void testNovaScriptParallelCode() throws Exception {
+        Nova nova = new Nova();
+        // mock player 和 parse
+        java.util.List<String> messages = new java.util.ArrayList<>();
+        Object mockPlayer = new Object() {
+            public void sendMessage(Object msg) {
+                messages.add(String.valueOf(msg));
+                System.err.println("[MSG] " + msg);
+            }
+        };
+        nova.set("player", mockPlayer);
+        nova.defineFunction("parse", (Object s) -> String.valueOf(s));
+        // sync 由 nova 并发库提供，这里不需要额外 mock
+
+        String code =
+                "import nova.time.*\n" +
+                "val p = player\n" +
+                "val hp = parse(\"%player_health_rounded%\")\n" +
+                "val lv = parse(\"%player_level%\")\n" +
+                "val ping = parse(\"%player_ping%\")\n" +
+                "p.sendMessage(parse(\"&8[&bNova&8] &e并行执行 3 个任务...\"))\n" +
+                "val start = now()\n" +
+                "launch {\n" +
+                "  val results = parallel(\n" +
+                "    { sleep(500); \"任务A: ${hp}HP\" },\n" +
+                "    { sleep(500); \"任务B: Lv.$lv\" },\n" +
+                "    { sleep(500); \"任务C: ${ping}ms\" }\n" +
+                "  )\n" +
+                "  val elapsed = now() - start\n" +
+                "  sync {\n" +
+                "    for (r in results) {\n" +
+                "      p.sendMessage(\"§8[§bNova§8] §f$r\")\n" +
+                "    }\n" +
+                "    p.sendMessage(\"§8[§bNova§8] §7总耗时: §a${elapsed}ms §7(并行, 非 1500ms)\")\n" +
+                "  }\n" +
+                "}\n" +
+                "sleep(2000)\n" +
+                "messages.size()";
+        nova.set("messages", messages);
+        Object result = nova.eval(code);
+        System.err.println("Result: " + result);
+        System.err.println("Messages: " + messages);
+    }
+
+    // ============ Java 枚举 + 内部类 ============
+
+    @Test
+    @DisplayName("Java 枚举常量访问")
+    void testJavaEnumAccess() {
+        Nova nova = new Nova();
+        assertEquals("SECONDS", nova.eval(
+                "val tu = javaClass(\"java.util.concurrent.TimeUnit\")\ntu.SECONDS.toString()"));
+    }
+
+    @Test
+    @DisplayName("Java 枚举 values() 返回数组")
+    void testJavaEnumValues() {
+        Nova nova = new Nova();
+        assertEquals(7, nova.eval(
+                "val tu = javaClass(\"java.util.concurrent.TimeUnit\")\ntu.values().length"));
+    }
+
+    @Test
+    @DisplayName("Java 枚举 valueOf()")
+    void testJavaEnumValueOf() {
+        Nova nova = new Nova();
+        assertEquals("MILLISECONDS", nova.eval(
+                "javaClass(\"java.util.concurrent.TimeUnit\").valueOf(\"MILLISECONDS\").toString()"));
+    }
+
+    @Test
+    @DisplayName("Java 内部类 — 点号语法 java.util.Map.Entry")
+    void testJavaInnerClassDotNotation() {
+        Nova nova = new Nova();
+        Object result = nova.eval("javaClass(\"java.util.Map.Entry\").toString()");
+        assertTrue(String.valueOf(result).contains("java.util.Map$Entry"));
+    }
+
+    @Test
+    @DisplayName("Java 内部类 — 美元符语法 java.util.Map\\$Entry（需转义）")
+    void testJavaInnerClassDollarNotation() {
+        Nova nova = new Nova();
+        // $ 在 Nova 字符串中是插值符号，需用 \$ 转义或原始字符串
+        Object result = nova.eval("javaClass(\"java.util.Map\\$Entry\").toString()");
+        assertTrue(String.valueOf(result).contains("java.util.Map$Entry"));
+    }
+
+    @Test
+    @DisplayName("Java 内部类 — Thread.State 枚举")
+    void testJavaInnerClassEnum() {
+        Nova nova = new Nova();
+        assertEquals("RUNNABLE", nova.eval(
+                "javaClass(\"java.lang.Thread.State\").valueOf(\"RUNNABLE\").toString()"));
     }
 }

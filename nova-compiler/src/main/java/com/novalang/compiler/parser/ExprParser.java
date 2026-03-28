@@ -649,9 +649,10 @@ class ExprParser {
         if (!parser.check(RPAREN)) {
             do {
                 parser.skipNewlines();
+                if (parser.check(RPAREN)) break;  // 尾随逗号容忍
                 args.add(parseCallArg());
                 parser.skipNewlines();
-            } while (parser.match(COMMA) && !parser.check(RPAREN));
+            } while (parser.match(COMMA));
         }
 
         parser.expect(RPAREN, "Expected ')'");
@@ -954,6 +955,7 @@ class ExprParser {
                 params.add(new LambdaExpr.LambdaParam(loc, parser.advance().getLexeme(), null));
 
                 while (parser.match(COMMA)) {
+                    if (parser.check(ARROW)) break;  // 尾随逗号容忍
                     String name = parser.expect(IDENTIFIER, "Expected parameter name").getLexeme();
                     params.add(new LambdaExpr.LambdaParam(parser.location(), name, null));
                 }
@@ -1068,6 +1070,7 @@ class ExprParser {
     private LambdaExpr parseTypedParamLambda(SourceLocation loc) {
         List<LambdaExpr.LambdaParam> params = new ArrayList<LambdaExpr.LambdaParam>();
         do {
+            if (parser.check(ARROW)) break;  // 尾随逗号容忍
             SourceLocation paramLoc = parser.location();
             String name = parser.expect(IDENTIFIER, "Expected parameter name").getLexeme();
             TypeRef type = null;

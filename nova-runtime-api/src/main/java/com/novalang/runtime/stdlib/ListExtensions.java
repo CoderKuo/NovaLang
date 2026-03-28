@@ -697,6 +697,83 @@ public final class ListExtensions {
         return ((Function<Object, Object>) lambda).apply(arg);
     }
 
+    // ========== Hutool 启发 ==========
+
+    /** 元素频次统计 → Map<元素, 出现次数> */
+    @SuppressWarnings("unchecked")
+    public static Object countMap(Object list) {
+        Map<Object, Integer> result = new LinkedHashMap<>();
+        for (Object item : (List<?>) list) {
+            result.merge(item, 1, Integer::sum);
+        }
+        return result;
+    }
+
+    /** 安全索引访问，越界返回 null */
+    public static Object getOrNull(Object list, Object index) {
+        List<?> l = (List<?>) list;
+        int i = ((Number) index).intValue();
+        if (i < 0 || i >= l.size()) return null;
+        return l.get(i);
+    }
+
+    /** 安全索引访问，越界返回默认值 */
+    public static Object getOrDefault(Object list, Object index, Object defaultValue) {
+        List<?> l = (List<?>) list;
+        int i = ((Number) index).intValue();
+        if (i < 0 || i >= l.size()) return defaultValue;
+        return l.get(i);
+    }
+
+    /** 带谓词的 first：找到第一个满足条件的元素，找不到抛异常 */
+    @SuppressWarnings("unchecked")
+    public static Object first(Object list, Object predicate) {
+        for (Object item : (List<?>) list) {
+            if (isTruthy(invoke1(predicate, item))) return item;
+        }
+        throw new RuntimeException("No element matching predicate");
+    }
+
+    /** 带谓词的 last：找到最后一个满足条件的元素，找不到抛异常 */
+    @SuppressWarnings("unchecked")
+    public static Object last(Object list, Object predicate) {
+        List<?> l = (List<?>) list;
+        for (int i = l.size() - 1; i >= 0; i--) {
+            if (isTruthy(invoke1(predicate, l.get(i)))) return l.get(i);
+        }
+        throw new RuntimeException("No element matching predicate");
+    }
+
+    /** 带谓词的 firstOrNull */
+    @SuppressWarnings("unchecked")
+    public static Object firstOrNull(Object list, Object predicate) {
+        for (Object item : (List<?>) list) {
+            if (isTruthy(invoke1(predicate, item))) return item;
+        }
+        return null;
+    }
+
+    /** 带谓词的 lastOrNull */
+    @SuppressWarnings("unchecked")
+    public static Object lastOrNull(Object list, Object predicate) {
+        List<?> l = (List<?>) list;
+        for (int i = l.size() - 1; i >= 0; i--) {
+            if (isTruthy(invoke1(predicate, l.get(i)))) return l.get(i);
+        }
+        return null;
+    }
+
+    /** lastIndexOf：最后一个匹配元素的索引 */
+    public static Object lastIndexOf(Object list, Object value) {
+        List<?> l = (List<?>) list;
+        for (int i = l.size() - 1; i >= 0; i--) {
+            if (java.util.Objects.equals(l.get(i), value)) return i;
+        }
+        return -1;
+    }
+
+    // ========== 辅助 ==========
+
     /**
      * 调用双参数 lambda：优先使用 Function2.invoke()，回退到 BiFunction.apply()。
      */

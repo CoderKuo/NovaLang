@@ -377,6 +377,61 @@ public final class StringExtensions {
     }
 
     @SuppressWarnings("unchecked")
+    // ========== Hutool 启发 ==========
+
+    /** 截断字符串，超过 maxLen 时追加省略号 */
+    public static Object truncate(Object str, Object maxLen) {
+        String s = (String) str;
+        int max = ((Number) maxLen).intValue();
+        if (s.length() <= max) return s;
+        return max <= 3 ? s.substring(0, max) : s.substring(0, max - 3) + "...";
+    }
+
+    /** 截断字符串，自定义省略符 */
+    public static Object truncate(Object str, Object maxLen, Object ellipsis) {
+        String s = (String) str;
+        int max = ((Number) maxLen).intValue();
+        String ell = String.valueOf(ellipsis);
+        if (s.length() <= max) return s;
+        int keep = max - ell.length();
+        return keep <= 0 ? s.substring(0, max) : s.substring(0, keep) + ell;
+    }
+
+    /** 判断字符串是否为合法数字（整数/浮点/科学计数法） */
+    public static Object isNumber(Object str) {
+        String s = ((String) str).trim();
+        if (s.isEmpty()) return false;
+        try { Double.parseDouble(s); return true; }
+        catch (NumberFormatException e) { return false; }
+    }
+
+    /** 字符串相似度（Levenshtein 距离，0.0~1.0） */
+    public static Object similar(Object str, Object other) {
+        String a = (String) str;
+        String b = String.valueOf(other);
+        if (a.equals(b)) return 1.0;
+        int maxLen = Math.max(a.length(), b.length());
+        if (maxLen == 0) return 1.0;
+        return 1.0 - (double) levenshtein(a, b) / maxLen;
+    }
+
+    private static int levenshtein(String a, String b) {
+        int m = a.length(), n = b.length();
+        int[] prev = new int[n + 1], curr = new int[n + 1];
+        for (int j = 0; j <= n; j++) prev[j] = j;
+        for (int i = 1; i <= m; i++) {
+            curr[0] = i;
+            for (int j = 1; j <= n; j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                curr[j] = Math.min(Math.min(curr[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            int[] tmp = prev; prev = curr; curr = tmp;
+        }
+        return prev[n];
+    }
+
+    // ========== 辅助 ==========
+
     private static Object invoke1(Object lambda, Object arg) {
         if (lambda instanceof Function1) {
             return ((Function1<Object, Object>) lambda).invoke(arg);

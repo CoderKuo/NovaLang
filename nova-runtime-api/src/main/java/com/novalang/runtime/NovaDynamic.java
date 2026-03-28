@@ -84,6 +84,11 @@ public final class NovaDynamic {
             throw new NullPointerException("Cannot access member '" + memberName + "' on null");
         }
 
+        // Java 数组 .length（JVM 内置属性，反射不可见）
+        if (target.getClass().isArray() && "length".equals(memberName)) {
+            return java.lang.reflect.Array.getLength(target);
+        }
+
         // java.util.Map（编译模式 Map 字面量生成 HashMap）
         if (target instanceof java.util.Map && !(target instanceof NovaMap)) {
             Object val = ((java.util.Map<?, ?>) target).get(memberName);

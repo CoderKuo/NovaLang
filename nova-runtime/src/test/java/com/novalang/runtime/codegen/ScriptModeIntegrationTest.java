@@ -314,12 +314,12 @@ class ScriptModeIntegrationTest {
             assertEquals(3, run("[1, 2, 3].size()"));
         }
 
-        @Test void mapLiteralBareKey() {
-            assertEquals("Alice", run("#{name: \"Alice\"}[\"name\"]"));
+        @Test void mapLiteralStringKey() {
+            assertEquals("Alice", run("#{\"name\": \"Alice\"}[\"name\"]"));
         }
 
         @Test void mapDotAccess() {
-            assertEquals("Bob", run("val m = #{name: \"Bob\"}\nm.name"));
+            assertEquals("Bob", run("val m = #{\"name\": \"Bob\"}\nm.name"));
         }
 
         @Test void listIndex() {
