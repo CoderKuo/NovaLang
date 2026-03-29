@@ -111,11 +111,63 @@ println(json["name"])
 
 ## 快速开始
 
+### 引入依赖 (JitPack)
+
+**Gradle (Kotlin DSL)**
+```kotlin
+repositories {
+    maven { url = uri("https://jitpack.io") }
+}
+
+dependencies {
+    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14")
+}
+```
+
+**Gradle (Groovy)**
+```groovy
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14'
+}
+```
+
+**Maven**
+```xml
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependency>
+    <groupId>com.github.CoderKuo.NovaLang</groupId>
+    <artifactId>nova-runtime-all</artifactId>
+    <version>v0.1.14</version>
+</dependency>
+```
+
+**可用模块：**
+
+| 模块 | 说明 |
+|------|------|
+| `nova-runtime-all` | 完整运行时（解释器 + 编译器 + 标准库） |
+| `nova-runtime-api` | 运行时 API（插件开发用） |
+| `nova-bukkit` | Bukkit/Spigot 集成 |
+| `nova-json-gson` | JSON 提供者 — Gson |
+| `nova-json-fastjson2` | JSON 提供者 — FastJSON2 |
+| `nova-yaml-snakeyaml` | YAML 提供者 — SnakeYAML |
+| `nova-yaml-bukkit` | YAML 提供者 — Bukkit Configuration API |
+
 ### 环境要求
 - JDK 8 或更高版本
 - Gradle 7.x（或使用自带的 wrapper）
 
-### 构建
+### 从源码构建
 
 ```bash
 ./gradlew build

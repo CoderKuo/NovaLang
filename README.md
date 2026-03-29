@@ -107,11 +107,63 @@ println(json["name"])
 
 ## Quick Start
 
+### Add Dependency (JitPack)
+
+**Gradle (Kotlin DSL)**
+```kotlin
+repositories {
+    maven { url = uri("https://jitpack.io") }
+}
+
+dependencies {
+    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14")
+}
+```
+
+**Gradle (Groovy)**
+```groovy
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14'
+}
+```
+
+**Maven**
+```xml
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependency>
+    <groupId>com.github.CoderKuo.NovaLang</groupId>
+    <artifactId>nova-runtime-all</artifactId>
+    <version>v0.1.14</version>
+</dependency>
+```
+
+**Available modules:**
+
+| Module | Description |
+|--------|-------------|
+| `nova-runtime-all` | Full runtime (interpreter + compiler + stdlib) |
+| `nova-runtime-api` | Runtime API only (for plugin development) |
+| `nova-bukkit` | Bukkit/Spigot integration |
+| `nova-json-gson` | JSON provider — Gson |
+| `nova-json-fastjson2` | JSON provider — FastJSON2 |
+| `nova-yaml-snakeyaml` | YAML provider — SnakeYAML |
+| `nova-yaml-bukkit` | YAML provider — Bukkit Configuration API |
+
 ### Prerequisites
 - JDK 8 or higher
 - Gradle 7.x (or use the included wrapper)
 
-### Build
+### Build from Source
 
 ```bash
 ./gradlew build
