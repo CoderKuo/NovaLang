@@ -437,7 +437,7 @@ public class Interpreter implements ExecutionContext {
             Object javaTarget = receiver.toJavaValue();
             Class<?> targetClass = javaTarget != null ? javaTarget.getClass() : Object.class;
             com.novalang.runtime.ExtensionRegistry.RegisteredExtension sharedExt =
-                    sharedReg.lookup(targetClass, methodName, new Class<?>[0]);
+                    sharedReg.lookupAny(targetClass, methodName);
             if (sharedExt != null) {
                 final Object finalTarget = javaTarget;
                 return new NovaNativeFunction(methodName, -1, (ctx, args) -> {

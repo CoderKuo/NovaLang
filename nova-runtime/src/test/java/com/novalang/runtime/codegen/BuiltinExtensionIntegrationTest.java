@@ -311,6 +311,103 @@ class BuiltinExtensionIntegrationTest {
             nova.eval("sharedRemove(\"__never_registered_xyz__\")");
             nova.eval("sharedRemove(\"__fakeNs__\", \"__fakeFunc__\")");
         }
+
+        // ---- RegisteredEntry.invoke 各种调用形式 ----
+
+        @Test
+        @DisplayName("shared Function0: 零参函数正常调用")
+        void sharedInvokeFunction0() {
+            NovaRuntime.shared().register("__testFn0__", (Function0<Object>) () -> "hello from fn0");
+            Nova nova = new Nova();
+            assertEquals("hello from fn0", nova.eval("__testFn0__()"));
+            NovaRuntime.shared().remove("__testFn0__");
+        }
+
+        @Test
+        @DisplayName("shared Function1: 单参函数正常调用")
+        void sharedInvokeFunction1() {
+            NovaRuntime.shared().register("__testFn1__", (Function1<Object, Object>) name -> "hi " + name);
+            Nova nova = new Nova();
+            assertEquals("hi Nova", nova.eval("__testFn1__(\"Nova\")"));
+            NovaRuntime.shared().remove("__testFn1__");
+        }
+
+        @Test
+        @DisplayName("shared Function1: 零参调用单参函数（参数补 null）")
+        void sharedInvokeFunction1WithZeroArgs() {
+            NovaRuntime.shared().register("__testFn1Null__", (Function1<Object, Object>) x -> x == null ? "default" : x);
+            Nova nova = new Nova();
+            assertEquals("default", nova.eval("__testFn1Null__()"));
+            NovaRuntime.shared().remove("__testFn1Null__");
+        }
+
+        @Test
+        @DisplayName("shared Function2: 多参调用正常")
+        void sharedInvokeFunction2() {
+            NovaRuntime.shared().register("__testFn2__",
+                    (Function2<Object, Object, Object>) (a, b) -> ((Number) a).intValue() + ((Number) b).intValue());
+            Nova nova = new Nova();
+            assertEquals(30, nova.eval("__testFn2__(10, 20)"));
+            NovaRuntime.shared().remove("__testFn2__");
+        }
+
+        @Test
+        @DisplayName("shared Function2: 单参调用双参函数（第二参补 null）")
+        void sharedInvokeFunction2WithOneArg() {
+            NovaRuntime.shared().register("__testFn2Pad__",
+                    (Function2<Object, Object, Object>) (a, b) -> a + " " + b);
+            Nova nova = new Nova();
+            assertEquals("hello null", nova.eval("__testFn2Pad__(\"hello\")"));
+            NovaRuntime.shared().remove("__testFn2Pad__");
+        }
+
+        @Test
+        @DisplayName("shared NativeFunction: vararg 函数正常调用")
+        void sharedInvokeNativeFunction() {
+            NovaRuntime.shared().registerVararg("__testNative__",
+                    (Function1<Object[], Object>) args -> args.length);
+            Nova nova = new Nova();
+            assertEquals(3, nova.eval("__testNative__(1, 2, 3)"));
+            NovaRuntime.shared().remove("__testNative__");
+        }
+
+        @Test
+        @DisplayName("shared 函数执行出错: 友好错误信息包含函数名")
+        void sharedInvokeErrorContainsFunctionName() {
+            NovaRuntime.shared().register("__testErr__", (Function1<Object, Object>) x -> {
+                throw new RuntimeException("模拟错误");
+            }, "errLib");
+            Nova nova = new Nova();
+            try {
+                nova.eval("errLib.__testErr__(42)");
+                fail("应抛异常");
+            } catch (Exception e) {
+                String msg = e.getMessage();
+                assertTrue(msg.contains("__testErr__") || msg.contains("模拟错误"),
+                        "错误信息应包含函数名或原始消息，实际: " + msg);
+            } finally {
+                NovaRuntime.shared().remove("errLib");
+            }
+        }
+
+        @Test
+        @DisplayName("shared 变量条目: invoke 返回值而非调用")
+        void sharedInvokeVariable() {
+            NovaRuntime.shared().set("__testVar__", "just a value");
+            Nova nova = new Nova();
+            assertEquals("just a value", nova.eval("__testVar__"));
+            NovaRuntime.shared().remove("__testVar__");
+        }
+
+        @Test
+        @DisplayName("shared 命名空间函数: ns.func() 调用")
+        void sharedNamespacedCall() {
+            NovaRuntime.shared().register("greet",
+                    (Function1<Object, Object>) name -> "Hello " + name, "myLib");
+            Nova nova = new Nova();
+            assertEquals("Hello World", nova.eval("myLib.greet(\"World\")"));
+            NovaRuntime.shared().remove("myLib");
+        }
     }
 
     // ================================================================

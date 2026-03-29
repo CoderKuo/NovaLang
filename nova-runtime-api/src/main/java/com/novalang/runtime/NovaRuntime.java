@@ -235,35 +235,47 @@ public final class NovaRuntime {
             return namespace != null ? namespace + "." + name : name;
         }
 
-        /** 调用此函数（变量条目直接返回值） */
+        /** 调用此函数（变量条目直接返回值，参数不足用 null 补齐） */
         @SuppressWarnings({"unchecked", "rawtypes"})
         public Object invoke(Object... args) {
             if (!isFunction) return value;
-            if (function instanceof NativeFunction) {
-                try { return ((NativeFunction) function).invoke(args); }
-                catch (RuntimeException e) { throw e; }
-                catch (Exception e) { throw new RuntimeException(e); }
+            try {
+                if (function instanceof NativeFunction) {
+                    return ((NativeFunction) function).invoke(args);
+                }
+                // 按 FunctionN 类型匹配，参数不足用 null 补齐
+                Object a0 = args.length > 0 ? args[0] : null;
+                Object a1 = args.length > 1 ? args[1] : null;
+                Object a2 = args.length > 2 ? args[2] : null;
+                Object a3 = args.length > 3 ? args[3] : null;
+                Object a4 = args.length > 4 ? args[4] : null;
+                if (function instanceof Function0) return ((Function0) function).invoke();
+                if (function instanceof Function1) return ((Function1) function).invoke(a0);
+                if (function instanceof Function2) return ((Function2) function).invoke(a0, a1);
+                if (function instanceof Function3) return ((Function3) function).invoke(a0, a1, a2);
+                if (function instanceof Function4) return ((Function4) function).invoke(a0, a1, a2, a3);
+                if (function instanceof Function5) return ((Function5) function).invoke(a0, a1, a2, a3, a4);
+            } catch (NovaException e) {
+                throw e; // Nova 异常原样传播
+            } catch (Exception e) {
+                String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                throw new NovaException("调用函数 '" + getQualifiedName() + "' 失败: " + msg
+                        + (source != null ? " [来源: " + source + "]" : ""), e);
             }
-            if (function instanceof Function0 && args.length == 0) {
-                return ((Function0) function).invoke();
-            }
-            if (function instanceof Function1 && args.length == 1) {
-                return ((Function1) function).invoke(args[0]);
-            }
-            if (function instanceof Function2 && args.length == 2) {
-                return ((Function2) function).invoke(args[0], args[1]);
-            }
-            if (function instanceof Function3 && args.length == 3) {
-                return ((Function3) function).invoke(args[0], args[1], args[2]);
-            }
-            if (function instanceof Function4 && args.length == 4) {
-                return ((Function4) function).invoke(args[0], args[1], args[2], args[3]);
-            }
-            if (function instanceof Function5 && args.length == 5) {
-                return ((Function5) function).invoke(args[0], args[1], args[2], args[3], args[4]);
-            }
-            throw new RuntimeException("Cannot invoke registered function '" + name
-                    + "' with " + args.length + " args (type: " + function.getClass().getSimpleName() + ")");
+            // 函数类型无法识别
+            String funcType = resolveFunctionType();
+            throw new NovaException("函数 '" + getQualifiedName() + "' 无法调用: "
+                    + "传入 " + args.length + " 个参数，但函数类型为 " + funcType
+                    + (source != null ? " [来源: " + source + "]" : ""));
+        }
+
+        private String resolveFunctionType() {
+            if (function instanceof Function0) return "无参函数";
+            if (function instanceof Function1) return "单参函数";
+            if (function instanceof Function2) return "双参函数";
+            if (function instanceof Function3) return "三参函数";
+            if (function instanceof NativeFunction) return "原生函数";
+            return "未知类型 (" + function.getClass().getSimpleName() + ")";
         }
     }
 

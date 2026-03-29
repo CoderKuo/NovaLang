@@ -94,6 +94,34 @@ public final class ExtensionRegistry {
      * @param argTypes     参数类型
      * @return 匹配的扩展方法，如果不存在返回 null
      */
+    /** 不限参数类型查找（返回第一个匹配的扩展方法，递归继承链） */
+    public RegisteredExtension lookupAny(Class<?> receiverType, String methodName) {
+        String cacheKey = receiverType.getName() + "#" + methodName + "#any";
+        RegisteredExtension cached = lookupCache.get(cacheKey);
+        if (cached != null) return cached == LOOKUP_MISS ? null : cached;
+        RegisteredExtension result = lookupAnyRecursive(receiverType, methodName);
+        lookupCache.put(cacheKey, result != null ? result : LOOKUP_MISS);
+        return result;
+    }
+
+    private RegisteredExtension lookupAnyRecursive(Class<?> receiverType, String methodName) {
+        Map<String, List<RegisteredExtension>> typeMethods = extensions.get(receiverType);
+        if (typeMethods != null) {
+            List<RegisteredExtension> methods = typeMethods.get(methodName);
+            if (methods != null && !methods.isEmpty()) return methods.get(0);
+        }
+        Class<?> superClass = receiverType.getSuperclass();
+        if (superClass != null) {
+            RegisteredExtension r = lookupAnyRecursive(superClass, methodName);
+            if (r != null) return r;
+        }
+        for (Class<?> iface : receiverType.getInterfaces()) {
+            RegisteredExtension r = lookupAnyRecursive(iface, methodName);
+            if (r != null) return r;
+        }
+        return null;
+    }
+
     public RegisteredExtension lookup(Class<?> receiverType, String methodName, Class<?>[] argTypes) {
         int argCount = argTypes != null ? argTypes.length : 0;
         String cacheKey = receiverType.getName() + "#" + methodName + "#" + argCount;

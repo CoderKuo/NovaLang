@@ -935,4 +935,46 @@ public class CustomTest {
         assertEquals("RUNNABLE", nova.eval(
                 "javaClass(\"java.lang.Thread.State\").valueOf(\"RUNNABLE\").toString()"));
     }
+
+    // ============ 链式调用 shared 扩展函数 ============
+
+    /** 模拟 Java 对象（类似 Bukkit Player） */
+    public static class MockPlayer {
+        private final String name;
+        public MockPlayer(String name) { this.name = name; }
+        public String getName() { return name; }
+    }
+
+    @Test
+    @DisplayName("链式调用: getPlayer().msg() — 通过 registerExt 扩展方法")
+    void testChainedExtensionMethodOnJavaObject() {
+        Nova nova = new Nova();
+        nova.defineFunction("getPlayer", (Object name) -> new MockPlayer(String.valueOf(name)));
+        // 正确做法：注册为扩展方法（而非全局函数）
+        NovaRuntime.shared().registerExt(MockPlayer.class, "msg",
+                (com.novalang.runtime.Function2<Object, Object, Object>) (player, message) ->
+                        "sent '" + message + "' to " + ((MockPlayer) player).getName());
+        try {
+            Object result = nova.eval("getPlayer(\"test\").msg(\"hello\")");
+            assertEquals("sent 'hello' to test", result);
+        } finally {
+            NovaRuntime.shared().getExtensionRegistry().clear();
+        }
+    }
+
+    @Test
+    @DisplayName("非链式调用: msg(player, 123) — shared 全局函数直接调用")
+    void testDirectSharedFunctionCall() {
+        Nova nova = new Nova();
+        nova.defineFunction("getPlayer", (Object name) -> new MockPlayer(String.valueOf(name)));
+        NovaRuntime.shared().register("msg",
+                (Function2<Object, Object, Object>) (player, message) ->
+                        "sent '" + message + "' to " + ((MockPlayer) player).getName());
+        try {
+            Object result = nova.eval("msg(getPlayer(\"test\"), \"hello\")");
+            assertEquals("sent 'hello' to test", result);
+        } finally {
+            NovaRuntime.shared().remove("msg");
+        }
+    }
 }
