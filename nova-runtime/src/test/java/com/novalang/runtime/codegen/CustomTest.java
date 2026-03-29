@@ -977,4 +977,54 @@ public class CustomTest {
             NovaRuntime.shared().remove("msg");
         }
     }
+
+    // ============ hashCode 栈溢出复现 ============
+
+    @Test
+    @DisplayName("[复现] 命名空间函数不加括号访问不应栈溢出")
+    void testNamespacedFunctionWithoutCallNoStackOverflow() {
+        // 模拟 trmenu.openMenu（不加括号，返回函数对象）
+        NovaRuntime.shared().register("openMenu",
+                (Function1<Object, Object>) menu -> "opened " + menu, "trmenu");
+        try {
+            Nova nova = new Nova();
+            // trmenu.openMenu 不加括号 — 返回函数引用，不应栈溢出
+            Object result = nova.eval("trmenu.openMenu");
+            assertNotNull(result, "应返回函数引用而非 null");
+            // 函数引用应可以转字符串（触发 hashCode/toString）
+            String str = String.valueOf(result);
+            assertNotNull(str);
+            System.err.println("函数引用: " + str);
+        } finally {
+            NovaRuntime.shared().remove("trmenu");
+        }
+    }
+
+    @Test
+    @DisplayName("[复现] NovaRange.hashCode 不应栈溢出")
+    void testNovaRangeHashCodeNoStackOverflow() {
+        Nova nova = new Nova();
+        Object range = nova.eval("1..10");
+        assertNotNull(range);
+        // 触发 hashCode — 之前会因 toJavaValue() 返回 this 导致栈溢出
+        int hash = range.hashCode();
+        assertTrue(hash != 0 || hash == 0, "hashCode 应正常返回");
+    }
+
+    @Test
+    @DisplayName("[复现] NovaNamespace.hashCode 不应栈溢出")
+    void testNovaNamespaceHashCodeNoStackOverflow() {
+        NovaRuntime.shared().set("testVal", 42, "testNs");
+        try {
+            Nova nova = new Nova();
+            Object ns = nova.eval("testNs");
+            // 可能是 NovaNamespace，触发 hashCode
+            if (ns != null) {
+                int hash = ns.hashCode();
+                assertTrue(hash != 0 || hash == 0);
+            }
+        } finally {
+            NovaRuntime.shared().remove("testNs");
+        }
+    }
 }

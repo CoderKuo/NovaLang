@@ -178,6 +178,8 @@ public abstract class AbstractNovaValue implements NovaValue {
     @Override
     public int hashCode() {
         Object val = toJavaValue();
+        // 防止 toJavaValue() 返回 this 时无限递归
+        if (val == this) return System.identityHashCode(this);
         return val != null ? val.hashCode() : 0;
     }
 
