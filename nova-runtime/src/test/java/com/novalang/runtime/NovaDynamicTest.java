@@ -127,8 +127,9 @@ class NovaDynamicTest {
     @Test
     @DisplayName("null target 抛异常")
     void testNullTargetThrows() {
-        assertThrows(NullPointerException.class, () ->
+        NovaException ex = assertThrows(NovaException.class, () ->
                 NovaDynamic.getMember(null, "name"));
+        assertEquals(NovaException.ErrorKind.NULL_REFERENCE, ex.getKind());
     }
 
     @Test
@@ -266,8 +267,9 @@ class NovaDynamicTest {
     @Test
     @DisplayName("invokeMethod null target 抛异常")
     void testInvokeMethodNullThrows() {
-        assertThrows(NullPointerException.class, () ->
+        NovaException ex = assertThrows(NovaException.class, () ->
                 NovaDynamic.invokeMethod(null, "greet", "test"));
+        assertEquals(NovaException.ErrorKind.NULL_REFERENCE, ex.getKind());
     }
 
     @Test
@@ -362,8 +364,9 @@ class NovaDynamicTest {
         @Test
         @DisplayName("setMember — null target 抛异常")
         void testSetMemberNullTargetThrows() {
-            assertThrows(NullPointerException.class, () ->
+            NovaException ex = assertThrows(NovaException.class, () ->
                 NovaDynamic.setMember(null, "label", "x"));
+            assertEquals(NovaException.ErrorKind.NULL_REFERENCE, ex.getKind());
         }
     }
 

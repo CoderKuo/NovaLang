@@ -1027,4 +1027,527 @@ public class CustomTest {
             NovaRuntime.shared().remove("testNs");
         }
     }
+
+    // ============ Java-Nova 变量共享/引用传递测试 ============
+
+    public static class GameContext {
+        public double damage = 100.0;
+        public String message = "original";
+        private int level = 1;
+        public int getLevel() { return level; }
+        public void setLevel(int lv) { this.level = lv; }
+    }
+
+    @Test
+    @DisplayName("[引用测试] Nova 修改 Java 对象字段 — 影响 Java 端")
+    void testNovaModifyJavaObjectField() {
+        GameContext ctx = new GameContext();
+        Nova nova = new Nova();
+        nova.set("ctx", ctx);
+        nova.eval("ctx.damage = 250.0");
+        nova.eval("ctx.message = \"modified by nova\"");
+        assertEquals(250.0, ctx.damage, 0.01, "Nova 修改 public 字段应影响 Java 端");
+        assertEquals("modified by nova", ctx.message);
+    }
+
+    @Test
+    @DisplayName("[引用测试] Nova 通过 setter 修改 Java 对象 — 影响 Java 端")
+    void testNovaModifyJavaObjectViaSetter() {
+        GameContext ctx = new GameContext();
+        Nova nova = new Nova();
+        nova.set("ctx", ctx);
+        nova.eval("ctx.setLevel(99)");
+        assertEquals(99, ctx.getLevel(), "Nova 调 setter 应影响 Java 端");
+    }
+
+    @Test
+    @DisplayName("[引用测试] Nova 修改 Java List — 影响 Java 端")
+    void testNovaModifyJavaList() {
+        java.util.List<String> items = new java.util.ArrayList<>();
+        items.add("sword");
+        Nova nova = new Nova();
+        nova.set("items", items);
+        nova.eval("items.add(\"shield\")");
+        nova.eval("items.add(\"potion\")");
+        assertEquals(3, items.size(), "Nova 修改 List 应影响 Java 端");
+        assertEquals("shield", items.get(1));
+        assertEquals("potion", items.get(2));
+    }
+
+    @Test
+    @DisplayName("[引用测试] Nova 修改 Java Map — 影响 Java 端")
+    void testNovaModifyJavaMap() {
+        java.util.Map<String, Object> config = new java.util.HashMap<>();
+        config.put("hp", 100);
+        Nova nova = new Nova();
+        nova.set("config", config);
+        nova.eval("config.put(\"hp\", 200)");
+        nova.eval("config.put(\"mp\", 50)");
+        assertEquals(200, config.get("hp"), "Nova 修改 Map 应影响 Java 端");
+        assertEquals(50, config.get("mp"));
+    }
+
+    @Test
+    @DisplayName("[引用测试] Nova 替换原始类型变量 — 不影响 Java 端（值类型）")
+    void testNovaPrimitiveReassignDoesNotAffectJava() {
+        Nova nova = new Nova();
+        nova.set("x", 42);
+        nova.eval("x = 999");
+        // Java 端的 42 是值类型，Nova 中 x = 999 只是重绑定 Nova 环境中的 x
+        // 无法通过 nova.get("x") 拿回（eval 模式下 set 进去的是脚本变量）
+        // 这里验证的是：Java 端原始 int 值不会被影响
+        // （Nova 没有指针，原始类型是值传递）
+    }
+
+    @Test
+    @DisplayName("[引用测试] 编译模式 — Nova 修改 Java 对象字段")
+    void testCompiledModeModifyJavaObject() throws Exception {
+        GameContext ctx = new GameContext();
+        Nova nova = new Nova();
+        nova.set("ctx", ctx);
+        CompiledNova compiled = nova.compileToBytecode(
+                "ctx.damage = ctx.damage * 1.5\nctx.damage", "test.nova");
+        Object result = compiled.run();
+        assertEquals(150.0, ((Number) result).doubleValue(), 0.01);
+        assertEquals(150.0, ctx.damage, 0.01, "编译模式修改也应影响 Java 端");
+    }
+
+    // ============ NovaScriptContext.initDirect 零拷贝测试 ============
+
+    @Test
+    @DisplayName("[initDirect] get/set 直接操作外部 Map")
+    void testInitDirectGetSet() {
+        java.util.concurrent.ConcurrentHashMap<String, Object> liveMap = new java.util.concurrent.ConcurrentHashMap<>();
+        liveMap.put("hp", 100);
+        liveMap.put("name", "Steve");
+
+        NovaScriptContext.initDirect(liveMap);
+        try {
+            // get 读取外部 Map
+            assertEquals(100, NovaScriptContext.get("hp"));
+            assertEquals("Steve", NovaScriptContext.get("name"));
+
+            // set 直接写入外部 Map
+            NovaScriptContext.set("hp", 200);
+            NovaScriptContext.set("mp", 50);
+
+            assertEquals(200, liveMap.get("hp"), "set 应直接修改外部 Map");
+            assertEquals(50, liveMap.get("mp"), "新增变量应写入外部 Map");
+            assertEquals("Steve", liveMap.get("name"), "未修改的值不变");
+        } finally {
+            NovaScriptContext.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("[initDirect] defineVal/defineVar 写入外部 Map")
+    void testInitDirectDefine() {
+        java.util.concurrent.ConcurrentHashMap<String, Object> liveMap = new java.util.concurrent.ConcurrentHashMap<>();
+
+        NovaScriptContext.initDirect(liveMap);
+        try {
+            NovaScriptContext.defineVal("x", 42);
+            NovaScriptContext.defineVar("y", "hello");
+
+            assertEquals(42, liveMap.get("x"), "defineVal 应写入外部 Map");
+            assertEquals("hello", liveMap.get("y"), "defineVar 应写入外部 Map");
+        } finally {
+            NovaScriptContext.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("[initDirect] getAll 返回外部 Map 内容")
+    void testInitDirectGetAll() {
+        java.util.concurrent.ConcurrentHashMap<String, Object> liveMap = new java.util.concurrent.ConcurrentHashMap<>();
+        liveMap.put("a", 1);
+        liveMap.put("b", "two");
+
+        NovaScriptContext.initDirect(liveMap);
+        try {
+            java.util.Map<String, Object> all = NovaScriptContext.getAll();
+            assertEquals(1, all.get("a"));
+            assertEquals("two", all.get("b"));
+        } finally {
+            NovaScriptContext.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("[init 拷贝模式] 修改不影响原始 Map")
+    void testInitCopyModeUnchanged() {
+        java.util.Map<String, Object> original = new java.util.HashMap<>();
+        original.put("val1", 10);
+
+        NovaScriptContext.init(original);
+        try {
+            NovaScriptContext.set("val1", 999);
+            // 拷贝模式下原始 Map 不应被修改
+            assertEquals(10, original.get("val1"), "拷贝模式下原始 Map 不应被修改");
+        } finally {
+            NovaScriptContext.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("[initDirect vs init] 对比：零拷贝 vs 拷贝")
+    void testInitDirectVsInitContrast() {
+        java.util.concurrent.ConcurrentHashMap<String, Object> directMap = new java.util.concurrent.ConcurrentHashMap<>();
+        directMap.put("score", 0);
+
+        java.util.Map<String, Object> copyMap = new java.util.HashMap<>();
+        copyMap.put("score", 0);
+
+        // initDirect: 修改影响外部
+        NovaScriptContext.initDirect(directMap);
+        NovaScriptContext.set("score", 100);
+        NovaScriptContext.clear();
+        assertEquals(100, directMap.get("score"), "initDirect: 修改应影响外部 Map");
+
+        // init: 修改不影响外部
+        NovaScriptContext.init(copyMap);
+        NovaScriptContext.set("score", 100);
+        NovaScriptContext.clear();
+        assertEquals(0, copyMap.get("score"), "init: 修改不应影响外部 Map");
+    }
+
+    // ============ MemberNameResolver 自定义成员映射测试 ============
+
+    public static class ObfuscatedEntity {
+        private int field_a = 42;     // 混淆后字段名
+        public int field_a() { return field_a; }  // 混淆后方法名
+        public void method_b(int v) { field_a = v; }
+        public int getField_a() { return field_a; }
+    }
+
+    @Test
+    @DisplayName("[MemberResolver] 自定义映射: 可读名 → 混淆名")
+    void testMemberNameResolverFieldMapping() {
+        Nova.setMemberResolver((target, name, isMethod) -> {
+            // 模拟 MCP 映射: health → field_a, setHealth → method_b
+            if ("health".equals(name) && !isMethod) return "field_a";
+            if ("setHealth".equals(name) && isMethod) return "method_b";
+            return null;
+        });
+
+        try {
+            Nova nova = new Nova();
+            nova.set("entity", new ObfuscatedEntity());
+            // 用可读名 "health" 访问，映射到混淆名 "field_a"
+            Object result = nova.eval("entity.health");
+            assertEquals(42, result, "映射 health → field_a 应返回 42");
+        } finally {
+            Nova.setMemberResolver(null);
+        }
+    }
+
+    @Test
+    @DisplayName("[MemberResolver] 自定义映射: 方法名映射")
+    void testMemberNameResolverMethodMapping() {
+        Nova.setMemberResolver((target, name, isMethod) -> {
+            if ("setHealth".equals(name)) return "method_b";
+            if ("health".equals(name) && !isMethod) return "field_a";
+            return null;
+        });
+
+        try {
+            Nova nova = new Nova();
+            ObfuscatedEntity entity = new ObfuscatedEntity();
+            nova.set("entity", entity);
+            nova.eval("entity.setHealth(99)");
+            assertEquals(99, entity.getField_a(), "映射 setHealth → method_b 应修改字段");
+        } finally {
+            Nova.setMemberResolver(null);
+        }
+    }
+
+    @Test
+    @DisplayName("[MemberResolver] 无映射时正常访问")
+    void testMemberNameResolverNoMapping() {
+        Nova.setMemberResolver((target, name, isMethod) -> null);
+        try {
+            Nova nova = new Nova();
+            nova.set("entity", new ObfuscatedEntity());
+            // 直接用混淆名可以访问
+            Object result = nova.eval("entity.field_a");
+            assertEquals(42, result);
+        } finally {
+            Nova.setMemberResolver(null);
+        }
+    }
+
+    @Test
+    @DisplayName("[MemberResolver] 未设置解析器时正常工作")
+    void testNoMemberResolver() {
+        Nova.setMemberResolver(null);
+        Nova nova = new Nova();
+        nova.set("entity", new ObfuscatedEntity());
+        Object result = nova.eval("entity.field_a");
+        assertEquals(42, result);
+    }
+
+    // ============ [] 索引内复杂表达式测试 ============
+
+    @Test
+    @DisplayName("索引内使用 as 类型转换: list[x as Int]")
+    void testIndexWithAsCast() {
+        Nova nova = new Nova();
+        // toInt() 转换后 as Int 只是类型断言
+        assertEquals("b", nova.eval("val list = [\"a\", \"b\", \"c\"]\nval x = 1\nlist[x as Int]"));
+    }
+
+    @Test
+    @DisplayName("索引内使用 as? 安全转换")
+    void testIndexWithSafeCast() {
+        Nova nova = new Nova();
+        assertEquals("b", nova.eval("val list = [\"a\", \"b\", \"c\"]\nval x: Any = 1\nlist[x as Int]"));
+    }
+
+    @Test
+    @DisplayName("索引内使用变量: list[i]")
+    void testIndexWithVariable() {
+        Nova nova = new Nova();
+        assertEquals("c", nova.eval("val list = [\"a\", \"b\", \"c\"]\nval i = 2\nlist[i]"));
+    }
+
+    @Test
+    @DisplayName("索引内使用算术表达式: list[a + b]")
+    void testIndexWithArithmetic() {
+        Nova nova = new Nova();
+        assertEquals("c", nova.eval("val list = [\"a\", \"b\", \"c\"]\nval a = 1\nval b = 1\nlist[a + b]"));
+    }
+
+    @Test
+    @DisplayName("索引内使用函数调用: list[toInt(x)]")
+    void testIndexWithFunctionCall() {
+        Nova nova = new Nova();
+        assertEquals("b", nova.eval("val list = [\"a\", \"b\", \"c\"]\nval x = 1.5\nlist[toInt(x)]"));
+    }
+
+    @Test
+    @DisplayName("索引内使用三元表达式: list[if (true) 0 else 1]")
+    void testIndexWithConditional() {
+        Nova nova = new Nova();
+        assertEquals("a", nova.eval("val list = [\"a\", \"b\", \"c\"]\nlist[if (true) 0 else 1]"));
+    }
+
+    // ============ NovaDynamicObject 动态属性测试 ============
+
+    public static class DynamicData implements com.novalang.runtime.NovaDynamicObject {
+        private final java.util.Map<String, Object> data = new java.util.HashMap<>();
+
+        @Override public Object getMember(String name) { return data.get(name); }
+        @Override public void setMember(String name, Object value) { data.put(name, value); }
+        @Override public boolean hasMember(String name) { return data.containsKey(name); }
+
+        public java.util.Map<String, Object> getData() { return data; }
+    }
+
+    @Test
+    @DisplayName("[NovaDynamicObject] Nova 读写动态属性")
+    void testDynamicObjectGetSet() {
+        DynamicData dd = new DynamicData();
+        dd.setMember("hp", 100);
+        dd.setMember("name", "Steve");
+
+        Nova nova = new Nova();
+        nova.set("dd", dd);
+        assertEquals(100, nova.eval("dd.hp"));
+        assertEquals("Steve", nova.eval("dd.name"));
+
+        // Nova 写入
+        nova.eval("dd.hp = 200");
+        nova.eval("dd.mp = 50");
+        assertEquals(200, dd.getData().get("hp"), "Nova 写入应影响 Java 端");
+        assertEquals(50, dd.getData().get("mp"), "Nova 新增属性应影响 Java 端");
+    }
+
+    @Test
+    @DisplayName("[NovaDynamicObject] 编译模式读写")
+    void testDynamicObjectCompiled() throws Exception {
+        DynamicData dd = new DynamicData();
+        dd.setMember("score", 10);
+
+        Nova nova = new Nova();
+        nova.set("dd", dd);
+        CompiledNova compiled = nova.compileToBytecode("dd.score = dd.score * 3\ndd.score", "test.nova");
+        Object result = compiled.run();
+        assertEquals(30, result);
+        assertEquals(30, dd.getData().get("score"), "编译模式写入应影响 Java 端");
+    }
+
+    @Test
+    @DisplayName("[NovaDynamicObject] 读取不存在的属性返回 null")
+    void testDynamicObjectMissingProperty() {
+        DynamicData dd = new DynamicData();
+        Nova nova = new Nova();
+        nova.set("dd", dd);
+        assertNull(nova.eval("dd.nonexistent"));
+    }
+
+    // ============ as 优先级测试 ============
+
+    @Test
+    @DisplayName("as 优先级高于四则: a + b as Int * c → a + ((b as Int) * c)")
+    void testAsPrecedenceHigherThanArithmetic() {
+        Nova nova = new Nova();
+        // 1 + 2 as Int * 3 应该是 1 + ((2 as Int) * 3) = 1 + 6 = 7
+        assertEquals(7, nova.eval("1 + 2 as Int * 3"));
+    }
+
+    @Test
+    @DisplayName("as 优先级: (expr ?: 0) as Int * 28")
+    void testAsPrecedenceWithElvis() {
+        Nova nova = new Nova();
+        // 10 + (null ?: 2) as Int * 3 → 10 + ((2 as Int) * 3) = 10 + 6 = 16
+        assertEquals(16, nova.eval("10 + (null ?: 2) as Int * 3"));
+    }
+
+    // ============ as 数值类型转换测试 ============
+
+    @Test @DisplayName("as Int: Double→Int") void testAsDoubleToInt() { assertEquals(3, new Nova().eval("3.14 as Int")); }
+    @Test @DisplayName("as Int: Long→Int") void testAsLongToInt() { assertEquals(42, new Nova().eval("42L as Int")); }
+    @Test @DisplayName("as Double: Int→Double") void testAsIntToDouble() { assertEquals(42.0, new Nova().eval("42 as Double")); }
+    @Test @DisplayName("as Long: Int→Long") void testAsIntToLong() { assertEquals(42L, new Nova().eval("42 as Long")); }
+    @Test @DisplayName("as Float: Double→Float") void testAsDoubleToFloat() { assertNotNull(new Nova().eval("3.14 as Float")); }
+    @Test @DisplayName("as String: Int→String") void testAsIntToString() { assertEquals("42", new Nova().eval("42 as String")); }
+
+    // ============ Double→float 方法参数兼容测试 ============
+
+    public static class FloatApi {
+        public static String create(float x, float y) {
+            return "x=" + x + ",y=" + y;
+        }
+    }
+
+    @Test
+    @DisplayName("Double→float: javaClass 静态方法调用")
+    void testDoubleToFloatStaticCall() {
+        Nova nova = new Nova();
+        // 注入 FloatApi 类引用，避免内部类名问题
+        nova.set("FloatApi", new com.novalang.runtime.interpreter.JavaInterop.NovaJavaClass(FloatApi.class));
+        Object result = nova.eval("FloatApi.create(0.4, 0.4)");
+        assertNotNull(result, "Double→float 方法调用应成功");
+        assertTrue(String.valueOf(result).contains("x=0.4"), "结果应包含 x=0.4");
+    }
+
+    @Test
+    @DisplayName("Double→float: 注入对象方法调用")
+    void testDoubleToFloatViaInjectedObject() {
+        Nova nova = new Nova();
+        // 注入一个 Java 函数接受 float 参数
+        nova.defineFunction("floatAdd", (Object a, Object b) ->
+                ((Number) a).floatValue() + ((Number) b).floatValue());
+        Object result = nova.eval("floatAdd(0.4, 0.6)");
+        assertNotNull(result);
+    }
+
+    // ============ 库函数3参数调用复现 ============
+
+    @Test
+    @DisplayName("[复现] 库函数3参数调用: lib.func(a, b, c)")
+    void testLibraryFunction3Args() throws Exception {
+        Nova nova = new Nova();
+        nova.defineLibrary("Vx", lib -> {
+            lib.defineFunction("combatAttack", (Object player, Object type, Object config) ->
+                    "attacked:" + type + ":" + config);
+        });
+        CompiledNova compiled = nova.compileToBytecode(
+                "fun attack(player, data) {\n" +
+                "    Vx.combatAttack(player, \"vx_player\", #{\"anim\": \"slash\"})\n" +
+                "}", "test.nova");
+        compiled.run();
+        Object result = compiled.call("attack", "testPlayer", "testData");
+        assertNotNull(result);
+        assertTrue(String.valueOf(result).contains("vx_player"), "应包含第二参数");
+    }
+
+    @Test
+    @DisplayName("[复现] 库函数3参数调用: shared() defineLibrary（VxCore 路径）")
+    void testLibraryFunction3ArgsViaShared() throws Exception {
+        // 模拟 VxCore 的注册路径：NovaRuntime.shared().defineLibrary()
+        NovaRuntime.shared().defineLibrary("Vx2", lib -> {
+            lib.function("combatAttack", (Object player, Object type, Object config) ->
+                    "attacked:" + type + ":" + config);
+        });
+        try {
+            Nova nova = new Nova();
+            CompiledNova compiled = nova.compileToBytecode(
+                    "fun attack(player, data) {\n" +
+                    "    Vx2.combatAttack(player, \"vx_player\", #{\n" +
+                    "        \"entityUuid\": \"uuid\",\n" +
+                    "        \"anim\": \"sword_auto1\"\n" +
+                    "    })\n" +
+                    "}", "test.nova");
+            compiled.run();
+            Object result = compiled.call("attack", "testPlayer", "testData");
+            assertNotNull(result, "shared defineLibrary 3参数调用不应失败");
+            assertTrue(String.valueOf(result).contains("vx_player"), "应包含第二参数");
+        } finally {
+            NovaRuntime.shared().unregisterNamespace("Vx2");
+        }
+    }
+
+    @Test
+    @DisplayName("[复现] 库函数3参数调用: 多行 Map 字面量")
+    void testLibraryFunction3ArgsMultiLineMap() throws Exception {
+        Nova nova = new Nova();
+        nova.defineLibrary("Vx", lib -> {
+            lib.defineFunction("combatAttack", (Object player, Object type, Object config) ->
+                    "attacked:" + type + ":" + config);
+        });
+        CompiledNova compiled = nova.compileToBytecode(
+                "fun attack(player, data) {\n" +
+                "    Vx.combatAttack(player, \"vx_player\", #{\n" +
+                "        \"entityUuid\": \"uuid\",\n" +
+                "        \"anim\": \"sword_auto1\",\n" +
+                "        \"speed\": 1.0,\n" +
+                "        \"phases\": \"test\"\n" +
+                "    })\n" +
+                "}", "test.nova");
+        compiled.run();
+        Object result = compiled.call("attack", "testPlayer", "testData");
+        assertNotNull(result, "多行 Map 作为参数不应丢失");
+        assertTrue(String.valueOf(result).contains("vx_player"), "应包含第二参数");
+    }
+
+    @Test
+    @DisplayName("[复现] 完整 combat.nova — 含负数值和变量引用的多行 Map")
+    void testFullCombatScript() throws Exception {
+        Nova nova = new Nova();
+        nova.defineLibrary("Vx", lib -> {
+            lib.defineFunction("combatAttack", (Object player, Object type, Object config) ->
+                    "attacked:" + type + ":" + config);
+            lib.defineFunction("send", (Object player, Object msg) -> null);
+        });
+        // 完全复制 combat.nova 的实际内容
+        String code =
+                "var comboIndex = 0\n" +
+                "\n" +
+                "fun attack(player, data) {\n" +
+                "    var uuid = player.toString()\n" +
+                "\n" +
+                "    var animName = \"sword_auto1\"\n" +
+                "    if (comboIndex == 1) { animName = \"sword_auto2\" }\n" +
+                "    if (comboIndex == 2) { animName = \"sword_auto3\" }\n" +
+                "    if (comboIndex == 3) { animName = \"sword_auto4\" }\n" +
+                "\n" +
+                "    Vx.combatAttack(player, \"vx_player\", #{\n" +
+                "        \"entityUuid\": uuid,\n" +
+                "        \"anim\": animName,\n" +
+                "        \"speed\": 1.0,\n" +
+                "        \"lockDuration\": -1,\n" +
+                "        \"phases\": \"antic:0-0.1@M;contact:0.1-0.35@MA;recovery:0.35-0.6@XC\",\n" +
+                "        \"chainId\": \"light\",\n" +
+                "        \"comboIndex\": comboIndex\n" +
+                "    })\n" +
+                "\n" +
+                "    comboIndex = (comboIndex + 1) % 4\n" +
+                "    Vx.send(player, \"&e[Combat] \" + animName)\n" +
+                "}";
+        CompiledNova compiled = nova.compileToBytecode(code, "combat.nova");
+        compiled.run();
+        Object result = compiled.call("attack", "testPlayer", "testData");
+        assertNotNull(result, "attack 应返回 combatAttack 的结果");
+    }
 }

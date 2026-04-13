@@ -318,7 +318,7 @@ class ConcurrencyTest {
         @DisplayName("denied 工厂方法创建异常")
         void testDeniedFactory() {
             NovaException ex = NovaSecurityPolicy.denied("test action");
-            assertTrue(ex.getMessage().contains("Security policy denied"));
+            assertEquals(NovaException.ErrorKind.ACCESS_DENIED, ex.getKind());
             assertTrue(ex.getMessage().contains("test action"));
         }
     }

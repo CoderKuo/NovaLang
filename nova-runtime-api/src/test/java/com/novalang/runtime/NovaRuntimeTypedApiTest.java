@@ -78,7 +78,7 @@ class NovaRuntimeTypedApiTest {
         @DisplayName("null receiver 抛异常")
         void nullReceiverThrows() {
             assertThatThrownBy(() -> runtime.callExtension(null, "shout"))
-                    .isInstanceOf(NullPointerException.class);
+                    .isInstanceOf(NovaException.class);
         }
     }
 

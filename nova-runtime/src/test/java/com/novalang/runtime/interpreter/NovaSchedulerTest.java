@@ -340,8 +340,8 @@ class NovaSchedulerTest {
             });
 
             String msg = future.get(3, TimeUnit.SECONDS);
-            assertThat(msg).contains("Cannot call delay()");
-            assertThat(msg).contains("main thread");
+            assertTrue(msg.contains("delay") && (msg.contains("main thread") || msg.contains("主线程")),
+                    "应包含 delay + 主线程信息，实际: " + msg);
         }
     }
 
@@ -386,7 +386,7 @@ class NovaSchedulerTest {
             clean.setReplMode(true);
             assertThatThrownBy(() -> clean.evalRepl("schedule(100) { }"))
                 .isInstanceOf(NovaRuntimeException.class)
-                .hasMessageContaining("No scheduler configured");
+                .hasMessageContaining("调度器");
         }
 
         @Test
@@ -396,7 +396,7 @@ class NovaSchedulerTest {
             clean.setReplMode(true);
             assertThatThrownBy(() -> clean.evalRepl("scheduleRepeat(100, 50) { }"))
                 .isInstanceOf(NovaRuntimeException.class)
-                .hasMessageContaining("No scheduler configured");
+                .hasMessageContaining("调度器");
         }
     }
 
@@ -582,7 +582,7 @@ class NovaSchedulerTest {
             clean.setReplMode(true);
             assertThatThrownBy(() -> clean.evalRepl("sync { 1 }"))
                 .isInstanceOf(NovaRuntimeException.class)
-                .hasMessageContaining("No scheduler configured");
+                .hasMessageContaining("调度器");
         }
 
         @Test

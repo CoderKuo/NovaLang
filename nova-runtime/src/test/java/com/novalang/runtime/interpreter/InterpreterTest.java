@@ -272,8 +272,8 @@ class InterpreterTest {
             NovaRuntimeException ex = assertThrows(NovaRuntimeException.class, () -> {
                 fresh.eval("val x = 1\nval x = 2");
             });
-            assertTrue(ex.getMessage().contains("Variable already defined"),
-                    "Expected 'Variable already defined' but got: " + ex.getMessage());
+            assertTrue(ex.getMessage().contains("变量已定义") || ex.getMessage().contains("Variable already defined"),
+                    "Expected variable-redefined error but got: " + ex.getMessage());
         }
     }
 

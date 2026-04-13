@@ -339,7 +339,7 @@ class SecurityPolicyTest {
         @DisplayName("denied 方法创建正确异常")
         void testDeniedFactory() {
             NovaException ex = NovaSecurityPolicy.denied("test action");
-            assertTrue(ex.getMessage().contains("Security policy denied"));
+            assertEquals(NovaException.ErrorKind.ACCESS_DENIED, ex.getKind());
             assertTrue(ex.getMessage().contains("test action"));
         }
     }
