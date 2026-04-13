@@ -1,6 +1,7 @@
 package com.novalang.runtime.interpreter;
 
 import com.novalang.runtime.AbstractNovaValue;
+import com.novalang.runtime.NovaException;
 import com.novalang.runtime.NovaValue;
 
 import java.util.concurrent.CompletableFuture;
@@ -27,10 +28,10 @@ public final class NovaJob extends AbstractNovaValue {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
-            throw new NovaRuntimeException("Job failed: " + cause.getMessage());
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "Job 执行失败: " + cause.getMessage(), null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new NovaRuntimeException("Job interrupted");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "Job 被中断", null);
         }
     }
 

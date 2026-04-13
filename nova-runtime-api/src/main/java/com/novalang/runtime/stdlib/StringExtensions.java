@@ -2,6 +2,8 @@ package com.novalang.runtime.stdlib;
 
 import com.novalang.runtime.Function1;
 import com.novalang.runtime.NovaDynamic;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 
 import java.util.*;
 import java.util.function.Function;
@@ -316,15 +318,94 @@ public final class StringExtensions {
         return ((String) str).matches(regex.toString());
     }
 
-    // ── 双参数方法 ──
+    // ── 正则表达式扩展 ──
 
-    public static Object replaceFirst(Object str, Object regex, Object replacement) {
+    /** 字面替换第一个匹配（非正则） */
+    public static Object replaceFirst(Object str, Object target, Object replacement) {
         if (!(str instanceof String)) {
-            return NovaDynamic.invoke2(str, "replaceFirst", regex, replacement);
+            return NovaDynamic.invoke2(str, "replaceFirst", target, replacement);
         }
-        return ((String) str).replaceFirst(
-                java.util.regex.Pattern.quote(regex.toString()),
-                java.util.regex.Matcher.quoteReplacement(replacement.toString()));
+        String s = (String) str;
+        String t = target.toString();
+        int idx = s.indexOf(t);
+        if (idx < 0) return s;
+        return s.substring(0, idx) + replacement.toString() + s.substring(idx + t.length());
+    }
+
+    /** 正则替换全部匹配 */
+    public static Object replaceRegex(Object str, Object regex, Object replacement) {
+        return ((String) str).replaceAll(regex.toString(), replacement.toString());
+    }
+
+    /** 正则替换第一个匹配 */
+    public static Object replaceFirstRegex(Object str, Object regex, Object replacement) {
+        return ((String) str).replaceFirst(regex.toString(), replacement.toString());
+    }
+
+    /** 正则查找第一个匹配，返回匹配字符串或 null */
+    public static Object findRegex(Object str, Object regex) {
+        java.util.regex.Matcher m = Pattern.compile(regex.toString()).matcher((String) str);
+        return m.find() ? m.group() : null;
+    }
+
+    /** 正则查找所有匹配，返回字符串列表 */
+    public static Object findAllRegex(Object str, Object regex) {
+        java.util.regex.Matcher m = Pattern.compile(regex.toString()).matcher((String) str);
+        java.util.List<Object> results = new java.util.ArrayList<>();
+        while (m.find()) results.add(m.group());
+        return results;
+    }
+
+    /** 正则分割 */
+    public static Object splitRegex(Object str, Object regex) {
+        return java.util.Arrays.asList(((String) str).split(regex.toString()));
+    }
+
+    /** 正则包含判断 */
+    public static Object containsRegex(Object str, Object regex) {
+        return Pattern.compile(regex.toString()).matcher((String) str).find();
+    }
+
+    /**
+     * JS 风格 match：返回匹配结果 Map（类似 JS String.match()）。
+     * <ul>
+     *   <li>无匹配返回 null</li>
+     *   <li>匹配返回 Map：{value: 全匹配, groups: [分组1, 分组2, ...], index: 起始位置}</li>
+     * </ul>
+     */
+    public static Object match(Object str, Object regex) {
+        java.util.regex.Matcher m = Pattern.compile(regex.toString()).matcher((String) str);
+        if (!m.find()) return null;
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("value", m.group());
+        result.put("index", m.start());
+        java.util.List<Object> groups = new java.util.ArrayList<>();
+        for (int i = 1; i <= m.groupCount(); i++) {
+            groups.add(m.group(i));
+        }
+        result.put("groups", groups);
+        return result;
+    }
+
+    /**
+     * JS 风格 matchAll：返回所有匹配结果列表。
+     * 每个元素是 Map：{value, groups, index}
+     */
+    public static Object matchAll(Object str, Object regex) {
+        java.util.regex.Matcher m = Pattern.compile(regex.toString()).matcher((String) str);
+        java.util.List<Object> results = new java.util.ArrayList<>();
+        while (m.find()) {
+            java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
+            entry.put("value", m.group());
+            entry.put("index", m.start());
+            java.util.List<Object> groups = new java.util.ArrayList<>();
+            for (int i = 1; i <= m.groupCount(); i++) {
+                groups.add(m.group(i));
+            }
+            entry.put("groups", groups);
+            results.add(entry);
+        }
+        return results;
     }
 
     // ── 单字符 Char 方法 ──
@@ -356,16 +437,16 @@ public final class StringExtensions {
 
     public static Object code(Object str) {
         String s = (String) str;
-        if (s.length() != 1) throw new RuntimeException("code() requires a single-character string");
+        if (s.length() != 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "code() 需要单字符字符串", "确保字符串长度为 1");
         return (int) s.charAt(0);
     }
 
     public static Object digitToInt(Object str) {
         String s = (String) str;
-        if (s.length() != 1) throw new RuntimeException("digitToInt() requires a single-character string");
+        if (s.length() != 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "digitToInt() 需要单字符字符串", "确保字符串长度为 1");
         char c = s.charAt(0);
         if (c >= '0' && c <= '9') return c - '0';
-        throw new RuntimeException("'" + c + "' is not a digit");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH, "'" + c + "' 不是数字字符", "确保字符在 '0'..'9' 范围内");
     }
 
     // ========== 辅助 ==========

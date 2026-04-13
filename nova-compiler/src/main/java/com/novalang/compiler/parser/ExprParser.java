@@ -264,11 +264,6 @@ class ExprParser {
                 parser.advance();  // consume 'is'
                 TypeRef type = parser.parseType();
                 left = new TypeCheckExpr(loc, left, type, true);
-            } else if (parser.match(KW_AS)) {
-                // as 类型转换
-                boolean isSafe = parser.match(QUESTION);  // as?
-                TypeRef type = parser.parseType();
-                left = new TypeCastExpr(loc, left, type, isSafe);
             } else if (parser.match(KW_IN)) {
                 // in 包含检查: expr in range
                 Expression range = parseElvisExpr();
@@ -437,6 +432,14 @@ class ExprParser {
 
     // 前缀 - + ! ~ ++ --
     private Expression parsePrefixExpr() {
+        // !!expr 在前缀位置拆分为 !(!expr)（Lexer 贪心匹配 !! 为 NOT_NULL 后缀）
+        if (parser.check(NOT_NULL)) {
+            SourceLocation loc = parser.location();
+            parser.advance(); // consume !!
+            Expression operand = parsePrefixExpr(); // 右结合
+            Expression inner = new UnaryExpr(loc, UnaryExpr.UnaryOp.NOT, operand, true);
+            return new UnaryExpr(loc, UnaryExpr.UnaryOp.NOT, inner, true);
+        }
         if (parser.checkAny(MINUS, PLUS, NOT, BNOT, INC, DEC)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
@@ -465,7 +468,19 @@ class ExprParser {
             return new UnaryExpr(loc, unaryOp, operand, true);
         }
 
-        return parsePostfixExpr();
+        return parseAsExpr();
+    }
+
+    // as/as? 类型转换 — 优先级高于四则运算（与 Kotlin 一致）
+    private Expression parseAsExpr() {
+        Expression left = parsePostfixExpr();
+        while (parser.match(KW_AS)) {
+            SourceLocation loc = parser.previousLocation();
+            boolean isSafe = parser.match(QUESTION);
+            TypeRef type = parser.parseType();
+            left = new TypeCastExpr(loc, left, type, isSafe);
+        }
+        return left;
     }
 
     // 检查当前 token 是否是字面量的开始
@@ -674,19 +689,40 @@ class ExprParser {
         return new CallExpr.Argument(loc, name, value, isSpread);
     }
 
+    /**
+     * 索引内表达式解析：支持 as/is/in/elvis/算术等，但不含 range（.. ..<），
+     * range 由外层 parseIndexOrSlice 显式处理（用于切片语法 list[1..3]）。
+     */
+    private Expression parseIndexInnerExpr() {
+        // 从 additive 开始解析（不走 range 层），as 已在 additive 链内自动处理
+        Expression left = parseAdditiveExpr();
+        // 补充 is/!is 后缀
+        while (true) {
+            SourceLocation loc = parser.location();
+            if (parser.match(KW_IS)) {
+                TypeRef type = parser.parseType();
+                left = new TypeCheckExpr(loc, left, type, false);
+            } else if (parser.check(NOT) && parser.checkAhead(KW_IS)) {
+                parser.advance(); parser.advance();
+                TypeRef type = parser.parseType();
+                left = new TypeCheckExpr(loc, left, type, true);
+            } else {
+                break;
+            }
+        }
+        return left;
+    }
+
     private Expression parseIndexOrSlice(SourceLocation loc, Expression target) {
         // 已经消费了 '['
 
-        // 检查是否是切片
         Expression start = null;
         Expression end = null;
         boolean isSlice = false;
         boolean isExclusive = false;
 
-        // 注意：这里不能用 parseExpression()，因为它会把 "1..3" 解析为 RangeExpr
-        // 需要用不包含 range 解析的方法
         if (!parser.check(RANGE) && !parser.check(RANGE_EXCLUSIVE)) {
-            start = parseAdditiveExpr();
+            start = parseIndexInnerExpr();
         }
 
         if (parser.matchAny(RANGE, RANGE_EXCLUSIVE)) {
@@ -694,7 +730,7 @@ class ExprParser {
             isExclusive = parser.previous.getType() == RANGE_EXCLUSIVE;
 
             if (!parser.check(RBRACKET)) {
-                end = parseAdditiveExpr();
+                end = parseIndexInnerExpr();
             }
         }
 

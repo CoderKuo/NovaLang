@@ -1,6 +1,8 @@
 package com.novalang.runtime.stdlib;
 
 import com.novalang.runtime.AbstractNovaValue;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 
 /**
  * 类型转换相关的 stdlib 函数：toInt / toLong / toDouble / toString / toBoolean / toChar / toFloat。
@@ -39,11 +41,13 @@ public final class StdlibConversions {
         if (value instanceof String) {
             try { return Integer.parseInt(((String) value).trim()); }
             catch (NumberFormatException e) {
-                throw new RuntimeException("Cannot convert to Int: " + value);
+                throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                        "无法将字符串转换为 Int: " + value, "确保字符串是有效的整数格式");
             }
         }
         if (value instanceof Character) return (int) ((Character) value).charValue();
-        throw new RuntimeException("Cannot convert " + AbstractNovaValue.typeNameOf(value) + " to Int");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + AbstractNovaValue.typeNameOf(value) + " 转换为 Int", "使用 toInt() 进行转换");
     }
 
     public static Object toLong(Object value) {
@@ -51,10 +55,12 @@ public final class StdlibConversions {
         if (value instanceof String) {
             try { return Long.parseLong(((String) value).trim()); }
             catch (NumberFormatException e) {
-                throw new RuntimeException("Cannot convert to Long: " + value);
+                throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                        "无法将字符串转换为 Long: " + value, "确保字符串是有效的整数格式");
             }
         }
-        throw new RuntimeException("Cannot convert " + AbstractNovaValue.typeNameOf(value) + " to Long");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + AbstractNovaValue.typeNameOf(value) + " 转换为 Long", "使用 toLong() 进行转换");
     }
 
     public static Object toDouble(Object value) {
@@ -62,10 +68,12 @@ public final class StdlibConversions {
         if (value instanceof String) {
             try { return Double.parseDouble(((String) value).trim()); }
             catch (NumberFormatException e) {
-                throw new RuntimeException("Cannot convert to Double: " + value);
+                throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                        "无法将字符串转换为 Double: " + value, "确保字符串是有效的数字格式");
             }
         }
-        throw new RuntimeException("Cannot convert " + AbstractNovaValue.typeNameOf(value) + " to Double");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + AbstractNovaValue.typeNameOf(value) + " 转换为 Double", "使用 toDouble() 进行转换");
     }
 
     public static Object toStr(Object value) {
@@ -82,9 +90,11 @@ public final class StdlibConversions {
         if (value instanceof String) {
             String s = (String) value;
             if (s.length() == 1) return s.charAt(0);
-            throw new RuntimeException("Cannot convert multi-char string to Char");
+            throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                    "无法将多字符字符串转换为 Char", "字符串长度必须为 1");
         }
-        throw new RuntimeException("Cannot convert " + AbstractNovaValue.typeNameOf(value) + " to Char");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + AbstractNovaValue.typeNameOf(value) + " 转换为 Char", "使用 toChar() 进行转换");
     }
 
     public static Object toFloat(Object value) {
@@ -92,9 +102,11 @@ public final class StdlibConversions {
         if (value instanceof String) {
             try { return Float.parseFloat(((String) value).trim()); }
             catch (NumberFormatException e) {
-                throw new RuntimeException("Cannot convert to Float: " + value);
+                throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                        "无法将字符串转换为 Float: " + value, "确保字符串是有效的数字格式");
             }
         }
-        throw new RuntimeException("Cannot convert " + AbstractNovaValue.typeNameOf(value) + " to Float");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + AbstractNovaValue.typeNameOf(value) + " 转换为 Float", "使用 toFloat() 进行转换");
     }
 }

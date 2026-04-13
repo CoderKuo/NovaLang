@@ -2,6 +2,8 @@ package com.novalang.runtime;
 
 import java.io.PrintStream;
 
+import com.novalang.runtime.NovaException.ErrorKind;
+
 /**
  * 统一输出工具类。
  *
@@ -48,19 +50,19 @@ public final class NovaPrint {
 
     /** println() 无参 */
     public static void println() {
-        if (isMuted()) throw new RuntimeException("stdio is not allowed by security policy");
+        if (isMuted()) throw new NovaException(ErrorKind.ACCESS_DENIED, "安全策略禁止标准输出");
         getOut().println();
     }
 
     /** println(value) 单参 */
     public static void println(Object value) {
-        if (isMuted()) throw new RuntimeException("stdio is not allowed by security policy");
+        if (isMuted()) throw new NovaException(ErrorKind.ACCESS_DENIED, "安全策略禁止标准输出");
         getOut().println(asString(value));
     }
 
     /** print(value) 单参 */
     public static void print(Object value) {
-        if (isMuted()) throw new RuntimeException("stdio is not allowed by security policy");
+        if (isMuted()) throw new NovaException(ErrorKind.ACCESS_DENIED, "安全策略禁止标准输出");
         getOut().print(asString(value));
     }
 

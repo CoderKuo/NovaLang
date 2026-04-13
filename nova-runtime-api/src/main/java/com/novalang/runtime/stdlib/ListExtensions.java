@@ -3,6 +3,8 @@ package com.novalang.runtime.stdlib;
 import com.novalang.runtime.Function1;
 import com.novalang.runtime.Function2;
 import com.novalang.runtime.NovaDynamic;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaPair;
 import com.novalang.runtime.NovaRange;
 
@@ -73,20 +75,20 @@ public final class ListExtensions {
             }
             return result;
         }
-        throw new RuntimeException("slice requires a Range argument");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH, "slice 需要 Range 类型参数", "传入 Range，例如: list.slice(0..5)");
     }
 
     // ========== 无参方法 ==========
 
     public static Object first(Object list) {
         List<?> l = (List<?>) list;
-        if (l.isEmpty()) throw new RuntimeException("List is empty");
+        if (l.isEmpty()) throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "列表为空，无法获取 first", "使用 firstOrNull() 安全获取");
         return l.get(0);
     }
 
     public static Object last(Object list) {
         List<?> l = (List<?>) list;
-        if (l.isEmpty()) throw new RuntimeException("List is empty");
+        if (l.isEmpty()) throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "列表为空，无法获取 last", "使用 lastOrNull() 安全获取");
         return l.get(l.size() - 1);
     }
 
@@ -102,8 +104,8 @@ public final class ListExtensions {
 
     public static Object single(Object list) {
         List<?> l = (List<?>) list;
-        if (l.size() != 1) throw new RuntimeException(
-                "List has " + l.size() + " elements, expected exactly 1");
+        if (l.size() != 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                "列表包含 " + l.size() + " 个元素，single() 要求恰好 1 个", "使用 singleOrNull() 安全获取");
         return l.get(0);
     }
 
@@ -180,14 +182,14 @@ public final class ListExtensions {
     @SuppressWarnings("unchecked")
     public static Object max(Object list) {
         List<?> l = (List<?>) list;
-        if (l.isEmpty()) throw new RuntimeException("List is empty");
+        if (l.isEmpty()) throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "列表为空，无法获取 max", "使用 maxOrNull() 安全获取");
         return Collections.max((List<? extends Comparable<Object>>) l);
     }
 
     @SuppressWarnings("unchecked")
     public static Object min(Object list) {
         List<?> l = (List<?>) list;
-        if (l.isEmpty()) throw new RuntimeException("List is empty");
+        if (l.isEmpty()) throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "列表为空，无法获取 min", "使用 minOrNull() 安全获取");
         return Collections.min((List<? extends Comparable<Object>>) l);
     }
 
@@ -463,7 +465,7 @@ public final class ListExtensions {
     @SuppressWarnings("unchecked")
     public static Object reduce(Object list, Object operation) {
         List<?> l = (List<?>) list;
-        if (l.isEmpty()) throw new IllegalArgumentException("Cannot reduce an empty list");
+        if (l.isEmpty()) throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "列表为空，无法执行 reduce", "使用 fold() 并提供初始值");
         Object acc = l.get(0);
         for (int i = 1; i < l.size(); i++) {
             acc = invoke2(operation, acc, l.get(i));
@@ -542,7 +544,7 @@ public final class ListExtensions {
     public static Object chunked(Object list, Object size) {
         List<?> l = (List<?>) list;
         int chunkSize = ((Number) size).intValue();
-        if (chunkSize <= 0) throw new RuntimeException("chunked size must be positive");
+        if (chunkSize <= 0) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "chunked 的分块大小必须为正数", "传入大于 0 的整数");
         List<Object> result = new ArrayList<>();
         for (int i = 0; i < l.size(); i += chunkSize) {
             result.add(new ArrayList<>(l.subList(i, Math.min(i + chunkSize, l.size()))));
@@ -558,7 +560,7 @@ public final class ListExtensions {
         List<?> l = (List<?>) list;
         int windowSize = ((Number) size).intValue();
         int stepVal = ((Number) step).intValue();
-        if (windowSize <= 0 || stepVal <= 0) throw new RuntimeException("windowed size and step must be positive");
+        if (windowSize <= 0 || stepVal <= 0) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "windowed 的窗口大小和步长必须为正数");
         List<Object> result = new ArrayList<>();
         for (int i = 0; i + windowSize <= l.size(); i += stepVal) {
             result.add(new ArrayList<>(l.subList(i, i + windowSize)));
@@ -659,7 +661,7 @@ public final class ListExtensions {
             } else if (item instanceof List && ((List<?>) item).size() == 2) {
                 result.put(((List<?>) item).get(0), ((List<?>) item).get(1));
             } else {
-                throw new RuntimeException("toMap requires a list of pairs");
+                throw new NovaException(ErrorKind.TYPE_MISMATCH, "toMap 需要 Pair 列表", "确保列表元素为 Pair 或包含两个元素的 List");
             }
         }
         return result;
@@ -731,7 +733,7 @@ public final class ListExtensions {
         for (Object item : (List<?>) list) {
             if (isTruthy(invoke1(predicate, item))) return item;
         }
-        throw new RuntimeException("No element matching predicate");
+        throw new NovaException(ErrorKind.UNDEFINED, "没有元素匹配谓词条件", "使用 firstOrNull { ... } 安全获取");
     }
 
     /** 带谓词的 last：找到最后一个满足条件的元素，找不到抛异常 */
@@ -741,7 +743,7 @@ public final class ListExtensions {
         for (int i = l.size() - 1; i >= 0; i--) {
             if (isTruthy(invoke1(predicate, l.get(i)))) return l.get(i);
         }
-        throw new RuntimeException("No element matching predicate");
+        throw new NovaException(ErrorKind.UNDEFINED, "没有元素匹配谓词条件", "使用 lastOrNull { ... } 安全获取");
     }
 
     /** 带谓词的 firstOrNull */

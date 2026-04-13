@@ -1,5 +1,8 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaScheduler;
 import com.novalang.runtime.NovaScriptContext;
 import com.novalang.runtime.SchedulerHolder;
@@ -56,7 +59,7 @@ public final class ConcurrencyHelper {
         Object delegated = delegateToInterpreter("launch", args);
         if (delegated != null) return delegated;
         if (args.length != 1) {
-            throw new RuntimeException("launch expects 1 argument (block), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "launch 需要 1 个参数 (block)，但传入了 " + args.length + " 个");
         }
         Object block = args[0];
         Executor exec = getAsyncExecutor();
@@ -68,7 +71,7 @@ public final class ConcurrencyHelper {
             } catch (RuntimeException e) {
                 throw e;
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                throw NovaErrors.wrap(e);
             } finally {
                 NovaScriptContext.clear();
             }
@@ -112,10 +115,10 @@ public final class ConcurrencyHelper {
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-                throw new RuntimeException("parallel task failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+                throw NovaErrors.wrap("parallel 任务执行失败", cause != null ? cause : e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException("parallel interrupted");
+                throw new NovaException(ErrorKind.INTERNAL, "parallel 被中断");
             }
         }
         return results;
@@ -145,7 +148,7 @@ public final class ConcurrencyHelper {
         Object delegated = delegateToInterpreter("withTimeout", args);
         if (delegated != null) return delegated;
         if (args.length != 2) {
-            throw new RuntimeException("withTimeout expects 2 arguments (millis, block), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "withTimeout 需要 2 个参数 (millis, block)，但传入了 " + args.length + " 个");
         }
         long timeout = ((Number) args[0]).longValue();
         Object block = args[1];
@@ -163,14 +166,14 @@ public final class ConcurrencyHelper {
             return future.get(timeout, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
-            throw new RuntimeException("Timeout after " + timeout + "ms");
+            throw new NovaException(ErrorKind.INTERNAL, "执行超时: " + timeout + "ms", "增大超时时间或优化任务执行效率");
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause.getMessage() : e.getMessage());
+            throw NovaErrors.wrap("withTimeout 执行失败", cause != null ? cause : e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("withTimeout interrupted");
+            throw new NovaException(ErrorKind.INTERNAL, "withTimeout 被中断");
         }
     }
 
@@ -182,7 +185,7 @@ public final class ConcurrencyHelper {
         Object delegated = delegateToInterpreter("awaitAll", args);
         if (delegated != null) return delegated;
         if (args.length != 1) {
-            throw new RuntimeException("awaitAll expects 1 argument (list of futures), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "awaitAll 需要 1 个参数 (futures 列表)，但传入了 " + args.length + " 个");
         }
         Object input = args[0];
         Object[] futures;
@@ -195,7 +198,7 @@ public final class ConcurrencyHelper {
             for (Object o : (Iterable<?>) input) list.add(o);
             futures = list.toArray();
         } else {
-            throw new RuntimeException("awaitAll: argument must be a list of futures");
+            throw new NovaException(ErrorKind.TYPE_MISMATCH, "awaitAll 参数必须是 futures 列表");
         }
         Object[] results = new Object[futures.length];
         for (int i = 0; i < futures.length; i++) {
@@ -206,10 +209,10 @@ public final class ConcurrencyHelper {
                 } catch (ExecutionException e) {
                     Throwable cause = e.getCause();
                     if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-                    throw new RuntimeException("awaitAll failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+                    throw NovaErrors.wrap("awaitAll 任务执行失败", cause != null ? cause : e);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new RuntimeException("awaitAll interrupted");
+                    throw new NovaException(ErrorKind.INTERNAL, "awaitAll 被中断");
                 }
             } else if (f instanceof Future) {
                 try {
@@ -217,10 +220,10 @@ public final class ConcurrencyHelper {
                 } catch (ExecutionException e) {
                     Throwable cause = e.getCause();
                     if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-                    throw new RuntimeException("awaitAll failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+                    throw NovaErrors.wrap("awaitAll 任务执行失败", cause != null ? cause : e);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new RuntimeException("awaitAll interrupted");
+                    throw new NovaException(ErrorKind.INTERNAL, "awaitAll 被中断");
                 }
             } else {
                 results[i] = f;
@@ -237,7 +240,7 @@ public final class ConcurrencyHelper {
         Object delegated = delegateToInterpreter("awaitFirst", args);
         if (delegated != null) return delegated;
         if (args.length != 1) {
-            throw new RuntimeException("awaitFirst expects 1 argument (list of futures), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "awaitFirst 需要 1 个参数 (futures 列表)，但传入了 " + args.length + " 个");
         }
         Object input = args[0];
         List<CompletableFuture<?>> cfs = new ArrayList<>();
@@ -257,10 +260,10 @@ public final class ConcurrencyHelper {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException("awaitFirst failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+            throw NovaErrors.wrap("awaitFirst 任务执行失败", cause != null ? cause : e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("awaitFirst interrupted");
+            throw new NovaException(ErrorKind.INTERNAL, "awaitFirst 被中断");
         }
     }
 

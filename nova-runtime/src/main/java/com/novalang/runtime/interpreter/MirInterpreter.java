@@ -288,7 +288,10 @@ final class MirInterpreter {
             String qualifiedName = entry.getValue();
             Class<?> clazz = interp.resolveJavaClass(qualifiedName);
             if (clazz == null) {
-                throw new NovaRuntimeException("Java class not found: " + qualifiedName);
+                throw new NovaRuntimeException(
+                        NovaException.ErrorKind.JAVA_INTEROP,
+                        "找不到 Java 类 '" + qualifiedName + "'",
+                        "检查类名拼写和 classpath 是否正确");
             }
             if (interp.getSecurityPolicy().isClassAllowed(clazz.getName())) {
                 interp.getEnvironment().redefine(simpleName,
@@ -364,7 +367,9 @@ final class MirInterpreter {
             }
 
             if (interp.moduleLoader == null) {
-                throw new NovaRuntimeException("Cannot resolve module: " + qn + " (no module loader)");
+                throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                        "无法解析模块 '" + qn + "'（未配置模块加载器）",
+                        "确认 import 路径是否正确");
             }
             java.util.List<String> pathParts;
             String symbolName;
@@ -380,7 +385,9 @@ final class MirInterpreter {
             }
             java.nio.file.Path modulePath = interp.moduleLoader.resolveModulePath(pathParts);
             if (modulePath == null) {
-                throw new NovaRuntimeException("Module not found: " + qn);
+                throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                        "找不到模块 '" + qn + "'",
+                        "检查模块路径和文件是否存在");
             }
             Environment moduleEnv = interp.moduleLoader.loadModule(modulePath, interp);
             if (symbolName == null) {
@@ -388,7 +395,9 @@ final class MirInterpreter {
             } else {
                 NovaValue value = moduleEnv.tryGet(symbolName);
                 if (value == null) {
-                    throw new NovaRuntimeException("Symbol '" + symbolName + "' not found in module");
+                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                            "模块中找不到符号 '" + symbolName + "'",
+                            "检查导出名称是否正确");
                 }
                 String localName = imp.alias != null ? imp.alias : symbolName;
                 interp.getEnvironment().redefine(localName, value, false);
@@ -572,7 +581,10 @@ final class MirInterpreter {
      */
     NovaValue fastCall(MirFrame callerFrame, MirFunction targetFunc, MirInst inst) {
         if (cachedMaxRecursionDepth > 0 && interp.callDepth >= cachedMaxRecursionDepth) {
-            throw new NovaRuntimeException("Maximum recursion depth exceeded (" + cachedMaxRecursionDepth + ")");
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.INTERNAL,
+                    "递归深度超过最大限制 (" + cachedMaxRecursionDepth + ")",
+                    "检查是否存在无限递归，或使用尾递归优化");
         }
         interp.callDepth++;
         int[] ops = inst.getOperands();
@@ -1620,7 +1632,10 @@ final class MirInterpreter {
             tceCount++;
             frame.tceCount = tceCount;
             if (cachedMaxRecursionDepth > 0 && tceCount >= cachedMaxRecursionDepth) {
-                throw new NovaRuntimeException("Maximum recursion depth exceeded (" + cachedMaxRecursionDepth + ")");
+                throw new NovaRuntimeException(
+                    NovaException.ErrorKind.INTERNAL,
+                    "递归深度超过最大限制 (" + cachedMaxRecursionDepth + ")",
+                    "检查是否存在无限递归，或使用尾递归优化");
             }
             if (interp.hasSecurityLimits) {
                 interp.checkLoopLimits();
@@ -1712,7 +1727,8 @@ final class MirInterpreter {
                         sb.append(frame.get(part.localIndex).asString());
                         break;
                     default:
-                        throw new NovaRuntimeException("Unsupported string append part: " + part.kind);
+                        throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
+                                "[内部错误] 不支持的字符串追加类型: " + part.kind, null);
                 }
             }
             counter += plan.stepValue;
@@ -1754,7 +1770,8 @@ final class MirInterpreter {
             case SUB:
                 return left - right;
             default:
-                throw new NovaRuntimeException("Unsupported tail int op: " + op);
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
+                        "[内部错误] 不支持的整数尾调用操作: " + op, null);
         }
     }
 
@@ -1923,7 +1940,8 @@ final class MirInterpreter {
                 return applyTailIntBinary(evalIntExpr(expr.left, p0, p1, p2),
                         evalIntExpr(expr.right, p0, p1, p2), expr.op);
             default:
-                throw new NovaRuntimeException("Unknown int expr kind: " + expr.kind);
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
+                        "[内部错误] 未知的整数表达式类型: " + expr.kind, null);
         }
     }
 
@@ -1986,7 +2004,10 @@ final class MirInterpreter {
             tceCount++;
             frame.tceCount = tceCount;
             if (cachedMaxRecursionDepth > 0 && tceCount >= cachedMaxRecursionDepth) {
-                throw new NovaRuntimeException("Maximum recursion depth exceeded (" + cachedMaxRecursionDepth + ")");
+                throw new NovaRuntimeException(
+                    NovaException.ErrorKind.INTERNAL,
+                    "递归深度超过最大限制 (" + cachedMaxRecursionDepth + ")",
+                    "检查是否存在无限递归，或使用尾递归优化");
             }
             if (interp.hasSecurityLimits) {
                 interp.checkLoopLimits();
@@ -2206,7 +2227,8 @@ final class MirInterpreter {
                         throw toRuntimeException(ex);
                     }
                     default: // UNREACHABLE
-                        throw new NovaRuntimeException("Reached unreachable code");
+                        throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
+                                "[内部错误] 执行到了不可达代码", null);
                 }
             } catch (LoopSignal sig) {
                 throw sig; // non-local break/continue：直接穿透，不拦截
@@ -2217,6 +2239,13 @@ final class MirInterpreter {
                 } else {
                     nre = new NovaRuntimeException(e.getMessage());
                     nre.initCause(e);
+                }
+                // 从当前指令附加源码位置（仅在异常尚无位置时）
+                if (nre.getLocation() == null && frame.pc >= 0 && frame.pc < insts.length) {
+                    com.novalang.compiler.ast.SourceLocation loc = insts[frame.pc].getLocation();
+                    if (loc != null && loc.getLine() > 0) {
+                        nre.attachLocation(loc, interp.getSourceLine(loc.getLine()));
+                    }
                 }
                 MirFunction.TryCatchEntry handler = findMatchingHandler(tryCatches, frame.currentBlockId, e);
                 if (handler != null) {
@@ -2586,8 +2615,9 @@ final class MirInterpreter {
             default: break;
         }
 
-        throw new NovaRuntimeException("Unsupported binary operation: " + op
-                + " on " + left.getTypeName() + " and " + right.getTypeName());
+        throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH,
+                "不支持的运算: " + left.getTypeName() + " " + op + " " + right.getTypeName(),
+                "确保操作数类型兼容，或实现对应的运算符重载方法");
     }
 
     // ============ UNARY ============
@@ -2610,7 +2640,9 @@ final class MirInterpreter {
                         break;
                     }
                     // 尝试 unaryPlus（POS 操作码复用 NEG 时 extra 区分）
-                    throw new NovaRuntimeException("Cannot negate " + operand.getTypeName());
+                    throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH,
+                            "无法对 " + operand.getTypeName() + " 取负",
+                            "确保是数值类型，或实现 unaryMinus() 运算符重载");
                 }
                 else throw new NovaRuntimeException("Cannot negate " + operand.getTypeName());
                 break;
@@ -2630,10 +2662,13 @@ final class MirInterpreter {
             case BNOT:
                 if (operand instanceof NovaInt) result = NovaInt.of(~((NovaInt) operand).getValue());
                 else if (operand instanceof NovaLong) result = NovaLong.of(~((NovaLong) operand).getValue());
-                else throw new NovaRuntimeException("Cannot bitwise-not " + operand.getTypeName());
+                else throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH,
+                        "无法对 " + operand.getTypeName() + " 进行按位取反",
+                        "仅支持 Int 和 Long 类型");
                 break;
             default:
-                throw new NovaRuntimeException("Unknown unary op: " + op);
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
+                        "[内部错误] 未知的一元运算符: " + op, null);
         }
         frame.locals[inst.getDest()] = result;
     }
@@ -2711,7 +2746,9 @@ final class MirInterpreter {
             Object javaObj = MethodHandleCache.getInstance().newInstance(javaClass, javaArgs);
             frame.locals[inst.getDest()] = new NovaExternalObject(javaObj);
         } catch (Throwable e) {
-            throw new NovaRuntimeException("Cannot create object: " + className);
+            throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                    "无法创建对象: '" + className + "'",
+                    "检查类名是否正确、构造器参数是否匹配");
         }
     }
 
@@ -2789,7 +2826,10 @@ final class MirInterpreter {
                 return new MirCallable(this, invokeFunc, captureFields);
             }
         }
-        throw new NovaRuntimeException("Lambda class not found: " + lambdaClassName);
+        throw new NovaRuntimeException(
+                NovaException.ErrorKind.INTERNAL,
+                "[内部错误] Lambda 类未找到: " + lambdaClassName,
+                null);
     }
 
     // ============ INVOKE_DYNAMIC ============
@@ -2801,7 +2841,8 @@ final class MirInterpreter {
     private void executeInvokeDynamic(MirFrame frame, MirInst inst) {
         Object extra = inst.getExtra();
         if (!(extra instanceof com.novalang.ir.mir.InvokeDynamicInfo)) {
-            throw new NovaRuntimeException("INVOKE_DYNAMIC: invalid extra type");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
+                    "[内部错误] INVOKE_DYNAMIC: 无效的 extra 类型", null);
         }
         com.novalang.ir.mir.InvokeDynamicInfo info = (com.novalang.ir.mir.InvokeDynamicInfo) extra;
         int[] ops = inst.getOperands();
@@ -2840,7 +2881,8 @@ final class MirInterpreter {
                 return;
             }
             default:
-                throw new NovaRuntimeException("Unknown bootstrap method: " + info.bootstrapMethod);
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
+                        "[内部错误] 未知的 bootstrap 方法: " + info.bootstrapMethod, null);
         }
     }
 
@@ -2994,7 +3036,10 @@ final class MirInterpreter {
                     currentClass = ((NovaObject) frame.locals[0]).getNovaClass();
                 }
                 if (!objClass.isFieldAccessibleFrom(fieldName, currentClass)) {
-                    throw new NovaRuntimeException("Cannot access private field '" + fieldName + "'");
+                    throw new NovaRuntimeException(
+                            NovaException.ErrorKind.ACCESS_DENIED,
+                            "无法访问私有字段 '" + fieldName + "'",
+                            "该字段为 private，只能在类内部访问");
                 }
                 if (site == null) {
                     site = new FieldAccessSite();
@@ -3111,9 +3156,18 @@ final class MirInterpreter {
             }
             obj.setField(fieldName, value);
         } else if (target instanceof NovaExternalObject) {
-            ((NovaExternalObject) target).setField(fieldName, value);
+            Object javaObj = ((NovaExternalObject) target).toJavaValue();
+            if (javaObj instanceof com.novalang.runtime.NovaDynamicObject) {
+                ((com.novalang.runtime.NovaDynamicObject) javaObj).setMember(fieldName,
+                        value != null ? value.toJavaValue() : null);
+            } else {
+                ((NovaExternalObject) target).setField(fieldName, value);
+            }
         } else {
-            throw new NovaRuntimeException("Cannot set field '" + fieldName + "' on " + target.getTypeName());
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.UNDEFINED,
+                    "无法在 " + target.getTypeName() + " 上设置字段 '" + fieldName + "'",
+                    null);
         }
     }
 
@@ -3144,7 +3198,9 @@ final class MirInterpreter {
                 return;
             } catch (Throwable e) {
                 String extra = inst.extraAs();
-                throw new NovaRuntimeException("Failed to access static field " + extra + ": " + e.getMessage(), e);
+                throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                        "访问静态字段失败: " + extra,
+                        e.getMessage() != null ? e.getMessage() : null);
             }
         } else if (cached == STATIC_FIELD_MISS) {
             frame.locals[inst.getDest()] = NovaNull.NULL;
@@ -3237,8 +3293,9 @@ final class MirInterpreter {
             inst.cache = STATIC_FIELD_MISS;
             frame.locals[inst.getDest()] = NovaNull.NULL;
         } catch (Throwable e) {
-            throw new NovaRuntimeException("Failed to access static field "
-                    + owner + "." + fieldName + ": " + e.getMessage(), e);
+            throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                    "访问静态字段 " + owner + "." + fieldName + " 失败",
+                    e.getMessage() != null ? e.getMessage() : null);
         }
     }
 
@@ -3477,6 +3534,15 @@ final class MirInterpreter {
             return;
         }
 
+        // 数值/字符串类型转换（仅 as，不适用于 as?）
+        if (!safeCast) {
+            NovaValue numConverted = tryNumericCast(value, actualType);
+            if (numConverted != null) {
+                frame.locals[inst.getDest()] = numConverted;
+                return;
+            }
+        }
+
         // Java 类型转换 + SAM 适配（与编译路径统一使用 SamAdapter）
         try {
             Class<?> targetClass = JavaInterop.loadClass(toJavaDotName(actualType));
@@ -3496,7 +3562,11 @@ final class MirInterpreter {
                 frame.locals[inst.getDest()] = NovaNull.NULL;
                 return;
             }
-            throw new NovaRuntimeException(e.getMessage());
+            String fromType = value != null ? value.getNovaTypeName() : "null";
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.TYPE_MISMATCH,
+                    "无法将 " + fromType + " 转换为 " + actualType,
+                    e.getMessage());
         }
 
         if (safeCast) {
@@ -3505,7 +3575,44 @@ final class MirInterpreter {
         }
 
         String operandType = value != null ? value.getNovaTypeName() : "null";
-        throw new NovaRuntimeException("Cannot cast " + operandType + " to " + actualType + " (use as? for safe cast)");
+        throw new NovaRuntimeException(
+                NovaException.ErrorKind.TYPE_MISMATCH,
+                "无法将 " + operandType + " 转换为 " + actualType,
+                "使用 as? 进行安全转换，或使用 to" + actualType + "() 进行显式转换");
+    }
+
+    /** 数值/字符串类型转换：as Int, as Double, as Long, as Float, as String, as Boolean */
+    private static NovaValue tryNumericCast(NovaValue value, String targetType) {
+        if (value == null || value.isNull()) return null;
+        Object jv = value.toJavaValue();
+        switch (targetType) {
+            case "Int": case "java/lang/Integer":
+                if (jv instanceof Number) return NovaInt.of(((Number) jv).intValue());
+                if (jv instanceof String) try { return NovaInt.of(Integer.parseInt((String) jv)); } catch (NumberFormatException e) { return null; }
+                break;
+            case "Long": case "java/lang/Long":
+                if (jv instanceof Number) return NovaLong.of(((Number) jv).longValue());
+                if (jv instanceof String) try { return NovaLong.of(Long.parseLong((String) jv)); } catch (NumberFormatException e) { return null; }
+                break;
+            case "Double": case "java/lang/Double":
+                if (jv instanceof Number) return NovaDouble.of(((Number) jv).doubleValue());
+                if (jv instanceof String) try { return NovaDouble.of(Double.parseDouble((String) jv)); } catch (NumberFormatException e) { return null; }
+                break;
+            case "Float": case "java/lang/Float":
+                if (jv instanceof Number) return NovaFloat.of(((Number) jv).floatValue());
+                break;
+            case "String": case "java/lang/String":
+                if (jv instanceof Number || jv instanceof Boolean || jv instanceof Character) {
+                    return NovaString.of(String.valueOf(jv));
+                }
+                if (jv instanceof String) return NovaString.of((String) jv);
+                break;
+            case "Boolean": case "java/lang/Boolean":
+                if (jv instanceof Boolean) return NovaBoolean.of((Boolean) jv);
+                if (jv instanceof String) return NovaBoolean.of(Boolean.parseBoolean((String) jv));
+                break;
+        }
+        return null;
     }
 
     private void executeConstClass(MirFrame frame, MirInst inst) {
@@ -3589,8 +3696,8 @@ final class MirInterpreter {
     }
 
     private NovaValue wrapException(NovaRuntimeException e) {
-        // 返回异常消息字符串（与 HIR 路径行为一致）
-        String msg = e.getMessage();
+        // 返回纯错误消息（不含位置/建议，与 HIR 路径行为一致）
+        String msg = e.getRawMessage();
         return msg != null ? NovaString.of(msg) : NovaNull.NULL;
     }
 

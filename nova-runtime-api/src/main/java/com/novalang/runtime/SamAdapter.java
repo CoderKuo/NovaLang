@@ -132,12 +132,42 @@ public final class SamAdapter {
      * 如果值已是目标类型实例则返回；可 SAM 适配则创建代理；否则抛 ClassCastException。
      */
     public static Object castOrAdapt(Object value, Class<?> targetType) {
-        if (value == null) throw new ClassCastException("Cannot cast null to " + targetType.getName());
+        if (value == null) throw NovaErrors.typeMismatch("null", targetType.getSimpleName(),
+                "使用 as " + targetType.getSimpleName() + "? 进行可空转换");
         if (targetType.isInstance(value)) return value;
+        // 数值类型转换
+        Object converted = tryNumericConvert(value, targetType);
+        if (converted != null) return converted;
         if (isAdaptable(value) && targetType.isInterface() && isFunctionalInterface(targetType)) {
             return adapt(targetType, value);
         }
-        throw new ClassCastException("Cannot cast " + value.getClass().getName() + " to " + targetType.getName());
+        throw NovaErrors.typeMismatch(value.getClass().getSimpleName(), targetType.getSimpleName());
+    }
+
+    /** 数值/字符串类型转换（as Int, as Double, as String 等） */
+    private static Object tryNumericConvert(Object value, Class<?> target) {
+        if (value instanceof Number) {
+            Number n = (Number) value;
+            if (target == Integer.class || target == int.class) return n.intValue();
+            if (target == Long.class || target == long.class) return n.longValue();
+            if (target == Double.class || target == double.class) return n.doubleValue();
+            if (target == Float.class || target == float.class) return n.floatValue();
+            if (target == String.class) return String.valueOf(value);
+        }
+        if (target == String.class && (value instanceof Boolean || value instanceof Character)) {
+            return String.valueOf(value);
+        }
+        if (value instanceof String && target == Boolean.class) return Boolean.parseBoolean((String) value);
+        if (value instanceof String) {
+            String s = (String) value;
+            try {
+                if (target == Integer.class || target == int.class) return Integer.parseInt(s);
+                if (target == Long.class || target == long.class) return Long.parseLong(s);
+                if (target == Double.class || target == double.class) return Double.parseDouble(s);
+                if (target == Float.class || target == float.class) return Float.parseFloat(s);
+            } catch (NumberFormatException e) { return null; }
+        }
+        return null;
     }
 
     /**
@@ -221,10 +251,11 @@ public final class SamAdapter {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException("SAM lambda invoke failed", t);
+                throw NovaErrors.wrap("SAM lambda 调用失败", t);
             }
         }
-        throw new RuntimeException("Cannot invoke lambda with " + args.length + " args: " + lambda.getClass().getName());
+        throw new NovaException(NovaException.ErrorKind.ARGUMENT_MISMATCH,
+                "无法使用 " + args.length + " 个参数调用 lambda: " + lambda.getClass().getSimpleName());
     }
 
     /**

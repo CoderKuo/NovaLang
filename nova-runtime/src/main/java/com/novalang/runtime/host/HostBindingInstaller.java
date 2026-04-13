@@ -2,6 +2,7 @@ package com.novalang.runtime.host;
 
 import com.novalang.runtime.AbstractNovaValue;
 import com.novalang.runtime.Nova;
+import com.novalang.runtime.NovaErrors;
 import com.novalang.runtime.NovaNull;
 import com.novalang.runtime.NovaValue;
 import com.novalang.runtime.interpreter.NovaNativeFunction;
@@ -79,7 +80,7 @@ public final class HostBindingInstaller {
                 Object result = function.getInvoker().invoke(javaArgs);
                 return result == null ? NovaNull.UNIT : AbstractNovaValue.fromJava(result);
             } catch (Exception e) {
-                throw new RuntimeException("Failed to invoke host function '" + function.getName() + "'", e);
+                throw NovaErrors.wrap("调用宿主函数 '" + function.getName() + "' 失败", e);
             }
         });
 

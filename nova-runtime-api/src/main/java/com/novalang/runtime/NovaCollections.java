@@ -54,7 +54,8 @@ public class NovaCollections {
             for (int i = 0; i < s.length(); i++) chars.add(String.valueOf(s.charAt(i)));
             return chars;
         }
-        throw new RuntimeException("Not iterable: " + (value == null ? "null" : value.getClass().getName()));
+        throw NovaErrors.typeMismatch(value == null ? "null" : value.getClass().getSimpleName(), "Iterable",
+                "for-in 需要可迭代类型（List、Set、Map、String、Range）");
     }
 
     /**
@@ -68,7 +69,8 @@ public class NovaCollections {
             return n == 1 ? entry.getKey() : entry.getValue();
         }
         if (value instanceof List) return ((List<?>) value).get(n - 1);
-        throw new RuntimeException("Cannot destructure: " + (value == null ? "null" : value.getClass().getName()));
+        throw NovaErrors.typeMismatch(value == null ? "null" : value.getClass().getSimpleName(), "可解构类型",
+                "解构赋值需要 Pair、Triple、List 或 Map.Entry");
     }
 
     /**
@@ -90,7 +92,8 @@ public class NovaCollections {
         if (target instanceof NovaArray) return ((NovaArray) target).get(index);
         if (target instanceof String) return String.valueOf(((String) target).charAt(index));
         if (target != null && target.getClass().isArray()) return java.lang.reflect.Array.get(target, index);
-        throw new RuntimeException("Cannot index: " + (target == null ? "null" : target.getClass().getName()));
+        throw NovaErrors.typeMismatch(target == null ? "null" : target.getClass().getSimpleName(), "可索引类型",
+                "[] 操作需要 List、Array、String 或 Map 类型");
     }
 
     /**
@@ -144,8 +147,11 @@ public class NovaCollections {
             } catch (RuntimeException ignored) {}
         }
         if (index instanceof Number) return getIndex(target, ((Number) index).intValue());
-        throw new RuntimeException("Cannot index " + (target == null ? "null" : target.getClass().getName())
-                + " with " + (index == null ? "null" : index.getClass().getName()));
+        throw NovaErrors.typeMismatch(
+                (target == null ? "null" : target.getClass().getSimpleName()) + "[" +
+                (index == null ? "null" : index.getClass().getSimpleName()) + "]",
+                "可索引类型",
+                "确保目标是 List/Map/Array/String，索引类型匹配");
     }
 
     /**
@@ -156,7 +162,8 @@ public class NovaCollections {
         if (target instanceof List) { ((List<Object>) target).set(index, value); return; }
         if (target instanceof NovaArray) { ((NovaArray) target).set(index, value instanceof NovaValue ? (NovaValue) value : AbstractNovaValue.fromJava(value)); return; }
         if (target != null && target.getClass().isArray()) { java.lang.reflect.Array.set(target, index, value); return; }
-        throw new RuntimeException("Cannot index: " + (target == null ? "null" : target.getClass().getName()));
+        throw NovaErrors.typeMismatch(target == null ? "null" : target.getClass().getSimpleName(), "可索引赋值类型",
+                "[] 赋值需要 List、Array 类型");
     }
 
     /**
@@ -172,8 +179,11 @@ public class NovaCollections {
             catch (RuntimeException ignored) {}
         }
         if (index instanceof Number) { setIndex(target, ((Number) index).intValue(), value); return; }
-        throw new RuntimeException("Cannot set index on " + (target == null ? "null" : target.getClass().getName())
-                + " with " + (index == null ? "null" : index.getClass().getName()));
+        throw NovaErrors.typeMismatch(
+                (target == null ? "null" : target.getClass().getSimpleName()) + "[" +
+                (index == null ? "null" : index.getClass().getSimpleName()) + "]",
+                "可索引赋值类型",
+                "确保目标是 List/Map/Array，索引类型匹配");
     }
 
     public static int len(Object value) {
@@ -181,6 +191,7 @@ public class NovaCollections {
         if (value instanceof java.util.Collection) return ((java.util.Collection<?>) value).size();
         if (value instanceof java.util.Map) return ((java.util.Map<?, ?>) value).size();
         if (value != null && value.getClass().isArray()) return java.lang.reflect.Array.getLength(value);
-        throw new RuntimeException("len() not supported for " + (value == null ? "null" : value.getClass().getName()));
+        throw NovaErrors.typeMismatch(value == null ? "null" : value.getClass().getSimpleName(), "有长度的类型",
+                "len() 支持 String、Collection、Map 和数组");
     }
 }

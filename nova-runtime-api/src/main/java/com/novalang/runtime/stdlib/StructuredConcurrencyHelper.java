@@ -3,6 +3,9 @@ package com.novalang.runtime.stdlib;
 import java.util.List;
 import java.util.concurrent.*;
 
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaType;
 
 /**
@@ -48,14 +51,14 @@ public final class StructuredConcurrencyHelper {
     public static Object coroutineScopeVararg(Object[] args) {
         if (args.length == 1) return coroutineScope(args[0]);
         if (args.length == 2) return coroutineScopeWithDispatcher(args[0], args[1]);
-        throw new RuntimeException("coroutineScope expects 1 or 2 arguments, got " + args.length);
+        throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "coroutineScope 需要 1 或 2 个参数，但传入了 " + args.length + " 个");
     }
 
     /** vararg 入口：supervisorScope(block) 或 supervisorScope(dispatcher, block) */
     public static Object supervisorScopeVararg(Object[] args) {
         if (args.length == 1) return supervisorScope(args[0]);
         if (args.length == 2) return supervisorScopeWithDispatcher(args[0], args[1]);
-        throw new RuntimeException("supervisorScope expects 1 or 2 arguments, got " + args.length);
+        throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "supervisorScope 需要 1 或 2 个参数，但传入了 " + args.length + " 个");
     }
 
     public static Object coroutineScope(Object block) {
@@ -86,7 +89,7 @@ public final class StructuredConcurrencyHelper {
             com.novalang.runtime.NovaValue result = ctx.callFunction("withContext", novaArgs);
             if (result != null) return result.toJavaValue();
         }
-        if (args.length != 2) throw new RuntimeException("withContext expects 2 arguments (dispatcher, block), got " + args.length);
+        if (args.length != 2) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "withContext 需要 2 个参数 (dispatcher, block)，但传入了 " + args.length + " 个");
         Executor exec = args[0] instanceof Executor ? (Executor) args[0] : ForkJoinPool.commonPool();
         Object block = args[1];
         CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
@@ -95,7 +98,7 @@ public final class StructuredConcurrencyHelper {
             } catch (RuntimeException e) {
                 throw e;
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                throw NovaErrors.wrap(e);
             }
         }, exec);
         try {
@@ -103,10 +106,10 @@ public final class StructuredConcurrencyHelper {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException("withContext failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+            throw NovaErrors.wrap("withContext 执行失败", cause != null ? cause : e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("withContext interrupted");
+            throw new NovaException(ErrorKind.INTERNAL, "withContext 被中断");
         }
     }
 
@@ -136,7 +139,7 @@ public final class StructuredConcurrencyHelper {
         scope.joinAll();
         if (blockError != null) {
             if (blockError instanceof RuntimeException) throw (RuntimeException) blockError;
-            throw new RuntimeException(blockError);
+            throw NovaErrors.wrap(blockError);
         }
         return result;
     }
@@ -158,7 +161,7 @@ public final class StructuredConcurrencyHelper {
 
         /** scope.async { block } */
         public CompileDeferred async(Object block) {
-            if (cancelled) throw new RuntimeException("Scope is cancelled");
+            if (cancelled) throw new NovaException(ErrorKind.INTERNAL, "Scope 已取消");
             CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
                 try {
                     return invoke0(block);
@@ -173,7 +176,7 @@ public final class StructuredConcurrencyHelper {
 
         /** scope.launch { block } */
         public CompileJob launch(Object block) {
-            if (cancelled) throw new RuntimeException("Scope is cancelled");
+            if (cancelled) throw new NovaException(ErrorKind.INTERNAL, "Scope 已取消");
             CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
                 try {
                     invoke0(block);
@@ -209,7 +212,7 @@ public final class StructuredConcurrencyHelper {
             // coroutineScope: 传播首个子任务错误
             if (!supervisor && firstError != null) {
                 if (firstError instanceof RuntimeException) throw (RuntimeException) firstError;
-                throw new RuntimeException("coroutineScope child failed: " + firstError.getMessage());
+                throw NovaErrors.wrap("coroutineScope 子任务失败", firstError);
             }
         }
 
@@ -241,12 +244,12 @@ public final class StructuredConcurrencyHelper {
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-                throw new RuntimeException("Deferred failed: " + cause.getMessage());
+                throw NovaErrors.wrap("Deferred 执行失败", cause);
             } catch (CancellationException e) {
-                throw new RuntimeException("Deferred was cancelled");
+                throw new NovaException(ErrorKind.INTERNAL, "Deferred 已被取消");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException("Deferred interrupted");
+                throw new NovaException(ErrorKind.INTERNAL, "Deferred 被中断");
             }
         }
 
@@ -272,12 +275,12 @@ public final class StructuredConcurrencyHelper {
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-                throw new RuntimeException("Job failed: " + cause.getMessage());
+                throw NovaErrors.wrap("Job 执行失败", cause);
             } catch (CancellationException e) {
                 // Job was cancelled — normal for coroutineScope cancellation
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException("Job interrupted");
+                throw new NovaException(ErrorKind.INTERNAL, "Job 被中断");
             }
         }
 

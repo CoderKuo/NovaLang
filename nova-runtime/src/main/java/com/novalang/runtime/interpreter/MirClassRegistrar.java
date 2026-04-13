@@ -84,9 +84,9 @@ final class MirClassRegistrar {
             NovaValue val = interp.getEnvironment().tryGet(((Identifier) expr).getName());
             return val != null ? val : NovaNull.NULL;
         }
-        throw new NovaRuntimeException("Unsupported expression type in annotation/default argument: "
-                + expr.getClass().getSimpleName()
-                + ". Only literals and identifiers are supported.");
+        throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR,
+                "注解/默认参数中不支持的表达式类型: " + expr.getClass().getSimpleName(),
+                "仅支持字面量和标识符");
     }
 
     /** Java 类解析缓存 */
@@ -158,8 +158,9 @@ final class MirClassRegistrar {
                     javaSuperclass = resolveJavaClassFromInternal(superName);
                     if (javaSuperclass != null
                             && java.lang.reflect.Modifier.isFinal(javaSuperclass.getModifiers())) {
-                        throw new NovaRuntimeException(
-                                "Cannot extend final class: " + javaSuperclass.getName());
+                        throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH,
+                                "无法继承 final 类: " + javaSuperclass.getName(),
+                                "final 类不允许被继承");
                     }
                 }
             }
@@ -170,9 +171,9 @@ final class MirClassRegistrar {
             boolean sameModule = currentModuleClassNames != null
                     && currentModuleClassNames.contains(superName);
             if (!sameModule) {
-                throw new NovaRuntimeException(
-                        "Cannot extend sealed class '" + superclass.getName()
-                        + "' from outside its definition scope");
+                throw new NovaRuntimeException(NovaException.ErrorKind.ACCESS_DENIED,
+                        "无法在定义域外继承 sealed 类 '" + superclass.getName() + "'",
+                        "sealed 类只能在同一模块内被继承");
             }
         }
 
@@ -401,9 +402,9 @@ final class MirClassRegistrar {
         if (novaClass.hasJavaSuperTypes()) {
             List<String> unimplemented = novaClass.getUnimplementedMethods();
             if (!unimplemented.isEmpty()) {
-                throw new NovaRuntimeException(
-                        "Anonymous object must implement abstract methods: "
-                                + String.join(", ", unimplemented));
+                throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH,
+                        "匿名对象必须实现以下抽象方法: " + String.join(", ", unimplemented),
+                        "在 object 表达式中添加这些方法的实现");
             }
         }
 

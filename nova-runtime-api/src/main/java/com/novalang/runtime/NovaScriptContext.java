@@ -23,7 +23,7 @@ public class NovaScriptContext {
 
     private static final ThreadLocal<NovaScriptContext> CURRENT = new ThreadLocal<>();
 
-    private final Map<String, Object> bindings = new ConcurrentHashMap<>();
+    private Map<String, Object> bindings = new ConcurrentHashMap<>();
     private ExtensionRegistry extensionRegistry;
 
     /** 获取当前线程的上下文（用于并发传播） */
@@ -41,7 +41,7 @@ public class NovaScriptContext {
     }
 
     /**
-     * 初始化当前线程的脚本上下文
+     * 初始化当前线程的脚本上下文（拷贝模式）
      */
     public static void init(Map<String, Object> initialBindings) {
         NovaScriptContext ctx = new NovaScriptContext();
@@ -50,6 +50,24 @@ public class NovaScriptContext {
                 ctx.bindings.put(e.getKey(), e.getValue() != null ? e.getValue() : NULL_SENTINEL);
             }
         }
+        CURRENT.set(ctx);
+    }
+
+    /**
+     * 零拷贝初始化：直接使用外部 Map 作为 bindings，Nova 的读写直接操作该 Map。
+     * <p>适用于需要 Nova 脚本直接修改宿主活内存的场景。</p>
+     *
+     * <pre>
+     * // Java 宿主端
+     * Map&lt;String, Object&gt; liveData = getLiveDataMap();
+     * NovaScriptContext.initDirect(liveData);
+     * compiled.runBytecode();
+     * // liveData 已被 Nova 脚本直接修改，无需拷回
+     * </pre>
+     */
+    public static void initDirect(Map<String, Object> liveMap) {
+        NovaScriptContext ctx = new NovaScriptContext();
+        ctx.bindings = liveMap;
         CURRENT.set(ctx);
     }
 
@@ -203,11 +221,12 @@ public class NovaScriptContext {
                     } catch (RuntimeException | Error e) {
                         throw e;
                     } catch (Throwable t) {
-                        throw new RuntimeException(t);
+                        throw NovaErrors.wrap("函数 '" + name + "' 调用失败", t);
                     }
                 }
-                throw new RuntimeException("Function '" + name + "' exists but cannot be called with "
-                        + args.length + " arg(s) (type: " + func.getClass().getName() + ")");
+                throw new NovaException(NovaException.ErrorKind.ARGUMENT_MISMATCH,
+                        "函数 '" + name + "' 存在但无法使用 " + args.length + " 个参数调用",
+                        "类型: " + func.getClass().getSimpleName());
             }
         }
         // stdlib 回退：通过 NovaRuntime 统一入口调用内置函数

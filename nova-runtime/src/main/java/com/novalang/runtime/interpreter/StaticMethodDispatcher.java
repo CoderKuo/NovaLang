@@ -200,7 +200,7 @@ final class StaticMethodDispatcher {
         }
         NovaCallable calleeCallable = dispatcher.extractCallable(callee);
         if (calleeCallable == null) {
-            throw new NovaRuntimeException("Partial application requires a callable, got " + callee.getTypeName());
+            throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "偏应用需要可调用对象, 实际为 " + callee.getTypeName(), null);
         }
         NovaValue result = new NovaPartialApplication(calleeCallable, partialArgs);
         if (inst.getDest() >= 0) frame.locals[inst.getDest()] = result;
@@ -256,7 +256,7 @@ final class StaticMethodDispatcher {
                 }
             }
             if (value == null && name != null && !interp.getEnvironment().contains(name)) {
-                throw new NovaRuntimeException("Undefined variable: " + name);
+                throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "未定义的变量: " + name, null);
             }
             if (inst.getDest() >= 0) {
                 frame.locals[inst.getDest()] = value != null ? value : NovaNull.NULL;
@@ -272,7 +272,7 @@ final class StaticMethodDispatcher {
                         // 不同 BasicBlock 允许重定义（when/if 块级作用域）
                         Integer prevBlock = dispatcher.envVarDefinedInBlock.get(name);
                         if (prevBlock != null && prevBlock == frame.currentBlockId) {
-                            throw new NovaRuntimeException("Variable already defined: " + name);
+                            throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "变量已定义: " + name, null);
                         }
                     }
                     dispatcher.envVarDefinedBy.put(name, inst);
@@ -290,7 +290,7 @@ final class StaticMethodDispatcher {
                     if (prev != null && prev != inst) {
                         Integer prevBlock = dispatcher.envVarDefinedInBlock.get(name);
                         if (prevBlock != null && prevBlock == frame.currentBlockId) {
-                            throw new NovaRuntimeException("Variable already defined: " + name);
+                            throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "变量已定义: " + name, null);
                         }
                     }
                     dispatcher.envVarDefinedBy.put(name, inst);
@@ -321,8 +321,8 @@ final class StaticMethodDispatcher {
             NovaValue resolved = dispatchStatic(new StaticCall(owner, candidates.get(i), args));
             if (resolved != null) return resolved;
         }
-        throw new NovaRuntimeException("Static method not found: "
-                + (owner != null ? owner + "." : "") + methodName);
+        throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "静态方法未找到: "
+                + (owner != null ? owner + "." : "") + methodName, null);
     }
 
     /** $BIND_METHOD — interpreterMode 下实例方法引用 (obj::method) */
@@ -375,7 +375,7 @@ final class StaticMethodDispatcher {
 
     private NovaValue handleBindMethod(String methodName, List<NovaValue> args) {
         if (!"bind".equals(methodName) || args.size() != 2) {
-            throw new NovaRuntimeException("Invalid $BIND_METHOD call");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "无效的 $BIND_METHOD 调用", null);
         }
         NovaValue target = args.get(0);
         String name = args.get(1).asString();
@@ -389,7 +389,7 @@ final class StaticMethodDispatcher {
         }
         NovaValue member = resolver.resolveMemberOnValue(target, name, null);
         if (member instanceof NovaCallable) return member;
-        throw new NovaRuntimeException("Cannot bind method '" + name + "' on " + target.getTypeName());
+        throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "无法在 " + target.getTypeName() + " 上绑定方法 '" + name + "'", null);
     }
 
     /**
@@ -539,7 +539,7 @@ final class StaticMethodDispatcher {
             List<NovaValue> methodArgs = args.size() > 1 ? args.subList(1, args.size()) : Collections.emptyList();
             return virtualDispatcher.invokeVirtualMethod(target, methodName, null, methodArgs);
         }
-        throw new NovaRuntimeException("Undefined function: " + methodName);
+        throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "未定义的函数: " + methodName, null);
     }
 
     // ============ Nova 运行时类分派 ============
@@ -778,7 +778,7 @@ final class StaticMethodDispatcher {
                 if ("valueOf".equals(methodName) && args.size() == 1) {
                     NovaEnumEntry entry = enumType.getEntry(args.get(0).asString());
                     if (entry != null) return entry;
-                    throw new NovaRuntimeException("No enum constant " + args.get(0).asString());
+                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "未找到枚举常量 " + args.get(0).asString(), null);
                 }
             }
         }
@@ -801,8 +801,8 @@ final class StaticMethodDispatcher {
             }
         } catch (Throwable e) {
             // 方法执行时的真实异常，包装后重抛
-            throw new NovaRuntimeException(
-                    owner + "." + methodName + " invocation failed: " + e.getMessage(), e);
+            throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                    owner + "." + methodName + " 调用失败: " + e.getMessage(), null, e);
         }
         return null;
     }
@@ -819,7 +819,7 @@ final class StaticMethodDispatcher {
             // 非 data class：查找用户自定义 componentN 方法
             NovaCallable method = obj.getMethod("component" + n);
             if (method != null) return method.call(interp, Collections.singletonList(obj));
-            throw new NovaRuntimeException("Cannot destructure: " + obj.getNovaClass().getName());
+            throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "无法解构: " + obj.getNovaClass().getName(), null);
         }
         return target.componentN(n);
     }

@@ -1,5 +1,7 @@
 package com.novalang.runtime.interpreter.stdlib;
 
+import com.novalang.runtime.NovaErrors;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -59,7 +61,7 @@ public final class StdlibCryptoCompiled {
 
     private static class SnowflakeIdGen {
         static final SnowflakeIdGen INSTANCE = new SnowflakeIdGen(1, 1);
-        private static final long EPOCH = 1700000000000L; // 2023-11-14
+        private static final long EPOCH = 1077206400000L;
         private static final long WORKER_BITS = 5, DC_BITS = 5, SEQ_BITS = 12;
         private static final long MAX_SEQ = (1L << SEQ_BITS) - 1;
         private final long workerId, datacenterId;
@@ -96,7 +98,7 @@ public final class StdlibCryptoCompiled {
             }
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Hash algorithm not available: " + algorithm, e);
+            throw NovaErrors.wrap("哈希算法不可用: " + algorithm, e);
         }
     }
 

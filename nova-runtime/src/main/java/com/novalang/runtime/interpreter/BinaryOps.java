@@ -1,6 +1,7 @@
 package com.novalang.runtime.interpreter;
 
 import com.novalang.runtime.*;
+import com.novalang.runtime.NovaException.ErrorKind;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -153,11 +154,11 @@ public final class BinaryOps {
     public static NovaValue div(NovaValue left, NovaValue right, Interpreter interp) {
         if (left instanceof NovaInt && right instanceof NovaInt) {
             int rv = ((NovaInt) right).getValue();
-            if (rv == 0) throw new NovaRuntimeException("Division by zero");
+            if (rv == 0) throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "除数不能为零", null);
             return NovaInt.of(((NovaInt) left).getValue() / rv);
         }
         if (left.isNumber() && right.isNumber()) {
-            if (right.asDouble() == 0) throw new NovaRuntimeException("Division by zero");
+            if (right.asDouble() == 0) throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "除数不能为零", null);
             return numericPromote(left, right, (a, b) -> a / b, (a, b) -> a / b, (a, b) -> a / b, true);
         }
         NovaValue result = tryOperatorOverload(left, "div", interp, right);
@@ -168,11 +169,11 @@ public final class BinaryOps {
     public static NovaValue mod(NovaValue left, NovaValue right, Interpreter interp) {
         if (left instanceof NovaInt && right instanceof NovaInt) {
             int rv = ((NovaInt) right).getValue();
-            if (rv == 0) throw new NovaRuntimeException("Modulo by zero");
+            if (rv == 0) throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "取模运算除数不能为零", null);
             return NovaInt.of(((NovaInt) left).getValue() % rv);
         }
         if (left.isNumber() && right.isNumber()) {
-            if (right.asDouble() == 0) throw new NovaRuntimeException("Modulo by zero");
+            if (right.asDouble() == 0) throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "取模运算除数不能为零", null);
             return numericPromote(left, right, (a, b) -> a % b, (a, b) -> a % b, (a, b) -> a % b, false);
         }
         NovaValue result = tryOperatorOverload(left, "rem", interp, right);
@@ -225,7 +226,7 @@ public final class BinaryOps {
         if (left instanceof NovaLong || right instanceof NovaLong) {
             return NovaLong.of(left.asLong() & right.asLong());
         }
-        throw new NovaRuntimeException("Cannot bitwise AND " + left.getTypeName() + " and " + right.getTypeName());
+        throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "无法对 " + left.getTypeName() + " 和 " + right.getTypeName() + " 进行按位与运算", null);
     }
 
     public static NovaValue bitwiseOr(NovaValue left, NovaValue right) {
@@ -235,7 +236,7 @@ public final class BinaryOps {
         if (left instanceof NovaLong || right instanceof NovaLong) {
             return NovaLong.of(left.asLong() | right.asLong());
         }
-        throw new NovaRuntimeException("Cannot bitwise OR " + left.getTypeName() + " and " + right.getTypeName());
+        throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "无法对 " + left.getTypeName() + " 和 " + right.getTypeName() + " 进行按位或运算", null);
     }
 
     public static NovaValue bitwiseXor(NovaValue left, NovaValue right) {
@@ -245,7 +246,7 @@ public final class BinaryOps {
         if (left instanceof NovaLong || right instanceof NovaLong) {
             return NovaLong.of(left.asLong() ^ right.asLong());
         }
-        throw new NovaRuntimeException("Cannot bitwise XOR " + left.getTypeName() + " and " + right.getTypeName());
+        throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "无法对 " + left.getTypeName() + " 和 " + right.getTypeName() + " 进行按位异或运算", null);
     }
 
     public static NovaValue shiftLeft(NovaValue left, NovaValue right) {
@@ -255,7 +256,7 @@ public final class BinaryOps {
         if (left instanceof NovaLong) {
             return NovaLong.of(left.asLong() << right.asInt());
         }
-        throw new NovaRuntimeException("Cannot shift left " + left.getTypeName());
+        throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "无法对 " + left.getTypeName() + " 进行左移运算", null);
     }
 
     public static NovaValue shiftRight(NovaValue left, NovaValue right) {
@@ -265,7 +266,7 @@ public final class BinaryOps {
         if (left instanceof NovaLong) {
             return NovaLong.of(left.asLong() >> right.asInt());
         }
-        throw new NovaRuntimeException("Cannot shift right " + left.getTypeName());
+        throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "无法对 " + left.getTypeName() + " 进行右移运算", null);
     }
 
     public static NovaValue unsignedShiftRight(NovaValue left, NovaValue right) {
@@ -275,7 +276,7 @@ public final class BinaryOps {
         if (left instanceof NovaLong) {
             return NovaLong.of(left.asLong() >>> right.asInt());
         }
-        throw new NovaRuntimeException("Cannot unsigned shift right " + left.getTypeName());
+        throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "无法对 " + left.getTypeName() + " 进行无符号右移运算", null);
     }
 
     public static NovaValue bitwiseNot(NovaValue operand) {
@@ -285,6 +286,6 @@ public final class BinaryOps {
         if (operand instanceof NovaLong) {
             return NovaLong.of(~((NovaLong) operand).getValue());
         }
-        throw new NovaRuntimeException("Cannot bitwise NOT " + operand.getTypeName());
+        throw new NovaRuntimeException(ErrorKind.TYPE_MISMATCH, "无法对 " + operand.getTypeName() + " 进行按位取反运算", null);
     }
 }

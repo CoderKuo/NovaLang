@@ -1,5 +1,6 @@
 package com.novalang.runtime.interpreter.stdlib;
 
+import com.novalang.runtime.NovaException;
 import com.novalang.runtime.interpreter.NovaRuntimeException;
 import com.novalang.runtime.stdlib.spi.SerializationProviders;
 
@@ -121,7 +122,7 @@ public final class StdlibJsonCompiled {
 
         private Object parseValue() {
             skipWhitespace();
-            if (pos >= input.length()) throw new NovaRuntimeException("Unexpected end of JSON");
+            if (pos >= input.length()) throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 意外结束", null);
             char c = input.charAt(pos);
             switch (c) {
                 case '"': return parseString();
@@ -131,7 +132,7 @@ public final class StdlibJsonCompiled {
                 case 'n': parseNull(); return null;
                 default:
                     if (c == '-' || (c >= '0' && c <= '9')) return parseNumber();
-                    throw new NovaRuntimeException("Unexpected char in JSON at position " + pos + ": " + c);
+                    throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 位置 " + pos + " 处遇到意外字符: " + c, null);
             }
         }
 
@@ -142,7 +143,7 @@ public final class StdlibJsonCompiled {
                 char c = input.charAt(pos++);
                 if (c == '"') return sb.toString();
                 if (c == '\\') {
-                    if (pos >= input.length()) throw new NovaRuntimeException("Unterminated string escape");
+                    if (pos >= input.length()) throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 字符串转义未终止", null);
                     char esc = input.charAt(pos++);
                     switch (esc) {
                         case '"': sb.append('"'); break;
@@ -154,17 +155,17 @@ public final class StdlibJsonCompiled {
                         case 'r': sb.append('\r'); break;
                         case 't': sb.append('\t'); break;
                         case 'u':
-                            if (pos + 4 > input.length()) throw new NovaRuntimeException("Invalid unicode escape");
+                            if (pos + 4 > input.length()) throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON unicode 转义无效", null);
                             sb.append((char) Integer.parseInt(input.substring(pos, pos + 4), 16));
                             pos += 4;
                             break;
-                        default: throw new NovaRuntimeException("Invalid escape: \\" + esc);
+                        default: throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 无效转义: \\" + esc, null);
                     }
                 } else {
                     sb.append(c);
                 }
             }
-            throw new NovaRuntimeException("Unterminated string");
+            throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 字符串未终止", null);
         }
 
         private Map<String, Object> parseObject() {
@@ -180,10 +181,10 @@ public final class StdlibJsonCompiled {
                 Object value = parseValue();
                 map.put(key, value);
                 skipWhitespace();
-                if (pos >= input.length()) throw new NovaRuntimeException("Unterminated object");
+                if (pos >= input.length()) throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 对象未终止", null);
                 char c = input.charAt(pos++);
                 if (c == '}') return map;
-                if (c != ',') throw new NovaRuntimeException("Expected ',' or '}' at position " + (pos - 1));
+                if (c != ',') throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 位置 " + (pos - 1) + " 处期望 ',' 或 '}'", null);
             }
         }
 
@@ -195,10 +196,10 @@ public final class StdlibJsonCompiled {
             while (true) {
                 list.add(parseValue());
                 skipWhitespace();
-                if (pos >= input.length()) throw new NovaRuntimeException("Unterminated array");
+                if (pos >= input.length()) throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 数组未终止", null);
                 char c = input.charAt(pos++);
                 if (c == ']') return list;
-                if (c != ',') throw new NovaRuntimeException("Expected ',' or ']' at position " + (pos - 1));
+                if (c != ',') throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 位置 " + (pos - 1) + " 处期望 ',' 或 ']'", null);
             }
         }
 
@@ -226,17 +227,17 @@ public final class StdlibJsonCompiled {
         private Boolean parseBoolean() {
             if (input.startsWith("true", pos)) { pos += 4; return Boolean.TRUE; }
             if (input.startsWith("false", pos)) { pos += 5; return Boolean.FALSE; }
-            throw new NovaRuntimeException("Expected boolean at position " + pos);
+            throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 位置 " + pos + " 处期望布尔值", null);
         }
 
         private void parseNull() {
             if (input.startsWith("null", pos)) { pos += 4; return; }
-            throw new NovaRuntimeException("Expected null at position " + pos);
+            throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 位置 " + pos + " 处期望 null", null);
         }
 
         private void expect(char c) {
             if (pos >= input.length() || input.charAt(pos) != c)
-                throw new NovaRuntimeException("Expected '" + c + "' at position " + pos);
+                throw new NovaRuntimeException(NovaException.ErrorKind.PARSE_ERROR, "JSON 位置 " + pos + " 处期望 '" + c + "'", null);
             pos++;
         }
 

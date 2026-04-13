@@ -1,6 +1,7 @@
 package com.novalang.runtime.interpreter;
 
 import com.novalang.runtime.AbstractNovaValue;
+import com.novalang.runtime.NovaException;
 import com.novalang.runtime.NovaNull;
 import com.novalang.runtime.NovaValue;
 
@@ -88,7 +89,7 @@ public final class NovaScope extends AbstractNovaValue {
             if (firstError instanceof NovaRuntimeException) {
                 throw (NovaRuntimeException) firstError;
             }
-            throw new NovaRuntimeException("coroutineScope child failed: " + firstError.getMessage());
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "coroutineScope 子任务失败: " + firstError.getMessage(), null);
         }
     }
 
@@ -119,7 +120,7 @@ public final class NovaScope extends AbstractNovaValue {
 
     private void checkActive() {
         if (cancelled) {
-            throw new NovaRuntimeException("Scope is cancelled");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "作用域已取消", null);
         }
     }
 

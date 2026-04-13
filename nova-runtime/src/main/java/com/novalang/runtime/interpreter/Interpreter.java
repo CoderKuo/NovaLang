@@ -210,7 +210,7 @@ public class Interpreter implements ExecutionContext {
                 if (javaVal instanceof Class) return NovaClassInfo.fromJavaClass((Class<?>) javaVal);
                 return NovaClassInfo.fromJavaClass(javaVal.getClass());
             }
-            throw new NovaRuntimeException("classOf() requires a class or object");
+            throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "classOf() 需要类或对象参数", null);
         }), false);
 
         // Helper 委托对象（放在构造函数末尾，避免 this-escape 警告）
@@ -878,13 +878,13 @@ public class Interpreter implements ExecutionContext {
     @Override
     public NovaValue executeHirFunction(NovaValue function, List<NovaValue> args,
                                          Map<String, NovaValue> namedArgs) {
-        throw new NovaRuntimeException("HIR function execution not supported in MIR path");
+        throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "MIR 路径不支持 HIR 函数执行", null);
     }
 
     /** ExecutionContext 接口方法：执行 HIR Lambda（MIR 路径不使用） */
     @Override
     public NovaValue executeHirLambda(NovaValue lambda, List<NovaValue> args) {
-        throw new NovaRuntimeException("HIR lambda execution not supported in MIR path");
+        throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "MIR 路径不支持 HIR Lambda 执行", null);
     }
 
 

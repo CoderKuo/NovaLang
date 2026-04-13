@@ -77,42 +77,42 @@ public final class StdlibTest {
         // 断言函数
         env.defineVal("assertEqual", NovaNativeFunction.create("assertEqual", (expected, actual) -> {
             if (!expected.equals(actual)) {
-                throw new NovaRuntimeException("assertEqual failed: expected " + expected.asString() + " but got " + actual.asString());
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 期望 " + expected.asString() + " 但实际为 " + actual.asString(), null);
             }
             return NovaNull.UNIT;
         }));
 
         env.defineVal("assertNotEqual", NovaNativeFunction.create("assertNotEqual", (a, b) -> {
             if (a.equals(b)) {
-                throw new NovaRuntimeException("assertNotEqual failed: both values are " + a.asString());
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 两个值相同均为 " + a.asString(), null);
             }
             return NovaNull.UNIT;
         }));
 
         env.defineVal("assertTrue", NovaNativeFunction.create("assertTrue", (value) -> {
             if (!value.isTruthy()) {
-                throw new NovaRuntimeException("assertTrue failed: value is " + value.asString());
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 " + value.asString() + " 而非真值", null);
             }
             return NovaNull.UNIT;
         }));
 
         env.defineVal("assertFalse", NovaNativeFunction.create("assertFalse", (value) -> {
             if (value.isTruthy()) {
-                throw new NovaRuntimeException("assertFalse failed: value is " + value.asString());
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 " + value.asString() + " 而非假值", null);
             }
             return NovaNull.UNIT;
         }));
 
         env.defineVal("assertNull", NovaNativeFunction.create("assertNull", (value) -> {
             if (!value.isNull()) {
-                throw new NovaRuntimeException("assertNull failed: value is " + value.asString());
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 " + value.asString() + " 而非 null", null);
             }
             return NovaNull.UNIT;
         }));
 
         env.defineVal("assertNotNull", NovaNativeFunction.create("assertNotNull", (value) -> {
             if (value.isNull()) {
-                throw new NovaRuntimeException("assertNotNull failed: value is null");
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 null", null);
             }
             return NovaNull.UNIT;
         }));
@@ -121,10 +121,10 @@ public final class StdlibTest {
             NovaCallable block = interpreter.asCallable(args.get(0), "Test method");
             try {
                 block.call(interpreter, Collections.emptyList());
-                throw new NovaRuntimeException("assertThrows failed: no exception was thrown");
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 未抛出异常", null);
             } catch (NovaRuntimeException e) {
                 // 检查不是我们自己抛的 assertThrows 错误
-                if (e.getMessage().startsWith("assertThrows failed:")) throw e;
+                if (e.getRawMessage().contains("断言失败") || e.getRawMessage().startsWith("assertThrows failed:")) throw e;
                 return NovaString.of(e.getMessage());
             }
         }));
@@ -132,14 +132,14 @@ public final class StdlibTest {
         env.defineVal("assertContains", NovaNativeFunction.create("assertContains", (collection, element) -> {
             if (collection instanceof NovaList) {
                 if (!((NovaList) collection).contains(element)) {
-                    throw new NovaRuntimeException("assertContains failed: list does not contain " + element.asString());
+                    throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 列表不包含 " + element.asString(), null);
                 }
             } else if (collection instanceof NovaString) {
                 if (!collection.asString().contains(element.asString())) {
-                    throw new NovaRuntimeException("assertContains failed: string does not contain '" + element.asString() + "'");
+                    throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 字符串不包含 '" + element.asString() + "'", null);
                 }
             } else {
-                throw new NovaRuntimeException("assertContains: unsupported type " + collection.getTypeName());
+                throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "断言失败: 不支持的集合类型 " + collection.getTypeName(), null);
             }
             return NovaNull.UNIT;
         }));
@@ -148,9 +148,9 @@ public final class StdlibTest {
             NovaCallable block = interpreter.asCallable(args.get(0), "Test method");
             try {
                 block.call(interpreter, Collections.emptyList());
-                throw new NovaRuntimeException("assertFails failed: block did not throw");
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 代码块未抛出异常", null);
             } catch (NovaRuntimeException e) {
-                if (e.getMessage().startsWith("assertFails failed:")) throw e;
+                if (e.getRawMessage().contains("断言失败") || e.getRawMessage().startsWith("assertFails failed:")) throw e;
                 return NovaNull.UNIT;
             }
         }));

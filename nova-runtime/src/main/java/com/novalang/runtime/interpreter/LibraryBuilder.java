@@ -44,49 +44,49 @@ public final class LibraryBuilder {
 
     public LibraryBuilder defineFunction(String name, Function1<Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 1, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0))))));
+                wrapReturn(func.invoke(safeArg(args, 0)))));
         return this;
     }
 
     public LibraryBuilder defineFunction(String name, Function2<Object, Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 2, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1))))));
+                wrapReturn(func.invoke(safeArg(args, 0), safeArg(args, 1)))));
         return this;
     }
 
     public LibraryBuilder defineFunction(String name, Function3<Object, Object, Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 3, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2))))));
+                wrapReturn(func.invoke(safeArg(args, 0), safeArg(args, 1), safeArg(args, 2)))));
         return this;
     }
 
     public LibraryBuilder defineFunction(String name, Function4<Object, Object, Object, Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 4, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3))))));
+                wrapReturn(func.invoke(safeArg(args, 0), safeArg(args, 1), safeArg(args, 2), safeArg(args, 3)))));
         return this;
     }
 
     public LibraryBuilder defineFunction(String name, Function5<Object, Object, Object, Object, Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 5, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4))))));
+                wrapReturn(func.invoke(safeArg(args, 0), safeArg(args, 1), safeArg(args, 2), safeArg(args, 3), safeArg(args, 4)))));
         return this;
     }
 
     public LibraryBuilder defineFunction(String name, Function6<Object, Object, Object, Object, Object, Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 6, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5))))));
+                wrapReturn(func.invoke(safeArg(args, 0), safeArg(args, 1), safeArg(args, 2), safeArg(args, 3), safeArg(args, 4), safeArg(args, 5)))));
         return this;
     }
 
     public LibraryBuilder defineFunction(String name, Function7<Object, Object, Object, Object, Object, Object, Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 7, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6))))));
+                wrapReturn(func.invoke(safeArg(args, 0), safeArg(args, 1), safeArg(args, 2), safeArg(args, 3), safeArg(args, 4), safeArg(args, 5), safeArg(args, 6)))));
         return this;
     }
 
     public LibraryBuilder defineFunction(String name, Function8<Object, Object, Object, Object, Object, Object, Object, Object, Object> func) {
         library.putMember(name, new NovaNativeFunction(name, 8, (ctx, args) ->
-                wrapReturn(func.invoke(unwrap(args.get(0)), unwrap(args.get(1)), unwrap(args.get(2)), unwrap(args.get(3)), unwrap(args.get(4)), unwrap(args.get(5)), unwrap(args.get(6)), unwrap(args.get(7))))));
+                wrapReturn(func.invoke(safeArg(args, 0), safeArg(args, 1), safeArg(args, 2), safeArg(args, 3), safeArg(args, 4), safeArg(args, 5), safeArg(args, 6), safeArg(args, 7)))));
         return this;
     }
 
@@ -103,6 +103,11 @@ public final class LibraryBuilder {
 
     private static Object unwrap(NovaValue v) {
         return v == null || v.isNull() ? null : v.toJavaValue();
+    }
+
+    /** 安全取参数，越界返回 null（防御性处理） */
+    private static Object safeArg(java.util.List<NovaValue> args, int index) {
+        return index < args.size() ? unwrap(args.get(index)) : null;
     }
 
     private static NovaValue wrapReturn(Object result) {

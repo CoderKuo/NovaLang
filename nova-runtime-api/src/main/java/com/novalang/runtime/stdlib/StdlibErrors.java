@@ -1,5 +1,7 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaFunction;
 import com.novalang.runtime.NovaResult;
 
@@ -42,13 +44,15 @@ public final class StdlibErrors {
 
     @NovaFunction(signature = "todo(message)", description = "标记未实现，抛出异常", returnType = "Nothing")
     public static Object todo(Object message) {
-        throw new RuntimeException("TODO: " + message);
+        throw new NovaException(ErrorKind.INTERNAL,
+                "未实现: " + message,
+                "此处代码尚未完成，请实现后再调用");
     }
 
     @NovaFunction(signature = "assert(condition, message)", description = "断言条件为真，否则抛出异常", returnType = "Unit")
     public static Object assertCondition(Object condition, Object message) {
         if (!isTruthy(condition)) {
-            throw new RuntimeException("Assertion failed: " + message);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "断言失败: " + message);
         }
         return null;
     }
@@ -56,7 +60,7 @@ public final class StdlibErrors {
     @NovaFunction(signature = "require(condition, message)", description = "检查前置条件，否则抛出异常", returnType = "Unit")
     public static Object require(Object condition, Object message) {
         if (!isTruthy(condition)) {
-            throw new RuntimeException("Requirement failed: " + message);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "前置条件失败: " + message);
         }
         return null;
     }

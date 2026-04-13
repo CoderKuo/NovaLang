@@ -1,5 +1,8 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
+
 /**
  * Character 类型扩展方法。
  */
@@ -43,7 +46,7 @@ public final class CharExtensions {
     public static Object digitToInt(Object ch) {
         char c = (Character) ch;
         if (c >= '0' && c <= '9') return c - '0';
-        throw new RuntimeException("'" + c + "' is not a digit");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH, "'" + c + "' 不是数字字符", "确保字符在 '0'..'9' 范围内");
     }
 
     public static Object isLetterOrDigit(Object ch) {

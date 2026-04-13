@@ -170,20 +170,30 @@ public final class NovaCollections {
         return mapOf(args);
     }
 
+    private static final java.util.List<?> EMPTY_LIST = java.util.Collections.unmodifiableList(new ArrayList<>());
+    private static final java.util.Map<?, ?> EMPTY_MAP = java.util.Collections.unmodifiableMap(new LinkedHashMap<>());
+    private static final java.util.Set<?> EMPTY_SET = java.util.Collections.unmodifiableSet(new LinkedHashSet<>());
+
     public static Object emptyList() {
-        return new ArrayList<>();
+        return EMPTY_LIST;
     }
 
     public static Object emptyMap() {
-        return new LinkedHashMap<>();
+        return EMPTY_MAP;
     }
 
     public static Object emptySet() {
-        return new LinkedHashSet<>();
+        return EMPTY_SET;
     }
 
     public static Object pairOf(Object first, Object second) {
-        return new Object[]{first, second};
+        com.novalang.runtime.NovaValue f = first instanceof com.novalang.runtime.NovaValue
+                ? (com.novalang.runtime.NovaValue) first
+                : com.novalang.runtime.AbstractNovaValue.fromJava(first);
+        com.novalang.runtime.NovaValue s = second instanceof com.novalang.runtime.NovaValue
+                ? (com.novalang.runtime.NovaValue) second
+                : com.novalang.runtime.AbstractNovaValue.fromJava(second);
+        return new com.novalang.runtime.NovaPair(f, s);
     }
 
     public static Object tripleOf(Object first, Object second, Object third) {

@@ -81,7 +81,12 @@ public final class NovaDynamic {
 
     public static Object getMember(Object target, String memberName) {
         if (target == null) {
-            throw new NullPointerException("Cannot access member '" + memberName + "' on null");
+            throw NovaErrors.nullRef(memberName);
+        }
+
+        // 动态属性对象优先
+        if (target instanceof NovaDynamicObject) {
+            return ((NovaDynamicObject) target).getMember(memberName);
         }
 
         // Java 数组 .length（JVM 内置属性，反射不可见）
@@ -143,7 +148,12 @@ public final class NovaDynamic {
 
     public static void setMember(Object target, String memberName, Object value) {
         if (target == null) {
-            throw new NullPointerException("Cannot set member '" + memberName + "' on null");
+            throw NovaErrors.nullSet(memberName);
+        }
+        // 动态属性对象优先
+        if (target instanceof NovaDynamicObject) {
+            ((NovaDynamicObject) target).setMember(memberName, value);
+            return;
         }
         Class<?> clazz = target.getClass();
         ConcurrentHashMap<String, MethodHandle> cache =
@@ -171,61 +181,29 @@ public final class NovaDynamic {
     }
 
     public static Object invokeMethod(Object target, String methodName, Object... args) {
-        switch (args.length) {
-            case 0:
-                return invoke0(target, methodName);
-            case 1:
-                return invoke1(target, methodName, args[0]);
-            case 2:
-                return invoke2(target, methodName, args[0], args[1]);
-            case 3:
-                return invoke3(target, methodName, args[0], args[1], args[2]);
-            case 4:
-                return invoke4(target, methodName, args[0], args[1], args[2], args[3]);
-            case 5:
-                return invoke5(target, methodName, args[0], args[1], args[2], args[3], args[4]);
-            case 6:
-                return invoke6(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5]);
-            case 7:
-                return invoke7(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
-            case 8:
-                return invoke8(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
-            default:
-                return invokeVarArgs(target, methodName, args);
-        }
+        int len = args.length;
+        if (len == 0) return invoke0(target, methodName);
+        if (len == 1) return invoke1(target, methodName, args[0]);
+        if (len == 2) return invoke2(target, methodName, args[0], args[1]);
+        if (len == 3) return invoke3(target, methodName, args[0], args[1], args[2]);
+        if (len == 4) return invoke4(target, methodName, args[0], args[1], args[2], args[3]);
+        if (len == 5) return invoke5(target, methodName, args[0], args[1], args[2], args[3], args[4]);
+        if (len == 6) return invoke6(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5]);
+        if (len == 7) return invoke7(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+        if (len == 8) return invoke8(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
+        return invokeVarArgs(target, methodName, args);
     }
 
     public static Object invokeArray(Object target, String methodName, Object[] args) {
         if (args == null) {
             return invoke0(target, methodName);
         }
-        switch (args.length) {
-            case 0:
-                return invoke0(target, methodName);
-            case 1:
-                return invoke1(target, methodName, args[0]);
-            case 2:
-                return invoke2(target, methodName, args[0], args[1]);
-            case 3:
-                return invoke3(target, methodName, args[0], args[1], args[2]);
-            case 4:
-                return invoke4(target, methodName, args[0], args[1], args[2], args[3]);
-            case 5:
-                return invoke5(target, methodName, args[0], args[1], args[2], args[3], args[4]);
-            case 6:
-                return invoke6(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5]);
-            case 7:
-                return invoke7(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
-            case 8:
-                return invoke8(target, methodName, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
-            default:
-                return invokeVarArgs(target, methodName, args);
-        }
+        return invokeMethod(target, methodName, args);
     }
 
     public static Object invoke0(Object target, String methodName) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -295,7 +273,7 @@ public final class NovaDynamic {
 
     public static Object invoke1(Object target, String methodName, Object a0) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -370,7 +348,7 @@ public final class NovaDynamic {
 
     public static Object invoke2(Object target, String methodName, Object a0, Object a1) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -445,7 +423,7 @@ public final class NovaDynamic {
 
     public static Object invoke3(Object target, String methodName, Object a0, Object a1, Object a2) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -520,7 +498,7 @@ public final class NovaDynamic {
 
     public static Object invoke4(Object target, String methodName, Object a0, Object a1, Object a2, Object a3) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -595,7 +573,7 @@ public final class NovaDynamic {
 
     public static Object invoke5(Object target, String methodName, Object a0, Object a1, Object a2, Object a3, Object a4) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -670,7 +648,7 @@ public final class NovaDynamic {
 
     public static Object invoke6(Object target, String methodName, Object a0, Object a1, Object a2, Object a3, Object a4, Object a5) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -745,7 +723,7 @@ public final class NovaDynamic {
 
     public static Object invoke7(Object target, String methodName, Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -820,7 +798,7 @@ public final class NovaDynamic {
 
     public static Object invoke8(Object target, String methodName, Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -895,7 +873,7 @@ public final class NovaDynamic {
 
     private static Object invokeVarArgs(Object target, String methodName, Object[] args) {
         if (target == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         if (target instanceof Class<?>) {
@@ -1050,7 +1028,7 @@ public final class NovaDynamic {
                 } catch (RuntimeException e) {
                     throw e;
                 } catch (Exception e) {
-                    throw new RuntimeException(e);
+                    throw NovaErrors.wrap(e);
                 }
             }
         }
@@ -1073,7 +1051,7 @@ public final class NovaDynamic {
             if (ext2 != null) {
                 try { return ext2.invoke(target, args); }
                 catch (RuntimeException e) { throw e; }
-                catch (Exception e) { throw new RuntimeException(e); }
+                catch (Exception e) { throw NovaErrors.wrap(e); }
             }
         }
 
@@ -1095,32 +1073,31 @@ public final class NovaDynamic {
         throw noSuchMethod(clazz, methodName, args.length, args);
     }
 
-    private static RuntimeException noSuchMethod(Class<?> clazz, String methodName, int argCount) {
+    private static NovaException noSuchMethod(Class<?> clazz, String methodName, int argCount) {
         return noSuchMethod(clazz, methodName, argCount, null);
     }
 
-    private static RuntimeException noSuchMethod(Class<?> clazz, String methodName, int argCount, Object[] args) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("No method '").append(methodName).append("' found on ")
-          .append(clazz.getSimpleName()).append(" with ").append(argCount).append(" argument(s)");
+    private static NovaException noSuchMethod(Class<?> clazz, String methodName, int argCount, Object[] args) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("'").append(clazz.getSimpleName()).append("' 上找不到方法 '")
+           .append(methodName).append("'（").append(argCount).append(" 个参数）");
 
         // 输出实际参数类型以便调试
         if (args != null && args.length > 0) {
-            sb.append(". Actual arg types: [");
+            msg.append("\n  传入参数类型: [");
             for (int i = 0; i < args.length; i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(args[i] != null ? args[i].getClass().getName() : "null");
+                if (i > 0) msg.append(", ");
+                msg.append(args[i] != null ? args[i].getClass().getSimpleName() : "null");
             }
-            sb.append("]");
+            msg.append("]");
         }
 
-        // 同名方法存在但参数数量不同时，提示可用的参数数量和签名
+        String suggestion = null;
+        // 同名方法存在但参数数量不同时，提示可用签名
         List<Method> candidates = getMethodIndex(clazz).get(methodName);
         if (candidates != null && !candidates.isEmpty()) {
-            java.util.TreeSet<Integer> arities = new java.util.TreeSet<Integer>();
             java.util.List<String> signatures = new java.util.ArrayList<>();
             for (Method m : candidates) {
-                arities.add(m.getParameterCount());
                 StringBuilder sig = new StringBuilder(methodName).append("(");
                 Class<?>[] params = m.getParameterTypes();
                 for (int i = 0; i < params.length; i++) {
@@ -1130,17 +1107,16 @@ public final class NovaDynamic {
                 sig.append(")");
                 signatures.add(sig.toString());
             }
-            sb.append(". '").append(methodName).append("' exists with ");
-            java.util.Iterator<Integer> it = arities.iterator();
-            sb.append(it.next());
-            while (it.hasNext()) {
-                sb.append(" or ").append(it.next());
+            suggestion = "可用签名: " + String.join(", ", signatures);
+        } else {
+            // 模糊匹配方法名
+            String closest = NovaErrors.findClosest(methodName, getMethodIndex(clazz).keySet());
+            if (closest != null) {
+                suggestion = "你是否指的是 '" + closest + "'？";
             }
-            sb.append(" argument(s)");
-            sb.append(". Signatures: ").append(signatures);
         }
 
-        return new RuntimeException(sb.toString());
+        return new NovaException(NovaException.ErrorKind.UNDEFINED, msg.toString(), suggestion);
     }
 
     private static Object invokeStatic0(MethodHandle handle, String methodName) {
@@ -1149,7 +1125,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1159,7 +1135,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1169,7 +1145,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1179,7 +1155,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1189,7 +1165,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1199,7 +1175,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1209,7 +1185,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1219,7 +1195,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1229,7 +1205,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1239,7 +1215,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke static " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "static", e);
         }
     }
 
@@ -1249,7 +1225,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1259,7 +1235,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1269,7 +1245,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1279,7 +1255,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1289,7 +1265,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1299,7 +1275,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1309,7 +1285,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1319,7 +1295,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1329,7 +1305,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1339,7 +1315,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName, e);
+            throw NovaErrors.javaInvokeFailed(methodName, "instance", e);
         }
     }
 
@@ -1349,7 +1325,7 @@ public final class NovaDynamic {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable t) {
-            throw new RuntimeException("Failed to set member '" + memberName + "': " + t.getMessage(), t);
+            throw NovaErrors.wrap("设置 '" + memberName + "' 失败", t);
         }
     }
 
@@ -1516,6 +1492,145 @@ public final class NovaDynamic {
         return handle;
     }
 
+    /**
+     * 对数组参数位插入 List/Collection → Array 自动转换过滤器。
+     * 当 Java 方法参数是 int[]/String[]/Object[] 等数组类型，
+     * 而 Nova 传入 List/NovaList 时，自动完成转换。
+     */
+    private static MethodHandle wrapArrayFilters(MethodHandle handle, Method method) {
+        Class<?>[] paramTypes = method.getParameterTypes();
+        boolean isStatic = java.lang.reflect.Modifier.isStatic(method.getModifiers());
+        int offset = isStatic ? 0 : 1;
+        // varargs 方法的最后一个参数由 asVarargsCollector 处理，不插入 array filter
+        int limit = method.isVarArgs() ? paramTypes.length - 1 : paramTypes.length;
+        for (int i = 0; i < limit; i++) {
+            Class<?> pt = paramTypes[i];
+            if (pt.isArray()) {
+                MethodHandle filter = MethodHandles.insertArguments(ARRAY_ADAPT_SINGLE, 0, pt);
+                filter = filter.asType(MethodType.methodType(pt, Object.class));
+                handle = MethodHandles.filterArguments(handle, offset + i, filter);
+            }
+        }
+        return handle;
+    }
+
+    /** ARRAY_ADAPT_SINGLE 的 MethodHandle：用于 filterArguments */
+    private static final MethodHandle ARRAY_ADAPT_SINGLE;
+    static {
+        try {
+            ARRAY_ADAPT_SINGLE = MethodHandles.lookup().findStatic(
+                    NovaDynamic.class, "adaptToArray",
+                    MethodType.methodType(Object.class, Class.class, Object.class));
+        } catch (Exception e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    /**
+     * 将 List/Collection/NovaList/NovaArray 转换为目标 Java 数组类型。
+     * 供 filterArguments 调用。
+     */
+    public static Object adaptToArray(Class<?> arrayType, Object value) {
+        if (value == null) return null;
+        // 已经是目标数组类型
+        if (arrayType.isInstance(value)) return value;
+
+        Class<?> componentType = arrayType.getComponentType();
+
+        // NovaList → 取出 Java List
+        if (value instanceof NovaList) {
+            java.util.List<NovaValue> elements = ((NovaList) value).getElements();
+            return listToArray(elements, componentType, true);
+        }
+        // NovaArray → 取出原始数组
+        if (value instanceof NovaArray) {
+            NovaArray na = (NovaArray) value;
+            Object raw = na.getRawArray();
+            if (arrayType.isInstance(raw)) return raw;
+            // 类型不匹配：逐元素转换
+            int len = na.length();
+            Object arr = java.lang.reflect.Array.newInstance(componentType, len);
+            for (int i = 0; i < len; i++) {
+                java.lang.reflect.Array.set(arr, i, convertElement(na.get(i).toJavaValue(), componentType));
+            }
+            return arr;
+        }
+        // java.util.Collection / List
+        if (value instanceof java.util.Collection) {
+            java.util.Collection<?> coll = (java.util.Collection<?>) value;
+            return listToArray(new java.util.ArrayList<>(coll), componentType, false);
+        }
+        // 其他：原样返回（会在 JVM 层报 ClassCastException）
+        return value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object listToArray(java.util.List<?> list, Class<?> componentType, boolean isNovaValues) {
+        int len = list.size();
+        // 快速路径：基本类型数组
+        if (componentType == int.class) {
+            int[] arr = new int[len];
+            for (int i = 0; i < len; i++) {
+                Object elem = list.get(i);
+                arr[i] = isNovaValues ? ((NovaValue) elem).asInt()
+                        : (elem instanceof Number ? ((Number) elem).intValue() : 0);
+            }
+            return arr;
+        }
+        if (componentType == double.class) {
+            double[] arr = new double[len];
+            for (int i = 0; i < len; i++) {
+                Object elem = list.get(i);
+                arr[i] = isNovaValues ? ((NovaValue) elem).asDouble()
+                        : (elem instanceof Number ? ((Number) elem).doubleValue() : 0);
+            }
+            return arr;
+        }
+        if (componentType == long.class) {
+            long[] arr = new long[len];
+            for (int i = 0; i < len; i++) {
+                Object elem = list.get(i);
+                arr[i] = isNovaValues ? ((NovaValue) elem).asLong()
+                        : (elem instanceof Number ? ((Number) elem).longValue() : 0);
+            }
+            return arr;
+        }
+        if (componentType == float.class) {
+            float[] arr = new float[len];
+            for (int i = 0; i < len; i++) {
+                Object elem = list.get(i);
+                arr[i] = isNovaValues ? (float) ((NovaValue) elem).asDouble()
+                        : (elem instanceof Number ? ((Number) elem).floatValue() : 0);
+            }
+            return arr;
+        }
+        if (componentType == boolean.class) {
+            boolean[] arr = new boolean[len];
+            for (int i = 0; i < len; i++) {
+                Object elem = list.get(i);
+                arr[i] = isNovaValues ? ((NovaValue) elem).asBoolean()
+                        : (elem instanceof Boolean && (Boolean) elem);
+            }
+            return arr;
+        }
+        // 引用类型数组
+        Object arr = java.lang.reflect.Array.newInstance(componentType, len);
+        for (int i = 0; i < len; i++) {
+            Object elem = list.get(i);
+            Object javaVal = isNovaValues ? ((NovaValue) elem).toJavaValue() : elem;
+            java.lang.reflect.Array.set(arr, i, convertElement(javaVal, componentType));
+        }
+        return arr;
+    }
+
+    private static Object convertElement(Object value, Class<?> targetType) {
+        if (value == null) return null;
+        if (targetType.isInstance(value)) return value;
+        if (targetType == String.class) return String.valueOf(value);
+        if (targetType == Object.class) return value;
+        return value;
+    }
+
     private static MethodHandle findOwnStatic(String methodName, MethodType type) {
         try {
             return LOOKUP.findStatic(NovaDynamic.class, methodName, type);
@@ -1673,6 +1788,7 @@ public final class NovaDynamic {
         MethodHandle handle = unreflectWithFallback(best);
         if (handle == null) return null;
         handle = wrapSamFilters(handle, best);
+        handle = wrapArrayFilters(handle, best);
         try {
             MethodType staticType = MethodType.genericMethodType(arity);
             MethodHandle adapted = handle.asType(staticType);
@@ -1821,7 +1937,13 @@ public final class NovaDynamic {
             }
         }
         if (matches.isEmpty()) return null;
-        return toMethodHandle(matches.size() == 1 ? matches.get(0) : selectMostSpecific(matches));
+        Method best = matches.size() == 1 ? matches.get(0) : selectMostSpecific(matches);
+        MethodHandle handle = toMethodHandle(best);
+        if (handle != null) {
+            handle = wrapSamFilters(handle, best);
+            handle = wrapArrayFilters(handle, best);
+        }
+        return handle;
     }
 
     private static MethodHandle resolveGetter(Class<?> clazz, String memberName) {
@@ -1860,8 +1982,21 @@ public final class NovaDynamic {
             }
         }
 
-        throw new RuntimeException("No member '" + memberName + "' found on " + clazz.getSimpleName()
-                + availableMembers(clazz));
+        // MemberNameResolver 映射回退（MCP 混淆映射等）
+        String mappedField = NovaRuntime.resolveMemberName(clazz, memberName, false);
+        if (!mappedField.equals(memberName)) {
+            try {
+                return resolveGetter(clazz, mappedField);
+            } catch (RuntimeException ignored) {}
+        }
+        String mappedMethod = NovaRuntime.resolveMemberName(clazz, memberName, true);
+        if (!mappedMethod.equals(memberName) && !mappedMethod.equals(mappedField)) {
+            try {
+                return resolveGetter(clazz, mappedMethod);
+            } catch (RuntimeException ignored) {}
+        }
+
+        throw NovaErrors.undefinedMember(clazz.getSimpleName(), memberName, collectAvailableNames(clazz));
     }
 
     private static MethodHandle unreflectAsGetter(Method method) {
@@ -1900,8 +2035,31 @@ public final class NovaDynamic {
             }
         }
 
-        throw new RuntimeException("No settable member '" + memberName + "' found on " + clazz.getSimpleName()
-                + availableMembers(clazz));
+        throw NovaErrors.undefinedMember(clazz.getSimpleName(), memberName, collectAvailableNames(clazz));
+    }
+
+    private static java.util.Collection<String> collectAvailableNames(Class<?> clazz) {
+        java.util.TreeSet<String> members = new java.util.TreeSet<String>();
+        for (Field f : getFieldIndex(clazz).values()) {
+            if (!f.getDeclaringClass().equals(Object.class)) {
+                members.add(f.getName());
+            }
+        }
+        for (List<Method> methods : getMethodIndex(clazz).values()) {
+            for (Method m : methods) {
+                if (m.getDeclaringClass().equals(Object.class)) continue;
+                String name = m.getName();
+                if (m.getParameterCount() == 0) {
+                    if (name.startsWith("get") && name.length() > 3) {
+                        members.add(Character.toLowerCase(name.charAt(3)) + name.substring(4));
+                    } else if (name.startsWith("is") && name.length() > 2) {
+                        members.add(Character.toLowerCase(name.charAt(2)) + name.substring(3));
+                    }
+                }
+                members.add(name);
+            }
+        }
+        return members;
     }
 
     private static String availableMembers(Class<?> clazz) {
@@ -1958,6 +2116,7 @@ public final class NovaDynamic {
         MethodHandle handle = toMethodHandle(best);
         if (handle != null) {
             handle = wrapSamFilters(handle, best);
+            handle = wrapArrayFilters(handle, best);
         }
         return handle;
     }
@@ -2113,7 +2272,8 @@ public final class NovaDynamic {
         if (target == float.class || target == Float.class) {
             return source == Float.class || source == float.class
                 || source == int.class || source == Integer.class
-                || source == long.class || source == Long.class;
+                || source == long.class || source == Long.class
+                || source == double.class || source == Double.class;
         }
         if (target == boolean.class) {
             return source == Boolean.class;
@@ -2135,6 +2295,12 @@ public final class NovaDynamic {
         }
         if (target == Character.class) {
             return source == char.class;
+        }
+        // List/Collection → 数组: 自动转换兼容
+        if (target.isArray() && (java.util.Collection.class.isAssignableFrom(source)
+                || NovaList.class.isAssignableFrom(source)
+                || NovaArray.class.isAssignableFrom(source))) {
+            return true;
         }
         return false;
     }
@@ -2332,10 +2498,11 @@ public final class NovaDynamic {
                 best = sizeMatches.get(0);
                 reordered = allArgs;
             } else {
-                throw new RuntimeException("Cannot resolve named-argument call: no matching overload for '"
-                        + methodName + "' with named args [" + String.join(", ", namedKeys) + "]"
-                        + (sizeMatches.size() > 1 ? " among " + sizeMatches.size() + " candidates"
-                                : " (parameter name metadata may be missing)"));
+                throw new NovaException(NovaException.ErrorKind.ARGUMENT_MISMATCH,
+                        "无法解析命名参数调用: '" + methodName + "' 没有匹配的重载",
+                        "命名参数 [" + String.join(", ", namedKeys) + "]"
+                        + (sizeMatches.size() > 1 ? "，共 " + sizeMatches.size() + " 个候选"
+                                : "（方法可能缺少参数名元数据，编译时需加 -parameters）"));
             }
         }
 
@@ -2345,13 +2512,14 @@ public final class NovaDynamic {
             return invokeArray(receiver, methodName, reordered);
         }
         handle = wrapSamFilters(handle, best);
+        handle = wrapArrayFilters(handle, best);
 
         try {
             return handle.invokeWithArguments(buildArgs(receiver, reordered));
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw new RuntimeException("Failed to invoke " + methodName + " with named args", e);
+            throw NovaErrors.javaInvokeFailed(methodName, "named-args", e);
         }
     }
 

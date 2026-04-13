@@ -28,7 +28,8 @@ public final class CollectionOps {
     private static Iterable<?> asIterable(Object obj) {
         if (obj instanceof Iterable) return (Iterable<?>) obj;
         if (obj instanceof Object[]) return java.util.Arrays.asList((Object[]) obj);
-        throw new ClassCastException("Expected Iterable, got: " + obj.getClass().getName());
+        throw com.novalang.runtime.NovaErrors.typeMismatch(obj.getClass().getSimpleName(), "Iterable",
+                "集合操作需要 List、Set 或其他 Iterable 类型");
     }
 
     public static Object filter(Object listObj, Object lambda) {

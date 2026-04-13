@@ -1,5 +1,7 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.NovaException.ErrorKind;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -183,14 +185,14 @@ public final class NovaList extends AbstractNovaValue implements NovaContainer {
 
     public NovaValue first() {
         if (elements.isEmpty()) {
-            throw new RuntimeException("List is empty");
+            throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "列表为空，无法获取 first()");
         }
         return elements.get(0);
     }
 
     public NovaValue last() {
         if (elements.isEmpty()) {
-            throw new RuntimeException("List is empty");
+            throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "列表为空，无法获取 last()");
         }
         return elements.get(elements.size() - 1);
     }

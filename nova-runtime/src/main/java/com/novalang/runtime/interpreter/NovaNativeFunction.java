@@ -58,6 +58,13 @@ public final class NovaNativeFunction extends AbstractNovaValue implements com.n
 
     @Override
     public Object dynamicInvoke(NovaValue[] args) {
+        // 参数不足时补 null（防御性处理：跨 ClassLoader 环境下参数可能丢失）
+        if (arity > 0 && args.length < arity) {
+            NovaValue[] padded = new NovaValue[arity];
+            System.arraycopy(args, 0, padded, 0, args.length);
+            for (int i = args.length; i < arity; i++) padded[i] = com.novalang.runtime.NovaNull.NULL;
+            return function.apply(null, java.util.Arrays.asList(padded));
+        }
         return function.apply(null, java.util.Arrays.asList(args));
     }
 

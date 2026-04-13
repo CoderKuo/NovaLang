@@ -1,5 +1,7 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaType;
 
 import java.util.Iterator;
@@ -27,21 +29,21 @@ public final class ConcurrencyPrimitivesHelper {
     /** AtomicInt(initial) */
     public static Object atomicInt(Object[] args) {
         Object d = delegateToInterpreter("AtomicInt", args); if (d != null) return d;
-        if (args.length != 1) throw new RuntimeException("AtomicInt expects 1 argument, got " + args.length);
+        if (args.length != 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "AtomicInt 需要 1 个参数，但传入了 " + args.length + " 个");
         return new CompileAtomicInt(((Number) args[0]).intValue());
     }
 
     /** AtomicLong(initial) */
     public static Object atomicLong(Object[] args) {
         Object d = delegateToInterpreter("AtomicLong", args); if (d != null) return d;
-        if (args.length != 1) throw new RuntimeException("AtomicLong expects 1 argument, got " + args.length);
+        if (args.length != 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "AtomicLong 需要 1 个参数，但传入了 " + args.length + " 个");
         return new CompileAtomicLong(((Number) args[0]).longValue());
     }
 
     /** AtomicRef(initial) */
     public static Object atomicRef(Object[] args) {
         Object d = delegateToInterpreter("AtomicRef", args); if (d != null) return d;
-        if (args.length != 1) throw new RuntimeException("AtomicRef expects 1 argument, got " + args.length);
+        if (args.length != 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "AtomicRef 需要 1 个参数，但传入了 " + args.length + " 个");
         return new CompileAtomicRef(args[0]);
     }
 
@@ -55,7 +57,7 @@ public final class ConcurrencyPrimitivesHelper {
     /** Mutex() */
     public static Object mutex(Object[] args) {
         Object d = delegateToInterpreter("Mutex", args); if (d != null) return d;
-        if (args.length != 0) throw new RuntimeException("Mutex expects 0 arguments, got " + args.length);
+        if (args.length != 0) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "Mutex 不接受参数，但传入了 " + args.length + " 个");
         return new CompileMutex();
     }
 
@@ -113,7 +115,7 @@ public final class ConcurrencyPrimitivesHelper {
                 : new LinkedBlockingQueue<>(capacity);
         }
         public void send(Object value) {
-            if (closed) throw new RuntimeException("Cannot send to a closed channel");
+            if (closed) throw new NovaException(ErrorKind.INTERNAL, "无法向已关闭的 Channel 发送数据");
             try { queue.put(value); } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -127,7 +129,7 @@ public final class ConcurrencyPrimitivesHelper {
         public Object receiveTimeout(Object timeoutMs) {
             try {
                 Object val = queue.poll(((Number) timeoutMs).longValue(), TimeUnit.MILLISECONDS);
-                if (val == null) throw new RuntimeException("Channel receive timed out");
+                if (val == null) throw new NovaException(ErrorKind.INTERNAL, "Channel 接收超时", "增大超时时间或检查发送端是否正常");
                 return val;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

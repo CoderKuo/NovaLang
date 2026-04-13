@@ -337,7 +337,7 @@ public final class NovaSecurityPolicy {
 
     /** 创建安全拒绝异常 */
     public static NovaException denied(String action) {
-        return new NovaException("Security policy denied: " + action);
+        return new NovaException(NovaException.ErrorKind.ACCESS_DENIED, "安全策略拒绝: " + action, null);
     }
 
     // ============ Builder ============

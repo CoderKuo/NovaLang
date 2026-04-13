@@ -1,6 +1,9 @@
 package com.novalang.runtime.stdlib;
 
 import com.novalang.runtime.NovaArray;
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaPair;
 import com.novalang.runtime.NovaResult;
 import com.novalang.runtime.NovaRuntime;
@@ -131,7 +134,7 @@ public final class StdlibCore {
     // ============ 实现（编译器 INVOKESTATIC 直接调用） ============
 
     public static Object error(Object message) {
-        throw new RuntimeException(String.valueOf(message));
+        throw new NovaException(String.valueOf(message));
     }
 
     public static Object pair(Object first, Object second) {
@@ -179,7 +182,9 @@ public final class StdlibCore {
         }
         if (value instanceof Number) return ((Number) value).intValue();
         if (value instanceof String) return Integer.parseInt(((String) value).trim());
-        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Int");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (value == null ? "null" : value.getClass().getSimpleName()) + " 转换为 Int",
+                "使用 toInt() 进行转换");
     }
 
     public static Object toLong(Object value) {
@@ -190,7 +195,9 @@ public final class StdlibCore {
         }
         if (value instanceof Number) return ((Number) value).longValue();
         if (value instanceof String) return Long.parseLong(((String) value).trim());
-        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Long");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (value == null ? "null" : value.getClass().getSimpleName()) + " 转换为 Long",
+                "使用 toLong() 进行转换");
     }
 
     public static Object toDouble(Object value) {
@@ -201,7 +208,9 @@ public final class StdlibCore {
         }
         if (value instanceof Number) return ((Number) value).doubleValue();
         if (value instanceof String) return Double.parseDouble(((String) value).trim());
-        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Double");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (value == null ? "null" : value.getClass().getSimpleName()) + " 转换为 Double",
+                "使用 toDouble() 进行转换");
     }
 
     public static Object toFloat(Object value) {
@@ -212,7 +221,9 @@ public final class StdlibCore {
         }
         if (value instanceof Number) return ((Number) value).floatValue();
         if (value instanceof String) return Float.parseFloat(((String) value).trim());
-        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Float");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (value == null ? "null" : value.getClass().getSimpleName()) + " 转换为 Float",
+                "使用 toFloat() 进行转换");
     }
 
     public static Object toStr(Object value) {
@@ -238,7 +249,9 @@ public final class StdlibCore {
         if (value instanceof Character) return value;
         if (value instanceof Number) return (char) ((Number) value).intValue();
         if (value instanceof String && ((String) value).length() == 1) return ((String) value).charAt(0);
-        throw new RuntimeException("Cannot convert " + (value == null ? "null" : value.getClass().getSimpleName()) + " to Char");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (value == null ? "null" : value.getClass().getSimpleName()) + " 转换为 Char",
+                "使用 toChar() 进行转换");
     }
 
     public static Object arrayOf(Object... args) {
@@ -250,7 +263,7 @@ public final class StdlibCore {
             BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
             return reader.readLine();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to read input: " + e.getMessage());
+            throw NovaErrors.wrap("读取输入失败", e);
         }
     }
 
@@ -260,7 +273,7 @@ public final class StdlibCore {
             BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
             return reader.readLine();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to read input: " + e.getMessage());
+            throw NovaErrors.wrap("读取输入失败", e);
         }
     }
 
@@ -401,7 +414,8 @@ public final class StdlibCore {
      * rawNovaArgs = true，接收 NovaValue 参数（lambda 保持原样）。
      */
     public static Object sharedRegister(Object[] args) {
-        if (args.length < 2) throw new RuntimeException("sharedRegister requires at least 2 args: name, function");
+        if (args.length < 2) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                "sharedRegister 需要至少 2 个参数 (name, function)，但传入了 " + args.length + " 个");
         String name = String.valueOf(args[0] instanceof NovaValue ? ((NovaValue) args[0]).toJavaValue() : args[0]);
         Object func = args[1] instanceof NovaValue ? args[1] : args[1];
         String namespace = args.length >= 3
@@ -436,7 +450,8 @@ public final class StdlibCore {
      * </ul>
      */
     public static Object sharedSet(Object[] args) {
-        if (args.length < 2) throw new RuntimeException("sharedSet requires at least 2 args: name, value");
+        if (args.length < 2) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                "sharedSet 需要至少 2 个参数 (name, value)，但传入了 " + args.length + " 个");
         String name = String.valueOf(args[0]);
         Object value = args[1];
         if (args.length >= 3) {
@@ -462,7 +477,8 @@ public final class StdlibCore {
      * </ul>
      */
     public static Object sharedRemove(Object[] args) {
-        if (args.length < 1) throw new RuntimeException("sharedRemove requires at least 1 arg");
+        if (args.length < 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                "sharedRemove 需要至少 1 个参数");
         String first = String.valueOf(args[0]);
         if (args.length >= 2) {
             // sharedRemove("namespace", "funcName") — 移除命名空间中单个函数
@@ -484,7 +500,8 @@ public final class StdlibCore {
      * </ul>
      */
     public static Object sharedHas(Object[] args) {
-        if (args.length < 1) throw new RuntimeException("sharedHas requires at least 1 arg");
+        if (args.length < 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                "sharedHas 需要至少 1 个参数");
         String first = String.valueOf(args[0]);
         if (args.length >= 2) {
             return NovaRuntime.shared().has(first, String.valueOf(args[1]));
@@ -501,7 +518,8 @@ public final class StdlibCore {
      * </ul>
      */
     public static Object sharedGet(Object[] args) {
-        if (args.length < 1) throw new RuntimeException("sharedGet requires at least 1 arg");
+        if (args.length < 1) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                "sharedGet 需要至少 1 个参数");
         String first = String.valueOf(args[0]);
         NovaRuntime.RegisteredEntry entry;
         if (args.length >= 2) {
@@ -545,8 +563,9 @@ public final class StdlibCore {
         String name = String.valueOf(args[0]);
         String result = SerializationProviders.setJsonProvider(name);
         if (result == null) {
-            throw new RuntimeException("JSON provider not found: " + name
-                    + ". Available: " + SerializationProviders.listJsonProviders());
+            throw new NovaException(ErrorKind.UNDEFINED,
+                    "找不到 JSON provider: " + name,
+                    "可用: " + SerializationProviders.listJsonProviders());
         }
         return result;
     }
@@ -559,8 +578,9 @@ public final class StdlibCore {
         String name = String.valueOf(args[0]);
         String result = SerializationProviders.setYamlProvider(name);
         if (result == null) {
-            throw new RuntimeException("YAML provider not found: " + name
-                    + ". Available: " + SerializationProviders.listYamlProviders());
+            throw new NovaException(ErrorKind.UNDEFINED,
+                    "找不到 YAML provider: " + name,
+                    "可用: " + SerializationProviders.listYamlProviders());
         }
         return result;
     }

@@ -51,10 +51,10 @@ public final class NovaMethodInfo extends AbstractNovaValue {
                 com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(javaMethod);
                 return javaMethod.invoke(instance, args);
             } catch (Exception e) {
-                throw new RuntimeException("Failed to call method " + name + ": " + e.getMessage(), e);
+                throw NovaErrors.wrap("调用方法 " + name + " 失败", e);
             }
         }
-        throw new RuntimeException("Cannot call method in this mode");
+        throw new NovaException(NovaException.ErrorKind.JAVA_INTEROP, "当前模式无法调用方法 " + name);
     }
 
     @Override

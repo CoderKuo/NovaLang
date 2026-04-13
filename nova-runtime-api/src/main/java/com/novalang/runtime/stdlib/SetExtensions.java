@@ -1,6 +1,8 @@
 package com.novalang.runtime.stdlib;
 
 import com.novalang.runtime.Function1;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 
 import java.util.*;
 import java.util.function.Function;
@@ -90,7 +92,7 @@ public final class SetExtensions {
 
     public static Object first(Object set) {
         Set<?> s = (Set<?>) set;
-        if (s.isEmpty()) throw new RuntimeException("Set is empty");
+        if (s.isEmpty()) throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "集合为空，无法获取 first", "使用 firstOrNull() 安全获取");
         return s.iterator().next();
     }
 
@@ -101,7 +103,7 @@ public final class SetExtensions {
 
     public static Object last(Object set) {
         Set<?> s = (Set<?>) set;
-        if (s.isEmpty()) throw new RuntimeException("Set is empty");
+        if (s.isEmpty()) throw new NovaException(ErrorKind.INDEX_OUT_OF_BOUNDS, "集合为空，无法获取 last", "使用 lastOrNull() 安全获取");
         Object last = null;
         for (Object item : s) last = item;
         return last;

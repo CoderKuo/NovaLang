@@ -1,5 +1,9 @@
 package com.novalang.runtime.interpreter.stdlib;
 
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
+
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -25,7 +29,7 @@ public final class StdlibEncodingCompiled {
         try {
             return URLEncoder.encode(str(text), "UTF-8");
         } catch (java.io.UnsupportedEncodingException e) {
-            throw new RuntimeException(e); // UTF-8 always available
+            throw NovaErrors.wrap("URL 编码失败", e);
         }
     }
 
@@ -33,7 +37,7 @@ public final class StdlibEncodingCompiled {
         try {
             return URLDecoder.decode(str(text), "UTF-8");
         } catch (java.io.UnsupportedEncodingException e) {
-            throw new RuntimeException(e);
+            throw NovaErrors.wrap("URL 解码失败", e);
         }
     }
 
@@ -92,7 +96,7 @@ public final class StdlibEncodingCompiled {
             if (c >= '0' && c <= '9') idx = c - '0';
             else if (c >= 'A' && c <= 'Z') idx = c - 'A' + 10;
             else if (c >= 'a' && c <= 'z') idx = c - 'a' + 36;
-            else throw new RuntimeException("Invalid Base62 character: " + c);
+            else throw new NovaException(ErrorKind.INTERNAL, "无效的 Base62 字符: " + c);
             bi = bi.multiply(base).add(java.math.BigInteger.valueOf(idx));
         }
         byte[] bytes = bi.toByteArray();

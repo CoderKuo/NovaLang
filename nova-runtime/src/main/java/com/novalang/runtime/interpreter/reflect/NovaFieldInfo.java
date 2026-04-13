@@ -42,10 +42,10 @@ public final class NovaFieldInfo extends AbstractNovaValue {
                 com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(javaField);
                 return javaField.get(instance);
             } catch (Exception e) {
-                throw new RuntimeException("Failed to get field " + name + ": " + e.getMessage(), e);
+                throw NovaErrors.wrap("获取字段 " + name + " 失败", e);
             }
         }
-        throw new RuntimeException("Cannot get field in this mode");
+        throw new NovaException(NovaException.ErrorKind.JAVA_INTEROP, "当前模式无法获取字段 " + name);
     }
 
     public void set(Object instance, Object value) {
@@ -54,10 +54,10 @@ public final class NovaFieldInfo extends AbstractNovaValue {
                 com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(javaField);
                 javaField.set(instance, value);
             } catch (Exception e) {
-                throw new RuntimeException("Failed to set field " + name + ": " + e.getMessage(), e);
+                throw NovaErrors.wrap("设置字段 " + name + " 失败", e);
             }
         } else {
-            throw new RuntimeException("Cannot set field in this mode");
+            throw new NovaException(NovaException.ErrorKind.JAVA_INTEROP, "当前模式无法设置字段 " + name);
         }
     }
 

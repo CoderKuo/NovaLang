@@ -80,7 +80,7 @@ public final class MemberDispatcher {
                                     method.getReturnType(), userParamTypes));
                 }
             } catch (IllegalAccessException e) {
-                throw new RuntimeException("Cannot access @NovaMember method: " + clazz.getName() + "." + memberName, e);
+                throw NovaErrors.wrap("无法访问 @NovaMember 方法: " + clazz.getName() + "." + memberName, e);
             }
         }
     }

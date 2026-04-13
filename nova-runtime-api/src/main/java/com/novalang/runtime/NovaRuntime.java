@@ -40,6 +40,27 @@ public final class NovaRuntime {
     // ============ 全局单例 ============
 
     private static volatile NovaRuntime SHARED;
+    private static volatile MemberNameResolver memberNameResolver;
+
+    /** 设置全局成员名称解析器（用于 MCP 混淆映射等） */
+    public static void setMemberNameResolver(MemberNameResolver resolver) {
+        memberNameResolver = resolver;
+    }
+
+    /** 获取全局成员名称解析器 */
+    public static MemberNameResolver getMemberNameResolver() {
+        return memberNameResolver;
+    }
+
+    /**
+     * 通过解析器映射成员名称。无解析器或返回 null 时返回原名。
+     */
+    public static String resolveMemberName(Class<?> targetClass, String memberName, boolean isMethod) {
+        MemberNameResolver r = memberNameResolver;
+        if (r == null) return memberName;
+        String mapped = r.resolve(targetClass, memberName, isMethod);
+        return mapped != null ? mapped : memberName;
+    }
 
     // ============ 跨 ClassLoader 全局桥接 ============
     // 利用 System.getProperties()（JVM 全局单例，所有 ClassLoader 共享）
@@ -1020,7 +1041,7 @@ public final class NovaRuntime {
     }
 
     public NovaValue callExtension(Object receiver, String methodName, Object... args) throws Exception {
-        if (receiver == null) throw new NullPointerException("Cannot invoke extension method on null receiver");
+        if (receiver == null) throw NovaErrors.nullInvoke("extension method");
         Class<?>[] argTypes = new Class<?>[args.length];
         for (int i = 0; i < args.length; i++) {
             argTypes[i] = args[i] != null ? args[i].getClass() : Object.class;
@@ -1042,7 +1063,7 @@ public final class NovaRuntime {
 
     @Deprecated
     public Object invokeExtension(Object receiver, String methodName, Object... args) throws Exception {
-        if (receiver == null) throw new NullPointerException("Cannot invoke extension method on null receiver");
+        if (receiver == null) throw NovaErrors.nullInvoke("extension method");
         Class<?>[] argTypes = new Class<?>[args.length];
         for (int i = 0; i < args.length; i++) argTypes[i] = args[i] != null ? args[i].getClass() : Object.class;
         ExtensionRegistry.RegisteredExtension ext = extensionRegistry.lookup(receiver.getClass(), methodName, argTypes);
@@ -1121,7 +1142,8 @@ public final class NovaRuntime {
             if (callable instanceof Function1) return ((Function1) callable).invoke(args.length > 0 ? args[0] : null);
             if (callable instanceof Function2) return ((Function2) callable).invoke(
                     args.length > 0 ? args[0] : null, args.length > 1 ? args[1] : null);
-            throw new RuntimeException("scopeCall: not callable: " + callable.getClass().getName());
+            throw NovaErrors.typeMismatch(callable.getClass().getSimpleName(), "Callable",
+                    "scopeCall 的第一个参数必须是可调用对象（函数/lambda）");
         } finally {
             com.novalang.runtime.stdlib.NovaScopeFunctions.setScopeReceiver(prevReceiver);
         }

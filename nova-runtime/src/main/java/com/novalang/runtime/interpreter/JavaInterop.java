@@ -1,5 +1,6 @@
 package com.novalang.runtime.interpreter;
 import com.novalang.runtime.*;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.types.Environment;
 
 import java.lang.reflect.Proxy;
@@ -101,7 +102,7 @@ public final class JavaInterop {
             String name = className.asString();
             Class<?> clazz = resolveClass(name, policy);
             if (clazz == null) {
-                throw new NovaRuntimeException("Class not found: " + name);
+                throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "找不到类: " + name, "请检查类名是否正确");
             }
             return new NovaJavaClass(clazz);
         }));
@@ -110,14 +111,14 @@ public final class JavaInterop {
         javaNamespace.put(NovaString.of("static"), new NovaNativeFunction("Java.static", -1,
             (interp, args) -> {
                 if (args.size() < 2) {
-                    throw new NovaRuntimeException("Java.static requires class name and method name");
+                    throw new NovaRuntimeException(ErrorKind.ARGUMENT_MISMATCH, "Java.static 需要类名和方法名", null);
                 }
                 String className = args.get(0).asString();
                 String methodName = args.get(1).asString();
 
                 Class<?> clazz = resolveClass(className, policy);
                 if (clazz == null) {
-                    throw new NovaRuntimeException("Class not found: " + className);
+                    throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "找不到类: " + className, "请检查类名是否正确");
                 }
 
                 // 方法黑名单检查
@@ -136,8 +137,7 @@ public final class JavaInterop {
                     Object result = cache.invokeStatic(clazz, methodName, javaArgs);
                     return AbstractNovaValue.fromJava(result);
                 } catch (Throwable e) {
-                    throw new NovaRuntimeException("Failed to invoke static method " +
-                            className + "." + methodName + ": " + e.getMessage(), e);
+                    throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "调用静态方法 " + className + "." + methodName + " 失败: " + e.getMessage(), null, e);
                 }
             }));
 
@@ -148,21 +148,20 @@ public final class JavaInterop {
 
             Class<?> clazz = resolveClass(clsName, policy);
             if (clazz == null) {
-                throw new NovaRuntimeException("Class not found: " + clsName);
+                throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "找不到类: " + clsName, "请检查类名是否正确");
             }
 
             try {
                 java.lang.invoke.MethodHandle getter = cache.findStaticGetter(clazz, fldName);
                 if (getter == null) {
-                    throw new NovaRuntimeException("Static field not found: " + clsName + "." + fldName);
+                    throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "找不到静态字段: " + clsName + "." + fldName, null);
                 }
                 Object value = getter.invoke();
                 return AbstractNovaValue.fromJava(value);
             } catch (NovaRuntimeException e) {
                 throw e;
             } catch (Throwable e) {
-                throw new NovaRuntimeException("Cannot access static field " +
-                        clsName + "." + fldName + ": " + e.getMessage(), e);
+                throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "无法访问静态字段 " + clsName + "." + fldName + ": " + e.getMessage(), null, e);
             }
         }));
 
@@ -170,13 +169,13 @@ public final class JavaInterop {
         javaNamespace.put(NovaString.of("new"), new NovaNativeFunction("Java.new", -1,
             (interp, args) -> {
                 if (args.isEmpty()) {
-                    throw new NovaRuntimeException("Java.new requires class name");
+                    throw new NovaRuntimeException(ErrorKind.ARGUMENT_MISMATCH, "Java.new 需要类名参数", null);
                 }
                 String className = args.get(0).asString();
 
                 Class<?> clazz = resolveClass(className, policy);
                 if (clazz == null) {
-                    throw new NovaRuntimeException("Class not found: " + className);
+                    throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "找不到类: " + className, "请检查类名是否正确");
                 }
 
                 // 准备构造器参数
@@ -189,8 +188,7 @@ public final class JavaInterop {
                     Object instance = cache.newInstance(clazz, javaArgs);
                     return new NovaExternalObject(instance);
                 } catch (Throwable e) {
-                    throw new NovaRuntimeException("Failed to create instance of " +
-                            className + ": " + e.getMessage(), e);
+                    throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "创建 " + className + " 实例失败: " + e.getMessage(), null, e);
                 }
             }));
 
@@ -321,8 +319,7 @@ public final class JavaInterop {
             try {
                 return new NovaExternalObject(cache.newInstance(javaClass, javaArgs));
             } catch (Throwable e) {
-                throw new NovaRuntimeException("Failed to create instance of " +
-                        javaClass.getName() + ": " + e.getMessage(), e);
+                throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "创建 " + javaClass.getName() + " 实例失败: " + e.getMessage(), null, e);
             }
         }
 
@@ -410,8 +407,7 @@ public final class JavaInterop {
                 Object result = cache.invokeStatic(javaClass, methodName, javaArgs);
                 return AbstractNovaValue.fromJava(result);
             } catch (Throwable e) {
-                throw new NovaRuntimeException("Failed to invoke static method " +
-                        javaClass.getName() + "." + methodName + ": " + e.getMessage(), e);
+                throw new NovaRuntimeException(ErrorKind.JAVA_INTEROP, "调用静态方法 " + javaClass.getName() + "." + methodName + " 失败: " + e.getMessage(), null, e);
             }
         }
 

@@ -37,7 +37,7 @@ public final class NovaFuture extends AbstractNovaValue {
             int current = activeTaskCount.incrementAndGet();
             if (current > maxTasks) {
                 activeTaskCount.decrementAndGet();
-                throw new NovaRuntimeException("Security policy denied: max async tasks exceeded (" + maxTasks + ")");
+                throw new NovaRuntimeException(NovaException.ErrorKind.ACCESS_DENIED, "安全策略拒绝: 异步任务数超过上限 (" + maxTasks + ")", null);
             }
         } else {
             activeTaskCount.incrementAndGet();
@@ -64,10 +64,10 @@ public final class NovaFuture extends AbstractNovaValue {
             if (cause instanceof NovaRuntimeException) {
                 throw (NovaRuntimeException) cause;
             }
-            throw new NovaRuntimeException("async failed: " + cause.getMessage());
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "异步执行失败: " + cause.getMessage(), null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new NovaRuntimeException("async interrupted");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "异步执行被中断", null);
         }
     }
 
@@ -79,18 +79,18 @@ public final class NovaFuture extends AbstractNovaValue {
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            throw new NovaRuntimeException("async timeout after " + timeoutMs + "ms");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "异步执行超时 (" + timeoutMs + "ms)", null);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof NovaRuntimeException) {
                 throw (NovaRuntimeException) cause;
             }
-            throw new NovaRuntimeException("async failed: " + cause.getMessage());
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "异步执行失败: " + cause.getMessage(), null);
         } catch (CancellationException e) {
-            throw new NovaRuntimeException("async was cancelled");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "异步执行已取消", null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new NovaRuntimeException("async interrupted");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "异步执行被中断", null);
         }
     }
 

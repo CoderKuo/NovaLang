@@ -1,5 +1,9 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
+
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
@@ -242,12 +246,12 @@ public final class StdlibRegistry {
                 Function<Object[], Object> impl = args -> {
                     try { return finalMh.invokeWithArguments(args); }
                     catch (RuntimeException e) { throw e; }
-                    catch (Throwable t) { throw new RuntimeException(t); }
+                    catch (Throwable t) { throw NovaErrors.wrap(t); }
                 };
                 registerExtensionMethod(new ExtensionMethodInfo(
                         name, arity, targetType, owner, name, desc.toString(), impl, isVarargs, isProperty));
             } catch (IllegalAccessException e) {
-                throw new RuntimeException("Failed to register extension method: " + name, e);
+                throw new NovaException(ErrorKind.INTERNAL, "注册扩展方法失败: " + name, null, e);
             }
         }
     }

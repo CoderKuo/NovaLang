@@ -335,8 +335,15 @@ final class MemberResolver {
     }
 
     NovaValue resolveMemberOnExternal(NovaExternalObject extObj, String memberName, AstNode node) {
-        // 安全策略：类级 + 方法级检查
         Object javaObj = extObj.toJavaValue();
+
+        // 动态属性对象优先
+        if (javaObj instanceof com.novalang.runtime.NovaDynamicObject) {
+            Object val = ((com.novalang.runtime.NovaDynamicObject) javaObj).getMember(memberName);
+            return val != null ? AbstractNovaValue.fromJava(val) : NovaNull.NULL;
+        }
+
+        // 安全策略：类级 + 方法级检查
         if (javaObj != null) {
             String className = javaObj.getClass().getName();
             if (!interp.getSecurityPolicy().isClassAllowed(className)) {
@@ -393,11 +400,26 @@ final class MemberResolver {
         extFunc = interp.findNovaExtension(extObj, memberName);
         if (extFunc != null) return new NovaBoundMethod(extObj, extFunc);
 
+        // MemberNameResolver 映射回退（MCP 混淆映射等）
+        if (javaObj != null) {
+            Class<?> cls = javaObj.getClass();
+            String mappedField = NovaRuntime.resolveMemberName(cls, memberName, false);
+            if (!mappedField.equals(memberName)) {
+                if (extObj.hasField(mappedField)) {
+                    try { return extObj.getField(mappedField); } catch (NovaRuntimeException ignored) {}
+                }
+                if (extObj.hasMethod(mappedField)) return extObj.getBoundMethod(mappedField);
+            }
+            String mappedMethod = NovaRuntime.resolveMemberName(cls, memberName, true);
+            if (!mappedMethod.equals(memberName) && extObj.hasMethod(mappedMethod)) {
+                return extObj.getBoundMethod(mappedMethod);
+            }
+        }
+
         // 字段访问
         try {
             return extObj.getField(memberName);
         } catch (NovaRuntimeException e) {
-            // 仅在确实有此方法时才返回绑定方法，否则抛出字段访问错误
             if (extObj.hasMethod(memberName)) {
                 return extObj.getBoundMethod(memberName);
             }
@@ -501,7 +523,10 @@ final class MemberResolver {
                 if (info.isVarargs && method == null) method = info;
             }
             if (method == null) {
-                throw new NovaRuntimeException("No matching overload for '" + name + "' with " + args.size() + " argument(s)");
+                throw new NovaRuntimeException(
+                        NovaException.ErrorKind.ARGUMENT_MISMATCH,
+                        "'" + name + "' 没有接受 " + args.size() + " 个参数的重载",
+                        "可用参数数量: " + overloads.stream().map(i -> String.valueOf(i.arity)).distinct().collect(java.util.stream.Collectors.joining(", ")));
             }
             Object[] fullArgs = new Object[args.size() + 1];
             fullArgs[0] = rawReceiver ? receiver : toShallowJavaValue(receiver);
@@ -940,7 +965,10 @@ final class MemberResolver {
         try {
             com.novalang.runtime.NovaCollections.setIndex(target.toJavaValue(), index.toJavaValue(), value.toJavaValue());
         } catch (RuntimeException e) {
-            throw new NovaRuntimeException("Cannot index-set on " + target.getTypeName());
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.TYPE_MISMATCH,
+                    "无法在 " + target.getTypeName() + " 上进行索引赋值",
+                    "该类型不支持 [] 赋值操作");
         }
     }
 
@@ -1023,7 +1051,10 @@ final class MemberResolver {
                 });
             case "unwrap":
                 return NovaNativeFunction.create("unwrap", () -> {
-                    if (result.isErr()) throw new NovaRuntimeException("Called unwrap() on Err: " + result.getInner().asString());
+                    if (result.isErr()) throw new NovaRuntimeException(
+                            NovaException.ErrorKind.TYPE_MISMATCH,
+                            "在 Err 上调用了 unwrap(): " + result.getInner().asString(),
+                            "使用 unwrapOr(默认值) 或先检查 is Ok");
                     return result.getInner();
                 });
             case "unwrapOr":

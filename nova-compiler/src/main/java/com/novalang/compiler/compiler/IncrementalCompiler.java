@@ -14,7 +14,7 @@ import java.util.*;
  * 不追踪跨文件依赖（import 关系）。如果 A 导入 B，B 发生变更，
  * A 不会自动重新编译。需要完整重编译时，请删除缓存目录 ({@value CACHE_DIR})。</p>
  *
- * TODO: 解析 import 声明构建依赖图，变更时传播到依赖方
+ * @implNote 未来可通过解析 import 声明构建依赖图，实现变更时自动传播重编译
  */
 public class IncrementalCompiler {
     private static final String CACHE_DIR = ".nova-cache";

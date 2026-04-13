@@ -1,5 +1,6 @@
 package com.novalang.runtime.interpreter.stdlib;
 
+import com.novalang.runtime.NovaException;
 import com.novalang.runtime.NovaOps;
 import com.novalang.runtime.NovaValue;
 import com.novalang.runtime.Function0;
@@ -91,42 +92,42 @@ public final class StdlibTestCompiled {
 
     public static Object assertEqual(Object expected, Object actual) {
         if (!NovaOps.equals(expected, actual)) {
-            throw new NovaRuntimeException("assertEqual failed: expected " + expected + " but got " + actual);
+            throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 期望 " + expected + " 但实际为 " + actual, null);
         }
         return null;
     }
 
     public static Object assertNotEqual(Object a, Object b) {
         if (NovaOps.equals(a, b)) {
-            throw new NovaRuntimeException("assertNotEqual failed: both values are " + a);
+            throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 两个值相同均为 " + a, null);
         }
         return null;
     }
 
     public static Object assertTrue(Object value) {
         if (!isTruthy(value)) {
-            throw new NovaRuntimeException("assertTrue failed: value is " + value);
+            throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 " + value + " 而非真值", null);
         }
         return null;
     }
 
     public static Object assertFalse(Object value) {
         if (isTruthy(value)) {
-            throw new NovaRuntimeException("assertFalse failed: value is " + value);
+            throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 " + value + " 而非假值", null);
         }
         return null;
     }
 
     public static Object assertNull(Object value) {
         if (value != null) {
-            throw new NovaRuntimeException("assertNull failed: value is " + value);
+            throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 " + value + " 而非 null", null);
         }
         return null;
     }
 
     public static Object assertNotNull(Object value) {
         if (value == null) {
-            throw new NovaRuntimeException("assertNotNull failed: value is null");
+            throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 值为 null", null);
         }
         return null;
     }
@@ -139,7 +140,7 @@ public final class StdlibTestCompiled {
         } catch (RuntimeException e) {
             return e.getMessage();
         }
-        throw new NovaRuntimeException("assertThrows failed: no exception was thrown");
+        throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 未抛出异常", null);
     }
 
     public static Object assertContains(Object collection, Object element) {
@@ -148,14 +149,14 @@ public final class StdlibTestCompiled {
             for (Object item : (java.util.List<?>) collection) {
                 if (NovaOps.equals(item, unwrapped)) return null;
             }
-            throw new NovaRuntimeException("assertContains failed: list does not contain " + element);
+            throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 列表不包含 " + element, null);
         } else if (collection instanceof String) {
             if (!((String) collection).contains(String.valueOf(element))) {
-                throw new NovaRuntimeException("assertContains failed: string does not contain '" + element + "'");
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 字符串不包含 '" + element + "'", null);
             }
             return null;
         }
-        throw new NovaRuntimeException("assertContains failed: unsupported collection type " + collection.getClass().getSimpleName());
+        throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "断言失败: 不支持的集合类型 " + collection.getClass().getSimpleName(), null);
     }
 
     public static Object assertFails(Object block) {
@@ -164,7 +165,7 @@ public final class StdlibTestCompiled {
         } catch (Exception e) {
             return null;
         }
-        throw new NovaRuntimeException("assertFails failed: block did not throw");
+        throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "断言失败: 代码块未抛出异常", null);
     }
 
     // ========== 内部辅助 ==========
@@ -192,8 +193,8 @@ public final class StdlibTestCompiled {
         } else if (block instanceof com.novalang.runtime.NovaCallable) {
             ((com.novalang.runtime.NovaCallable) block).call(null, java.util.Collections.emptyList());
         } else {
-            throw new NovaRuntimeException("Expected a callable block, got: "
-                    + (block == null ? "null" : block.getClass().getSimpleName()));
+            throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "期望可调用块, 实际为: "
+                    + (block == null ? "null" : block.getClass().getSimpleName()), null);
         }
     }
 }

@@ -52,12 +52,49 @@ public final class Nova {
      */
     private final Map<String, Map<String, Object>> namespaceBindings = new HashMap<>();
 
+    /**
+     * 编译缓存：源码哈希 → 已编译的类集合。
+     * 避免相同代码重复编译。通过 {@link #enableCompilationCache()} 开启。
+     */
+    private Map<String, Map<String, Class<?>>> compilationCache;
+
+    /** NovaLang 版本号（从 jar manifest 自动读取，开发环境回退 "dev"） */
+    public static final String VERSION = resolveVersion();
+
+    /** 获取 NovaLang 版本号 */
+    public static String getVersion() { return VERSION; }
+
+    private static String resolveVersion() {
+        Package pkg = Nova.class.getPackage();
+        if (pkg != null && pkg.getImplementationVersion() != null) {
+            return pkg.getImplementationVersion();
+        }
+        return "dev";
+    }
+
     public Nova() {
         this.interpreter = new Interpreter();
     }
 
     public Nova(NovaSecurityPolicy policy) {
         this.interpreter = new Interpreter(policy);
+    }
+
+    // ── 成员名称解析器 ──────────────────────────────────────
+
+    /**
+     * 设置自定义成员名称解析器（全局生效）。
+     * <p>当 Nova 在 Java 对象上找不到指定成员时，回调此接口进行名称映射。</p>
+     *
+     * <pre>
+     * Nova.setMemberResolver((target, name, isMethod) -> {
+     *     if (isMethod) return McpMappingResolver.resolveMethod(name);
+     *     else return McpMappingResolver.resolveField(name);
+     * });
+     * </pre>
+     */
+    public static void setMemberResolver(MemberNameResolver resolver) {
+        NovaRuntime.setMemberNameResolver(resolver);
     }
 
     // ── 序列化 Provider ──────────────────────────────────────
@@ -175,7 +212,13 @@ public final class Nova {
      * 同时写入 valRegistry 供字节码模式使用。
      */
     public Nova set(String name, Object value) {
-        NovaValue nv = AbstractNovaValue.fromJava(value);
+        // List/Map/Set: 保持 Java 引用（不复制），Nova 端修改直接影响 Java 端
+        NovaValue nv;
+        if (value instanceof java.util.List || value instanceof java.util.Map || value instanceof java.util.Set) {
+            nv = new com.novalang.runtime.interpreter.NovaExternalObject(value);
+        } else {
+            nv = AbstractNovaValue.fromJava(value);
+        }
         Environment env = interpreter.getGlobals();
         if (env.contains(name)) {
             if (!env.isVal(name)) {
@@ -209,7 +252,13 @@ public final class Nova {
      * </pre>
      */
     public Nova defineVal(String name, Object value) {
-        interpreter.getGlobals().defineVal(name, AbstractNovaValue.fromJava(value));
+        NovaValue nv;
+        if (value instanceof java.util.List || value instanceof java.util.Map || value instanceof java.util.Set) {
+            nv = new com.novalang.runtime.interpreter.NovaExternalObject(value);
+        } else {
+            nv = AbstractNovaValue.fromJava(value);
+        }
+        interpreter.getGlobals().defineVal(name, nv);
         valRegistry.put(name, NativeFunctionAdapter.toBindingValue(value));
         return this;
     }
@@ -530,6 +579,44 @@ public final class Nova {
         return this;
     }
 
+    /**
+     * 一键注册 Java 类中的所有 Nova 绑定：
+     * <ul>
+     *   <li>{@code @NovaFunc} 方法 → 注册为全局函数</li>
+     *   <li>{@code @NovaExt} 方法 → 注册为对应类型的扩展方法</li>
+     * </ul>
+     * <pre>
+     * public class MyPlugin {
+     *     &#64;NovaFunc("greet")
+     *     public static String greet(String name) { return "Hi " + name; }
+     *
+     *     &#64;NovaExt("shout")
+     *     public static String shout(String self) { return self.toUpperCase() + "!"; }
+     * }
+     * nova.registerAll(MyPlugin.class);
+     * // Nova: greet("world"), "hello".shout()
+     * </pre>
+     */
+    public Nova registerAll(Class<?> clazz) {
+        // @NovaFunc → 全局函数
+        registerFunctions(clazz);
+        // @NovaExt → 扩展方法（按每个方法的 receiver 参数类型分别注册）
+        java.util.Set<Class<?>> registeredTypes = new java.util.HashSet<>();
+        for (java.lang.reflect.Method m : clazz.getDeclaredMethods()) {
+            NovaExt ann = m.getAnnotation(NovaExt.class);
+            if (ann == null) continue;
+            Class<?>[] params = m.getParameterTypes();
+            int receiverIdx = (params.length > 0 && params[0] == Interpreter.class) ? 1 : 0;
+            if (receiverIdx < params.length) {
+                Class<?> targetType = params[receiverIdx];
+                if (registeredTypes.add(targetType)) {
+                    registerExtensions(targetType, clazz);
+                }
+            }
+        }
+        return this;
+    }
+
     // ── 函数集 / 命名空间注册 ────────────────────────────
 
     /**
@@ -577,6 +664,74 @@ public final class Nova {
         NovaLibrary lib = getOrCreateLibrary(name);
         config.accept(new LibraryBuilder(lib));
         return this;
+    }
+
+    /**
+     * 将 Java 类的所有 public static 方法自动注册为 library 函数。
+     * 支持三种注册方式（按优先级）：
+     * <ol>
+     *   <li>{@code @NovaFunc} 注解方法 — 使用注解指定的名称和别名</li>
+     *   <li>{@code @NovaExt} 注解方法 — 跳过（扩展方法不属于 library）</li>
+     *   <li>无注解的 public static 方法 — 使用方法名直接注册</li>
+     * </ol>
+     * <pre>
+     * public class MathUtils {
+     *     public static int square(int x) { return x * x; }
+     *     public static double sqrt(double x) { return Math.sqrt(x); }
+     * }
+     * nova.defineLibrary("math", MathUtils.class);
+     * // Nova: math.square(5) → 25, math.sqrt(16.0) → 4.0
+     * </pre>
+     */
+    public Nova defineLibrary(String name, Class<?> javaClass) {
+        NovaLibrary lib = getOrCreateLibrary(name);
+        // 1. @NovaFunc 注解方法（优先，由 NovaRegistry 处理参数类型映射）
+        NovaRegistry.registerAll(lib, javaClass);
+        // 2. 无注解的 public static 方法
+        for (java.lang.reflect.Method m : javaClass.getDeclaredMethods()) {
+            int mod = m.getModifiers();
+            if (!java.lang.reflect.Modifier.isPublic(mod) || !java.lang.reflect.Modifier.isStatic(mod)) continue;
+            // 跳过已被 @NovaFunc / @NovaExt 注册的
+            if (m.getAnnotation(NovaFunc.class) != null || m.getAnnotation(NovaExt.class) != null) continue;
+            String funcName = m.getName();
+            // 跳过已注册的（@NovaFunc 可能已用别名注册了同名方法）
+            if (lib.resolveMember(funcName) != null) continue;
+            int arity = m.getParameterCount();
+            java.lang.reflect.Method method = m;
+            lib.putMember(funcName, new NovaNativeFunction(funcName, arity, (ctx, args) -> {
+                Object[] javaArgs = new Object[args.size()];
+                for (int i = 0; i < args.size(); i++) {
+                    javaArgs[i] = unwrap(args.get(i));
+                }
+                try {
+                    Class<?>[] paramTypes = method.getParameterTypes();
+                    for (int i = 0; i < javaArgs.length && i < paramTypes.length; i++) {
+                        javaArgs[i] = coerceArg(javaArgs[i], paramTypes[i]);
+                    }
+                    Object result = method.invoke(null, javaArgs);
+                    return wrapReturn(result);
+                } catch (Exception e) {
+                    Throwable cause = e instanceof java.lang.reflect.InvocationTargetException ? e.getCause() : e;
+                    throw NovaErrors.javaInvokeFailed(funcName, javaClass.getSimpleName(), cause);
+                }
+            }));
+        }
+        return this;
+    }
+
+    /** 参数类型适配（Number → int/long/double/float 等） */
+    private static Object coerceArg(Object value, Class<?> targetType) {
+        if (value == null) return null;
+        if (targetType.isInstance(value)) return value;
+        if (value instanceof Number) {
+            Number n = (Number) value;
+            if (targetType == int.class || targetType == Integer.class) return n.intValue();
+            if (targetType == long.class || targetType == Long.class) return n.longValue();
+            if (targetType == double.class || targetType == Double.class) return n.doubleValue();
+            if (targetType == float.class || targetType == Float.class) return n.floatValue();
+        }
+        if (targetType == String.class) return String.valueOf(value);
+        return value;
     }
 
     /**
@@ -728,31 +883,66 @@ public final class Nova {
      * 通过 defineVal/set 注册的值会自动注入到编译后的 CompiledNova 中。
      * NovaNativeFunction 会被适配为 FunctionN 接口，编译后的字节码可直接调用。
      */
+    /**
+     * 启用编译缓存 — 相同源码不重复编译。
+     * 适合动态生成 Nova 代码但内容可能重复的场景。
+     */
+    public Nova enableCompilationCache() {
+        if (compilationCache == null) {
+            compilationCache = new java.util.concurrent.ConcurrentHashMap<>();
+        }
+        return this;
+    }
+
+    /**
+     * 清空编译缓存。
+     */
+    public void clearCompilationCache() {
+        if (compilationCache != null) compilationCache.clear();
+    }
+
     public CompiledNova compileToBytecode(String code) {
         return compileToBytecode(code, "<compiled>");
     }
 
     /**
      * 真字节码预编译，指定文件名。
+     * 若已启用编译缓存且源码命中缓存，直接复用已编译的类。
      */
     public CompiledNova compileToBytecode(String code, String fileName) {
         Builtins.ensureJavaClassRegistered();
+
+        // 编译缓存：相同源码不重复编译
+        String cacheKey = null;
+        if (compilationCache != null) {
+            cacheKey = Integer.toHexString(code.hashCode()) + ":" + code.length();
+            Map<String, Class<?>> cached = compilationCache.get(cacheKey);
+            if (cached != null) {
+                return buildCompiledNova(cached);
+            }
+        }
+
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
+
+        if (cacheKey != null) {
+            compilationCache.put(cacheKey, classes);
+        }
+        return buildCompiledNova(classes);
+    }
+
+    /** 从已编译的类构建 CompiledNova，注入值注册表和 Java 命名空间 */
+    private CompiledNova buildCompiledNova(Map<String, Class<?>> classes) {
         CompiledNova compiled = new CompiledNova(classes, extensionRegistry);
-        // 传递脚本级 ClassLoader
         if (scriptClassLoader != null) {
             compiled.setScriptClassLoader(scriptClassLoader);
         }
-        // 注入已注册的值
         for (Map.Entry<String, Object> entry : valRegistry.entrySet()) {
             compiled.set(entry.getKey(), entry.getValue());
         }
-        // 注入 Java 命名空间（Java.type/Java.static 等）
-        // 使用 setRaw 保持 NovaMap 类型（不经过 toBindingValue 转换为 LinkedHashMap）
         NovaValue javaNamespace = interpreter.getGlobals().tryGet("Java");
         if (javaNamespace != null) {
             compiled.setRaw("Java", javaNamespace);

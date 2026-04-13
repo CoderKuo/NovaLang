@@ -78,7 +78,7 @@ public final class NovaBootstrap {
                                           Object[] allArgs) throws Throwable {
         Object receiver = allArgs[0];
         if (receiver == null) {
-            throw new NullPointerException("Cannot invoke method '" + methodName + "' on null");
+            throw NovaErrors.nullInvoke(methodName);
         }
 
         int arity = allArgs.length - 1; // 不含 receiver
@@ -156,7 +156,7 @@ public final class NovaBootstrap {
     private static Object getMemberFallback(MutableCallSite site, String memberName,
                                              Object target) throws Throwable {
         if (target == null) {
-            throw new NullPointerException("Cannot access member '" + memberName + "' on null");
+            throw NovaErrors.nullRef(memberName);
         }
 
         Class<?> clazz = target.getClass();
@@ -199,7 +199,7 @@ public final class NovaBootstrap {
     private static void setMemberFallback(MutableCallSite site, String memberName,
                                            Object target, Object value) throws Throwable {
         if (target == null) {
-            throw new NullPointerException("Cannot set member '" + memberName + "' on null");
+            throw NovaErrors.nullSet(memberName);
         }
 
         Class<?> clazz = target.getClass();
@@ -261,7 +261,6 @@ public final class NovaBootstrap {
         }
         // 1. 尝试 StdlibRegistry 内置函数（不可变，可永久缓存）
         StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(funcName);
-        // TODO Phase 1: 这里将改为 NovaRuntime.lookupBuiltin(funcName) 统一查找
         if (nfInfo != null) {
             // 包装 nfInfo.impl.apply(Object[]) 为 MethodHandle
             MethodHandle applyMH = MethodHandles.lookup()

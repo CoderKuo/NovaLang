@@ -40,7 +40,8 @@ public final class NovaOps {
         // inc 回退：x + 1 → x.inc()
         r = tryIncDec(a, b, "inc");
         if (r != null) return r;
-        throw new RuntimeException("Cannot add " + typeName(a) + " and " + typeName(b));
+        throw NovaErrors.typeMismatch(typeName(a) + " + " + typeName(b), "可运算类型",
+                "确保操作数为数值或字符串类型，或实现 plus() 运算符重载");
     }
 
     public static Object sub(Object a, Object b) {
@@ -49,7 +50,8 @@ public final class NovaOps {
         // dec 回退：x - 1 → x.dec()
         r = tryIncDec(a, b, "dec");
         if (r != null) return r;
-        throw new RuntimeException("Cannot subtract " + typeName(b) + " from " + typeName(a));
+        throw NovaErrors.typeMismatch(typeName(a) + " - " + typeName(b), "可运算类型",
+                "确保操作数为数值类型，或实现 minus() 运算符重载");
     }
 
     public static Object mul(Object a, Object b) {
@@ -68,19 +70,22 @@ public final class NovaOps {
         }
         Object r = binaryOp(a, b, NumOp.MUL, "times");
         if (r != null) return r;
-        throw new RuntimeException("Cannot multiply " + typeName(a) + " and " + typeName(b));
+        throw NovaErrors.typeMismatch(typeName(a) + " * " + typeName(b), "可运算类型",
+                "确保操作数为数值类型，或实现 times() 运算符重载");
     }
 
     public static Object div(Object a, Object b) {
         Object r = binaryOp(a, b, NumOp.DIV, "div");
         if (r != null) return r;
-        throw new RuntimeException("Cannot divide " + typeName(a) + " by " + typeName(b));
+        throw NovaErrors.typeMismatch(typeName(a) + " / " + typeName(b), "可运算类型",
+                "确保操作数为数值类型，或实现 div() 运算符重载");
     }
 
     public static Object mod(Object a, Object b) {
         Object r = binaryOp(a, b, NumOp.MOD, "rem");
         if (r != null) return r;
-        throw new RuntimeException("Cannot modulo " + typeName(a) + " by " + typeName(b));
+        throw NovaErrors.typeMismatch(typeName(a) + " % " + typeName(b), "可运算类型",
+                "确保操作数为数值类型，或实现 rem() 运算符重载");
     }
 
     /**
@@ -154,8 +159,8 @@ public final class NovaOps {
             Comparable<Object> ca = (Comparable<Object>) ja;
             return ca.compareTo(jb);
         }
-        throw new RuntimeException("Cannot compare " + a.getClass().getSimpleName()
-                + " and " + b.getClass().getSimpleName());
+        throw NovaErrors.typeMismatch(a.getClass().getSimpleName(), "Comparable",
+                "确保对象实现了 Comparable 接口或 compareTo() 运算符重载");
     }
 
     // ========== 一元运算 ==========
@@ -176,7 +181,8 @@ public final class NovaOps {
             Object jv = ((NovaValue) a).toJavaValue();
             if (jv instanceof Number) return a;
         }
-        throw new RuntimeException("Cannot apply unary plus to " + a.getClass().getSimpleName());
+        throw NovaErrors.typeMismatch(a.getClass().getSimpleName(), "Number",
+                "一元 + 需要数值类型，或实现 unaryPlus() 运算符重载");
     }
 
     // ========== inc/dec 回退 ==========
@@ -212,7 +218,7 @@ public final class NovaOps {
     private static Object toJavaNumber(Object v) {
         if (v instanceof Number) return v;
         if (v instanceof NovaValue) return ((NovaValue) v).toJavaValue();
-        throw new RuntimeException("Cannot convert " + (v == null ? "null" : v.getClass().getSimpleName()) + " to Number");
+        throw NovaErrors.typeMismatch(v == null ? "null" : v.getClass().getSimpleName(), "Number");
     }
 
     private static Object numericOp(Object a, Object b, NumOp op) {

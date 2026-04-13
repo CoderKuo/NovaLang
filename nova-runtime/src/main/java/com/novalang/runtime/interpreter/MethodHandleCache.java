@@ -443,7 +443,8 @@ public final class MethodHandleCache {
         if (target == float.class || target == Float.class) {
             return source == Float.class || source == float.class ||
                    source == int.class || source == Integer.class ||
-                   source == long.class || source == Long.class;
+                   source == long.class || source == Long.class ||
+                   source == double.class || source == Double.class;
         }
         if (target == boolean.class) return source == Boolean.class;
         if (target == char.class) return source == Character.class;
@@ -455,6 +456,13 @@ public final class MethodHandleCache {
         if (target == Character.class) return source == char.class;
         // SAM 转换：NovaCallable 可以适配函数式接口（Runnable, Callable, Consumer 等）
         if (source != null && NovaCallable.class.isAssignableFrom(source) && isFunctionalInterface(target)) {
+            return true;
+        }
+        // List/Collection → 数组: 自动转换兼容
+        if (target.isArray() && source != null
+                && (java.util.Collection.class.isAssignableFrom(source)
+                    || com.novalang.runtime.NovaList.class.isAssignableFrom(source)
+                    || com.novalang.runtime.NovaArray.class.isAssignableFrom(source))) {
             return true;
         }
         return false;
@@ -471,6 +479,10 @@ public final class MethodHandleCache {
             return source == Long.class || source == long.class ||
                    source == Double.class || source == double.class ||
                    source == Float.class || source == float.class;
+        }
+        // Double → float
+        if (target == float.class || target == Float.class) {
+            return source == Double.class || source == double.class;
         }
         // Long → short/byte (极端情况)
         if (target == short.class || target == Short.class ||
@@ -749,13 +761,21 @@ public final class MethodHandleCache {
         for (int i = 0; i < args.length; i++) {
             int paramIdx = i + paramOffset;
             if (paramIdx >= paramCount) break;
+            Class<?> pt = type.parameterType(paramIdx);
             if (args[i] instanceof Number) {
                 Number num = (Number) args[i];
-                Class<?> pt = type.parameterType(paramIdx);
                 Object coerced = coerceNumber(num, pt);
                 if (coerced != args[i]) {
                     if (result == args) result = args.clone();
                     result[i] = coerced;
+                }
+            }
+            // List/Collection/NovaList → 数组自动转换
+            if (pt.isArray() && args[i] != null && !pt.isInstance(args[i])) {
+                Object converted = com.novalang.runtime.NovaDynamic.adaptToArray(pt, args[i]);
+                if (converted != args[i]) {
+                    if (result == args) result = args.clone();
+                    result[i] = converted;
                 }
             }
         }

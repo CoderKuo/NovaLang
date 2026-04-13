@@ -11,8 +11,8 @@ import com.novalang.runtime.NovaException;
 public class NovaRuntimeException extends NovaException {
 
     private String novaStackTrace;
-    private final SourceLocation location;
-    private final String sourceLine;
+    private SourceLocation location;
+    private String sourceLine;
 
     public NovaRuntimeException(String message) {
         super(message);
@@ -42,6 +42,28 @@ public class NovaRuntimeException extends NovaException {
         this.sourceLine = sourceLine;
     }
 
+    public NovaRuntimeException(ErrorKind kind, String message, String suggestion) {
+        super(kind, message, suggestion);
+        this.novaStackTrace = null;
+        this.location = null;
+        this.sourceLine = null;
+    }
+
+    public NovaRuntimeException(ErrorKind kind, String message, String suggestion, Throwable cause) {
+        super(kind, message, suggestion, cause);
+        this.novaStackTrace = null;
+        this.location = null;
+        this.sourceLine = null;
+    }
+
+    public NovaRuntimeException(ErrorKind kind, String message, String suggestion,
+                                SourceLocation location, String sourceLine) {
+        super(kind, message, suggestion);
+        this.novaStackTrace = null;
+        this.location = location;
+        this.sourceLine = sourceLine;
+    }
+
     public String getNovaStackTrace() {
         return novaStackTrace;
     }
@@ -60,19 +82,39 @@ public class NovaRuntimeException extends NovaException {
         }
     }
 
+    /**
+     * 事后附加源码位置信息（仅在尚未设置位置时生效）。
+     * 用于 MirInterpreter catch 块从当前指令获取位置并补充到异常上。
+     */
+    public void attachLocation(SourceLocation loc, String srcLine) {
+        if (this.location == null && loc != null) {
+            this.location = loc;
+            this.sourceLine = srcLine;
+        }
+    }
+
     /** 返回不含调用栈和位置信息的纯错误消息 */
+    @Override
     public String getRawMessage() {
-        return super.getMessage();
+        return super.getRawMessage();
     }
 
     @Override
     public String getMessage() {
         StringBuilder sb = new StringBuilder();
-        sb.append(super.getMessage());
+        sb.append(getRawMessage());
+
+        if (getSuggestion() != null) {
+            sb.append("\n  提示: ").append(getSuggestion());
+        }
 
         if (location != null && location.getLine() > 0) {
             sb.append("\n");
             sb.append(formatErrorWithLocation());
+        } else if (getSourceLineNumber() > 0) {
+            // 编译路径回退：从堆栈提取的行号（无源码行文本）
+            sb.append("\n  --> ").append(getSourceFile() != null ? getSourceFile() : "<script>")
+              .append(":").append(getSourceLineNumber());
         }
 
         if (novaStackTrace != null) {

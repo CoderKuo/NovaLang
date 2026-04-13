@@ -1,5 +1,8 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaScheduler;
 import com.novalang.runtime.NovaScriptContext;
 import com.novalang.runtime.NovaTask;
@@ -28,11 +31,13 @@ public final class SchedulerHelper {
         Object delegated = delegateToInterpreter("schedule", args);
         if (delegated != null) return delegated;
         if (args.length != 2) {
-            throw new RuntimeException("schedule expects 2 arguments (delayMs, block), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                    "schedule 需要 2 个参数 (delayMs, block)，但传入了 " + args.length + " 个");
         }
         NovaScheduler sched = SchedulerHolder.get();
         if (sched == null) {
-            throw new RuntimeException("No scheduler configured. Use Nova.setScheduler() first.");
+            throw new NovaException(ErrorKind.INTERNAL,
+                    "未配置调度器", "请先调用 Nova.setScheduler()");
         }
         long delayMs = ((Number) args[0]).longValue();
         Object block = args[1];
@@ -48,11 +53,13 @@ public final class SchedulerHelper {
         Object delegated = delegateToInterpreter("scheduleRepeat", args);
         if (delegated != null) return delegated;
         if (args.length != 3) {
-            throw new RuntimeException("scheduleRepeat expects 3 arguments (delayMs, periodMs, block), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                    "scheduleRepeat 需要 3 个参数 (delayMs, periodMs, block)，但传入了 " + args.length + " 个");
         }
         NovaScheduler sched = SchedulerHolder.get();
         if (sched == null) {
-            throw new RuntimeException("No scheduler configured. Use Nova.setScheduler() first.");
+            throw new NovaException(ErrorKind.INTERNAL,
+                    "未配置调度器", "请先调用 Nova.setScheduler()");
         }
         long delayMs = ((Number) args[0]).longValue();
         long periodMs = ((Number) args[1]).longValue();
@@ -69,12 +76,14 @@ public final class SchedulerHelper {
         Object delegated = delegateToInterpreter("delay", args);
         if (delegated != null) return delegated;
         if (args.length != 1) {
-            throw new RuntimeException("delay expects 1 argument (millis), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                    "delay 需要 1 个参数 (millis)，但传入了 " + args.length + " 个");
         }
         long millis = ((Number) args[0]).longValue();
         NovaScheduler sched = SchedulerHolder.get();
         if (sched != null && sched.isMainThread()) {
-            throw new RuntimeException("Cannot call delay() on the main thread. Use schedule(ms) { } instead.");
+            throw new NovaException(ErrorKind.INTERNAL,
+                    "不能在主线程调用 delay()", "使用 schedule(ms) { } 代替");
         }
         try {
             Thread.sleep(millis);
@@ -109,11 +118,13 @@ public final class SchedulerHelper {
         Object delegated = delegateToInterpreter("scope", args);
         if (delegated != null) return delegated;
         if (args.length != 1) {
-            throw new RuntimeException("scope expects 1 argument (block), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                    "scope 需要 1 个参数 (block)，但传入了 " + args.length + " 个");
         }
         NovaScheduler sched = SchedulerHolder.get();
         if (sched != null && sched.isMainThread()) {
-            throw new RuntimeException("Cannot call scope() on the main thread (would block and cause deadlock). Use launch { } instead.");
+            throw new NovaException(ErrorKind.INTERNAL,
+                    "不能在主线程调用 scope()（会阻塞导致死锁）", "使用 launch { } 代替");
         }
         Object block = args[0];
         CompletableFuture<Object> future = new CompletableFuture<>();
@@ -129,10 +140,10 @@ public final class SchedulerHelper {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
+            throw NovaErrors.wrap("scope 执行失败", cause != null ? cause : e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("scope interrupted");
+            throw new NovaException(ErrorKind.INTERNAL, "scope 被中断");
         }
     }
 
@@ -142,11 +153,13 @@ public final class SchedulerHelper {
      */
     public static Object sync(Object[] args) {
         if (args.length != 1) {
-            throw new RuntimeException("sync expects 1 argument (block), got " + args.length);
+            throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
+                    "sync 需要 1 个参数 (block)，但传入了 " + args.length + " 个");
         }
         NovaScheduler sched = SchedulerHolder.get();
         if (sched == null) {
-            throw new RuntimeException("No scheduler configured. Use Nova.setScheduler() first.");
+            throw new NovaException(ErrorKind.INTERNAL,
+                    "未配置调度器", "请先调用 Nova.setScheduler()");
         }
         Object block = args[0];
         // 已在主线程则直接执行
@@ -173,10 +186,10 @@ public final class SchedulerHelper {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new RuntimeException(cause != null ? cause : e);
+            throw NovaErrors.wrap("sync 执行失败", cause != null ? cause : e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("sync interrupted");
+            throw new NovaException(ErrorKind.INTERNAL, "sync 被中断");
         }
     }
 

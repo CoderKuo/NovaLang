@@ -1,5 +1,9 @@
 package com.novalang.runtime.stdlib;
 
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -121,20 +125,26 @@ public final class StdlibJavaInterop {
         if (obj != null && obj.getClass().isArray()) {
             return new ArrayList<>(Arrays.asList((Object[]) obj));
         }
-        throw new RuntimeException("Cannot convert " + (obj == null ? "null" : obj.getClass().getName()) + " to List");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (obj == null ? "null" : obj.getClass().getName()) + " 转换为 List",
+                "参数需要是 Collection 或数组类型");
     }
 
     /** Nova Map → java.util.HashMap */
     public static Object toJavaMap(Object obj) {
         if (obj instanceof Map) return new HashMap<>((Map<?, ?>) obj);
-        throw new RuntimeException("Cannot convert " + (obj == null ? "null" : obj.getClass().getName()) + " to Map");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (obj == null ? "null" : obj.getClass().getName()) + " 转换为 Map",
+                "参数需要是 Map 类型");
     }
 
     /** Nova Set/Collection → java.util.HashSet */
     public static Object toJavaSet(Object obj) {
         if (obj instanceof Set) return new HashSet<>((Set<?>) obj);
         if (obj instanceof Collection) return new HashSet<>((Collection<?>) obj);
-        throw new RuntimeException("Cannot convert " + (obj == null ? "null" : obj.getClass().getName()) + " to Set");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (obj == null ? "null" : obj.getClass().getName()) + " 转换为 Set",
+                "参数需要是 Collection 类型");
     }
 
     /** Nova List → Object[] */
@@ -142,7 +152,9 @@ public final class StdlibJavaInterop {
         if (obj instanceof List) return ((List<?>) obj).toArray();
         if (obj instanceof Collection) return ((Collection<?>) obj).toArray();
         if (obj != null && obj.getClass().isArray()) return obj;
-        throw new RuntimeException("Cannot convert " + (obj == null ? "null" : obj.getClass().getName()) + " to Array");
+        throw new NovaException(ErrorKind.TYPE_MISMATCH,
+                "无法将 " + (obj == null ? "null" : obj.getClass().getName()) + " 转换为 Array",
+                "参数需要是 Collection 或数组类型");
     }
 
     // ============ 辅助 ============
@@ -155,14 +167,14 @@ public final class StdlibJavaInterop {
      */
     private static Class<?> resolveClass(Object objOrClass) {
         if (objOrClass instanceof Class) return (Class<?>) objOrClass;
-        if (objOrClass == null) throw new RuntimeException("Cannot resolve class from null");
+        if (objOrClass == null) throw new NovaException(ErrorKind.NULL_REFERENCE, "无法从 null 解析类");
         if (objOrClass instanceof String) {
             String s = (String) objOrClass;
             // 含点号的视为全限定类名（java.lang.String），否则视为普通字符串值
             if (s.contains(".")) {
                 try { return Class.forName(s); }
                 catch (ClassNotFoundException e) {
-                    throw new RuntimeException("Java class not found: " + s);
+                    throw NovaErrors.javaClassNotFound(s, e);
                 }
             }
         }

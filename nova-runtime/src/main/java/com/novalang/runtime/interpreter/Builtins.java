@@ -91,7 +91,7 @@ public final class Builtins {
                     String line = reader.readLine();
                     return line != null ? NovaString.of(line) : NovaNull.NULL;
                 } catch (IOException e) {
-                    throw new NovaRuntimeException("Failed to read input: " + e.getMessage());
+                    throw new NovaRuntimeException(NovaException.ErrorKind.IO_ERROR, "读取输入失败: " + e.getMessage(), null);
                 }
             }));
 
@@ -104,7 +104,7 @@ public final class Builtins {
                     String line = reader.readLine();
                     return line != null ? NovaString.of(line) : NovaNull.NULL;
                 } catch (IOException e) {
-                    throw new NovaRuntimeException("Failed to read input: " + e.getMessage());
+                    throw new NovaRuntimeException(NovaException.ErrorKind.IO_ERROR, "读取输入失败: " + e.getMessage(), null);
                 }
             }));
         } // end if (policy.isStdioAllowed())
@@ -120,7 +120,7 @@ public final class Builtins {
         env.defineVal("Array", new NovaNativeFunction("Array", -1,
             (interp, args) -> {
                 if (args.isEmpty()) {
-                    throw new NovaRuntimeException("Array(size) requires at least 1 argument");
+                    throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "Array(size) 至少需要 1 个参数", null);
                 }
                 String typeName = interp.getPendingTypeArgName(0);
                 NovaArray.ElementType elemType = NovaArray.ElementType.fromTypeName(
@@ -156,7 +156,7 @@ public final class Builtins {
             NovaArray.ElementType elemType = et;
             env.defineVal(ctorName, new NovaNativeFunction(ctorName, -1,
                 (interp, args) -> {
-                    if (args.isEmpty()) throw new NovaRuntimeException(ctorName + "(size) requires at least 1 argument");
+                    if (args.isEmpty()) throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, ctorName + "(size) 至少需要 1 个参数", null);
                     int size = args.get(0).asInt();
                     NovaArray arr = new NovaArray(elemType, size);
                     if (args.size() >= 2 && isCallableValue(args.get(1))) {
@@ -234,7 +234,7 @@ public final class Builtins {
                 Class<?> clazz = JavaInterop.loadClass(name);
                 return new JavaInterop.NovaJavaClass(clazz);
             } catch (ClassNotFoundException e) {
-                throw new NovaRuntimeException("Java class not found: " + name);
+                throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP, "找不到 Java 类: " + name, "请检查类名是否正确或相关依赖是否已加载");
             }
         }));
         // 同时注册到 StdlibRegistry（编译路径通过 NovaBootstrap 查找）
@@ -308,7 +308,7 @@ public final class Builtins {
         // classOf 占位：由 Interpreter 构造器 redefine 为支持 HIR 的完整版本，
         // MIR 路径由 StaticMethodDispatcher.handleClassInfoFromJavaClass 处理
         env.defineVal("classOf", new NovaNativeFunction("classOf", 1, (interp, args) -> {
-            throw new NovaRuntimeException("classOf() not initialized — Interpreter redefine missing");
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "classOf() 未初始化 — 缺少 Interpreter redefine", null);
         }));
 
         // ============ 注解处理器注册 ============
@@ -319,7 +319,7 @@ public final class Builtins {
             String name = args.get(0).asString();
             NovaValue handler = args.get(1);
             if (!handler.isCallable()) {
-                throw new NovaRuntimeException("registerAnnotationProcessor: handler must be callable");
+                throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "registerAnnotationProcessor: handler 必须是可调用对象", null);
             }
 
             // 可变引用，支持 replace 替换 handler
@@ -450,19 +450,19 @@ public final class Builtins {
 
         // check(condition) / check(condition, lazyMessage) - 断言条件为真
         env.defineVal("check", new NovaNativeFunction("check", -1, (interp, args) -> {
-            if (args.isEmpty()) throw new NovaRuntimeException("check() requires at least 1 argument");
+            if (args.isEmpty()) throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "check() 至少需要 1 个参数", null);
             boolean condition = args.get(0).asBool();
             if (!condition) {
-                String msg = args.size() > 1 ? "Check failed: " + args.get(1).asString()
-                                              : "Check failed.";
-                throw new NovaRuntimeException(msg);
+                String msg = args.size() > 1 ? "检查失败: " + args.get(1).asString()
+                                              : "检查失败";
+                throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, msg, null);
             }
             return NovaNull.UNIT;
         }));
 
         // require(condition) / require(condition, lazyMessage) - 要求条件为真
         env.defineVal("require", new NovaNativeFunction("require", -1, (interp, args) -> {
-            if (args.isEmpty()) throw new NovaRuntimeException("require() requires at least 1 argument");
+            if (args.isEmpty()) throw new NovaRuntimeException(NovaException.ErrorKind.ARGUMENT_MISMATCH, "require() 至少需要 1 个参数", null);
             boolean condition = args.get(0).asBool();
             if (!condition) {
                 String msg = args.size() > 1 ? "Required: " + args.get(1).asString()
@@ -522,7 +522,7 @@ public final class Builtins {
         // schedule(delayMs) { block } — 延迟调度，返回 Task
         env.defineVal("schedule", new NovaNativeFunction("schedule", 2, (interp, args) -> {
             NovaScheduler sched = interp.getScheduler();
-            if (sched == null) throw new NovaRuntimeException("No scheduler configured. Use Nova.setScheduler() first.");
+            if (sched == null) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "未配置调度器", "请先调用 Nova.setScheduler()");
             long delayMs = args.get(0).asLong();
             NovaCallable block = interp.asCallable(args.get(1), "schedule");
             NovaScheduler.Cancellable handle = sched.scheduleLater(delayMs, () ->
@@ -533,7 +533,7 @@ public final class Builtins {
         // scheduleRepeat(delayMs, periodMs) { block } — 重复调度，返回 Task
         env.defineVal("scheduleRepeat", new NovaNativeFunction("scheduleRepeat", 3, (interp, args) -> {
             NovaScheduler sched = interp.getScheduler();
-            if (sched == null) throw new NovaRuntimeException("No scheduler configured. Use Nova.setScheduler() first.");
+            if (sched == null) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "未配置调度器", "请先调用 Nova.setScheduler()");
             long delayMs = args.get(0).asLong();
             long periodMs = args.get(1).asLong();
             NovaCallable block = interp.asCallable(args.get(2), "scheduleRepeat");
@@ -547,7 +547,8 @@ public final class Builtins {
             NovaCallable block = interp.asCallable(args.get(0), "scope");
             NovaScheduler sched = interp.getScheduler();
             if (sched != null && sched.isMainThread()) {
-                throw new NovaRuntimeException("Cannot call scope() on the main thread (would block and cause deadlock). Use launch { } instead.");
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "不能在主线程调用 scope()（会导致死锁）", "请改用 launch { }");
+
             }
             java.util.concurrent.Executor asyncExec = null;
             if (sched != null) asyncExec = sched.asyncExecutor();
@@ -571,17 +572,17 @@ public final class Builtins {
             } catch (java.util.concurrent.ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
-                throw new NovaRuntimeException(cause != null ? cause.getMessage() : e.getMessage());
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "scope 执行失败: " + (cause != null ? cause.getMessage() : e.getMessage()), null, cause != null ? cause : e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new NovaRuntimeException("scope interrupted");
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "scope 被中断", null);
             }
         }));
 
         // sync { block } — 提交到调度器主线程执行并等待结果
         env.defineVal("sync", new NovaNativeFunction("sync", 1, (interp, args) -> {
             NovaScheduler sched = interp.getScheduler();
-            if (sched == null) throw new NovaRuntimeException("No scheduler configured. Use Nova.setScheduler() first.");
+            if (sched == null) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "未配置调度器", "请先调用 Nova.setScheduler()");
             NovaCallable block = interp.asCallable(args.get(0), "sync");
             // 已在主线程则直接执行
             if (sched.isMainThread()) {
@@ -600,10 +601,10 @@ public final class Builtins {
             } catch (java.util.concurrent.ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
-                throw new NovaRuntimeException(cause != null ? cause.getMessage() : e.getMessage());
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "sync 执行失败: " + (cause != null ? cause.getMessage() : e.getMessage()), null, cause != null ? cause : e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new NovaRuntimeException("sync interrupted");
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "sync 被中断", null);
             }
         }));
 
@@ -633,10 +634,10 @@ public final class Builtins {
                 } catch (java.util.concurrent.ExecutionException e) {
                     Throwable cause = e.getCause();
                     if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
-                    throw new NovaRuntimeException("parallel task failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+                    throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "parallel 任务执行失败: " + (cause != null ? cause.getMessage() : e.getMessage()), null, cause != null ? cause : e);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new NovaRuntimeException("parallel interrupted");
+                    throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "parallel 被中断", null);
                 }
             }
             return results;
@@ -654,14 +655,14 @@ public final class Builtins {
                 return future.get(timeout, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (java.util.concurrent.TimeoutException e) {
                 future.cancel(true);
-                throw new NovaRuntimeException("Timeout after " + timeout + "ms");
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "执行超时（" + timeout + "ms）", null);
             } catch (java.util.concurrent.ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
-                throw new NovaRuntimeException(cause != null ? cause.getMessage() : e.getMessage());
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "withTimeout 执行失败: " + (cause != null ? cause.getMessage() : e.getMessage()), null, cause != null ? cause : e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new NovaRuntimeException("withTimeout interrupted");
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "withTimeout 被中断", null);
             }
         }));
 
@@ -718,7 +719,7 @@ public final class Builtins {
             boolean[] closed = {false};
             NovaMap ch = new NovaMap();
             ch.put(NovaString.of("send"), NovaNativeFunction.create("send", (value) -> {
-                if (closed[0]) throw new NovaRuntimeException("Cannot send to a closed channel");
+                if (closed[0]) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "无法向已关闭的通道发送数据", null);
                 try { queue.put(value); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                 return NovaNull.UNIT;
             }));
@@ -731,7 +732,7 @@ public final class Builtins {
             ch.put(NovaString.of("receiveTimeout"), NovaNativeFunction.create("receiveTimeout", (timeoutMs) -> {
                 try {
                     NovaValue val = queue.poll(timeoutMs.asLong(), java.util.concurrent.TimeUnit.MILLISECONDS);
-                    if (val == null) throw new NovaRuntimeException("Channel receive timed out");
+                    if (val == null) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "通道接收超时", null);
                     return val;
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -756,10 +757,10 @@ public final class Builtins {
                 iter.put(NovaString.of("next"), NovaNativeFunction.create("next", () -> {
                     NovaValue val = queue.poll();
                     if (val != null) return val;
-                    if (closed[0]) throw new NovaRuntimeException("Channel closed");
+                    if (closed[0]) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "通道已关闭", null);
                     try { return queue.take(); } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        throw new NovaRuntimeException("interrupted");
+                        throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "通道操作被中断", null);
                     }
                 }));
                 return iter;
@@ -802,10 +803,10 @@ public final class Builtins {
                     } catch (java.util.concurrent.ExecutionException e) {
                         Throwable cause = e.getCause();
                         if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
-                        throw new NovaRuntimeException("awaitAll failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+                        throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "awaitAll 执行失败: " + (cause != null ? cause.getMessage() : e.getMessage()), null, cause != null ? cause : e);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        throw new NovaRuntimeException("awaitAll interrupted");
+                        throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "awaitAll 被中断", null);
                     }
                 } else {
                     results.add(fv);
@@ -833,13 +834,13 @@ public final class Builtins {
                         try {
                             return AbstractNovaValue.fromJava(f.get());
                         } catch (Exception e) {
-                            throw new NovaRuntimeException("awaitFirst failed: " + e.getMessage());
+                            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "awaitFirst 执行失败: " + e.getMessage(), null, e);
                         }
                     }
                 }
                 try { Thread.sleep(1); } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new NovaRuntimeException("awaitFirst interrupted");
+                    throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "awaitFirst 被中断", null);
                 }
             }
         }));
@@ -859,10 +860,10 @@ public final class Builtins {
             } catch (java.util.concurrent.ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof NovaRuntimeException) throw (NovaRuntimeException) cause;
-                throw new NovaRuntimeException("withContext failed: " + (cause != null ? cause.getMessage() : e.getMessage()));
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "withContext 执行失败: " + (cause != null ? cause.getMessage() : e.getMessage()), null, cause != null ? cause : e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new NovaRuntimeException("withContext interrupted");
+                throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "withContext 被中断", null);
             }
         }));
     }

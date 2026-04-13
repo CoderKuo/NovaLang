@@ -129,7 +129,7 @@ public final class LambdaUtils {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw NovaErrors.wrap("lambda 调用失败", t);
             }
         }
         // 尝试任意 arity invoke（兼容旧行为：0 参数找不到时找任意 invoke）
@@ -140,10 +140,11 @@ public final class LambdaUtils {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw NovaErrors.wrap("lambda 调用失败", t);
             }
         }
-        throw new RuntimeException("Lambda has no invoke() method: " + lambda.getClass().getName());
+        throw new NovaException(NovaException.ErrorKind.INTERNAL,
+                "Lambda 没有 invoke() 方法: " + lambda.getClass().getName());
     }
 
     /** 1 参数调用 */
@@ -173,7 +174,7 @@ public final class LambdaUtils {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw NovaErrors.wrap("lambda 调用失败", t);
             }
         }
         // 兼容：找任意 invoke
@@ -184,10 +185,11 @@ public final class LambdaUtils {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw NovaErrors.wrap("lambda 调用失败", t);
             }
         }
-        throw new RuntimeException("Lambda has no invoke(Object) method: " + lambda.getClass().getName());
+        throw new NovaException(NovaException.ErrorKind.INTERNAL,
+                "Lambda 没有 invoke(Object) 方法: " + lambda.getClass().getName());
     }
 
     /** 2 参数调用 */
@@ -203,10 +205,11 @@ public final class LambdaUtils {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw NovaErrors.wrap("lambda 调用失败", t);
             }
         }
-        throw new RuntimeException("Lambda has no invoke(Object,Object) method: " + lambda.getClass().getName());
+        throw new NovaException(NovaException.ErrorKind.INTERNAL,
+                "Lambda 没有 invoke(Object,Object) 方法: " + lambda.getClass().getName());
     }
 
     /** N 参数调用 (4~8)：FunctionN 快速路径 + MethodHandle fallback */
@@ -230,10 +233,11 @@ public final class LambdaUtils {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw NovaErrors.wrap("lambda 调用失败", t);
             }
         }
-        throw new RuntimeException("Lambda has no invoke method with " + arity + " parameter(s)");
+        throw new NovaException(NovaException.ErrorKind.INTERNAL,
+                "Lambda 没有 " + arity + " 参数的 invoke 方法");
     }
 
     /** 是否有 1 参数 invoke */
@@ -272,7 +276,7 @@ public final class LambdaUtils {
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw NovaErrors.wrap("lambda 调用失败", t);
             }
         }
         // 退回 0 参数

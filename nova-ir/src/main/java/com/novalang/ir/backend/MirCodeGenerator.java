@@ -36,6 +36,8 @@ public class MirCodeGenerator {
     private final Set<Integer> stringLocals = new HashSet<>();
     /** 当前方法的 JVM 描述符（用于判断返回值类型） */
     private String currentMethodDesc;
+    /** 当前方法已发射的最后一行号（避免重复 visitLineNumber） */
+    private int lastEmittedLine;
 
     /**
      * 从 MIR 模块生成字节码。
@@ -110,6 +112,10 @@ public class MirCodeGenerator {
         String[] interfaces = cls.getInterfaces().toArray(new String[0]);
 
         cw.visit(V1_8, access, className, null, superName, interfaces);
+
+        // SourceFile 属性（调试器/堆栈跟踪显示源文件名）
+        String sourceFile = extractSourceFile(cls.getMethods());
+        if (sourceFile != null) cw.visitSource(sourceFile, null);
 
         // 自定义注解标注
         addClassAnnotations(cw, cls, packagePrefix);
@@ -187,6 +193,10 @@ public class MirCodeGenerator {
         ClassWriter cw = new NovaClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         String className = packagePrefix + "$Module";
         cw.visit(V1_8, ACC_PUBLIC, className, null, "java/lang/Object", null);
+
+        // SourceFile 属性
+        String sourceFile = extractSourceFile(module.getTopLevelFunctions());
+        if (sourceFile != null) cw.visitSource(sourceFile, null);
 
         // 顶层变量 → public static 字段
         for (MirField field : module.getTopLevelFields()) {
@@ -280,6 +290,7 @@ public class MirCodeGenerator {
         }
 
         mv.visitCode();
+        this.lastEmittedLine = -1;
 
         // 识别可使用 ILOAD/ISTORE 的 int 局部变量
         this.intLocals = identifyIntLocals(func, isStatic);
@@ -623,8 +634,31 @@ public class MirCodeGenerator {
         }
     }
 
+    /** 从方法列表的指令中提取源文件名（取第一条有位置信息的指令） */
+    private static String extractSourceFile(List<MirFunction> functions) {
+        for (MirFunction func : functions) {
+            for (BasicBlock block : func.getBlocks()) {
+                for (MirInst inst : block.getInstructions()) {
+                    com.novalang.compiler.ast.SourceLocation loc = inst.getLocation();
+                    if (loc != null && loc.getFile() != null && !loc.getFile().isEmpty()) {
+                        return loc.getFile();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private void generateInstruction(MethodVisitor mv, MirInst inst,
                                      Map<Integer, Label> blockLabels, MirFunction func) {
+        // 发射行号表条目（同一行只发射一次）
+        com.novalang.compiler.ast.SourceLocation loc = inst.getLocation();
+        if (loc != null && loc.getLine() > 0 && loc.getLine() != lastEmittedLine) {
+            Label lineLabel = new Label();
+            mv.visitLabel(lineLabel);
+            mv.visitLineNumber(loc.getLine(), lineLabel);
+            lastEmittedLine = loc.getLine();
+        }
         switch (inst.getOp()) {
             case CONST_INT: {
                 int value = (Integer) inst.getExtra();
