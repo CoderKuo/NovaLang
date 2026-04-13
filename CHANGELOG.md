@@ -4,6 +4,65 @@
 
 ---
 
+## [v0.1.15]
+
+### 错误处理系统重构
+- **ErrorKind 分类**：所有运行时异常携带 10 种错误分类（TYPE_MISMATCH / NULL_REFERENCE / UNDEFINED / ARGUMENT_MISMATCH 等）
+- **NovaErrors 工厂**：统一构建错误，自动附带修复建议和 Levenshtein 模糊匹配
+- **suggestion 提示**：错误消息自动输出 `提示:` 行，建议修复方式
+- **源码位置附加**：MirInterpreter catch 块自动从当前指令获取 SourceLocation
+- **编译路径行号**：MirCodeGenerator 生成 LineNumberTable + SourceFile 属性，异常堆栈显示 Nova 源码行号
+- **全量改造**：runtime-api 和 runtime 模块中 RuntimeException / NullPointerException / ClassCastException 全部清零
+
+### Java 互操作增强
+- **List → Array 自动转换**：Nova `[1,2,3]` 传给 Java `int[]` / `String[]` / `Object[]` 参数时自动转换，支持 int/long/double/float/boolean 基本类型数组
+
+### Bug 修复
+- 修复 `wrapException` 使用 `getRawMessage()` 避免 catch 块中异常消息包含位置后缀
+
+---
+
+## [v0.1.14]
+
+### Bug 修复
+- 修复 `AbstractNovaValue.hashCode` 栈溢出（toJavaValue 返回 this 时无限递归，影响 NovaNamespace/NovaRange）
+
+---
+
+## [v0.1.13]
+
+### Bug 修复
+- 修复扩展方法链式调用失效（`ExtensionRegistry.lookupAny` 增加 arity 无关查找 + 继承链遍历）
+- 修复 `RegisteredEntry.invoke` 参数数量不匹配时的空指针（优先匹配 + null 填充）
+- 增强错误信息：函数调用失败时显示函数名和来源
+
+### 文档
+- README 添加 NovaLang logo banner 和 badge
+
+---
+
+## [v0.1.12]
+
+### 新特性
+- **语法增强**：尾随逗号容忍、Map key 支持变量引用、`as` 运算符优先级提升（高于算术）、`as` 数值类型转换、`[]` 内支持 as/is
+- **标准库大幅扩展**：
+  - 3 个新 import 模块：`nova.encoding`（Base64/URL/Hex/Base62）、`nova.crypto`（MD5/SHA/UUID/Snowflake/NanoID）、`nova.yaml`
+  - 扩展函数补全：Set 20+ 方法、Boolean 6 方法、Char 3 方法、Number 4 方法、List 7 方法、String 正则 9 方法
+  - Hutool 风格工具函数：truncate、isNumber、similar、countMap、disjunction、randomEle/shuffle/weightRandom、round/formatPercent
+  - 集合增强：Triple、listOfNotNull、sortedMapOf、sortedSetOf、Range step/downTo
+- **JSON/YAML SPI**：ServiceLoader 多 provider 架构，4 个独立 Gradle 模块（nova-json-gson/fastjson2、nova-yaml-snakeyaml/bukkit）
+- **Shared 全局注册表**：完整 CRUD API（sharedLibraries/Functions/Register/Set/Remove/Has/Get）
+- **Java 互操作**：反射函数（javaFields/Methods/Superclass/Interfaces）、NovaDynamicObject 接口、MemberNameResolver 回调、inner class 访问、Double→float 兼容
+- **文件注解系统** + 脚本级 ClassLoader 隔离
+- **MIR 性能优化** + Lambda with Receiver DSL + javaClass 常量传播
+- **null as T? 安全转换**：`null as String?` 返回 null 而非抛异常
+
+### Bug 修复
+- URLEncoder/URLDecoder 兼容 Java 8
+- VirtualMethodDispatcher 中文乱码注释修复
+
+---
+
 ## [v0.1.11]
 
 ### 新特性

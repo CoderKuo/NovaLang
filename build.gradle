@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = 'com.novalang'
-    version = '0.1.14'
+    version = '0.1.15'
 
     repositories {
         mavenCentral()
@@ -27,6 +27,12 @@ subprojects {
         options.encoding = 'UTF-8'
         options.compilerArgs << '-Xlint:all'
         options.compilerArgs << '-Xlint:-serial'
+    }
+
+    tasks.withType(Jar) {
+        manifest {
+            attributes 'Implementation-Version': project.version
+        }
     }
 
     dependencies {

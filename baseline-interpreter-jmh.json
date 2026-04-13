@@ -1,0 +1,2308 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "arith_loop"
+        },
+        "primaryMetric" : {
+            "score" : 15.017851002814385,
+            "scoreError" : 0.10138772203767918,
+            "scoreConfidence" : [
+                14.916463280776707,
+                15.119238724852064
+            ],
+            "scorePercentiles" : {
+                "0.0" : 14.940281706570238,
+                "50.0" : 15.005988981381227,
+                "90.0" : 15.108185264155413,
+                "95.0" : 15.108185264155413,
+                "99.0" : 15.108185264155413,
+                "99.9" : 15.108185264155413,
+                "99.99" : 15.108185264155413,
+                "99.999" : 15.108185264155413,
+                "99.9999" : 15.108185264155413,
+                "100.0" : 15.108185264155413
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    14.982212733600445,
+                    15.0041108762039,
+                    15.001463884992987,
+                    14.940281706570238,
+                    15.108185264155413,
+                    15.007867086558555,
+                    15.07846108490566,
+                    15.020225385527876
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "call_loop"
+        },
+        "primaryMetric" : {
+            "score" : 16.750844478762755,
+            "scoreError" : 0.2115526232809537,
+            "scoreConfidence" : [
+                16.5392918554818,
+                16.96239710204371
+            ],
+            "scorePercentiles" : {
+                "0.0" : 16.60875738486144,
+                "50.0" : 16.742283356424196,
+                "90.0" : 16.895558847736627,
+                "95.0" : 16.895558847736627,
+                "99.0" : 16.895558847736627,
+                "99.9" : 16.895558847736627,
+                "99.99" : 16.895558847736627,
+                "99.999" : 16.895558847736627,
+                "99.9999" : 16.895558847736627,
+                "100.0" : 16.895558847736627
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    16.73141843039306,
+                    16.895558847736627,
+                    16.89113461026869,
+                    16.812817567124007,
+                    16.75314828245533,
+                    16.695907903331157,
+                    16.60875738486144,
+                    16.618012803931713
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "object_loop"
+        },
+        "primaryMetric" : {
+            "score" : 44.653625322274934,
+            "scoreError" : 0.7605310325435316,
+            "scoreConfidence" : [
+                43.8930942897314,
+                45.414156354818466
+            ],
+            "scorePercentiles" : {
+                "0.0" : 44.10983790308674,
+                "50.0" : 44.76255896474551,
+                "90.0" : 45.263319509397334,
+                "95.0" : 45.263319509397334,
+                "99.0" : 45.263319509397334,
+                "99.9" : 45.263319509397334,
+                "99.99" : 45.263319509397334,
+                "99.999" : 45.263319509397334,
+                "99.9999" : 45.263319509397334,
+                "100.0" : 45.263319509397334
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    44.10983790308674,
+                    44.202851323828924,
+                    44.34195178159901,
+                    44.73572240188795,
+                    45.263319509397334,
+                    44.88779541446208,
+                    44.898128716334384,
+                    44.78939552760308
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "collection_hof"
+        },
+        "primaryMetric" : {
+            "score" : 28.361587386240977,
+            "scoreError" : 0.4028131529842872,
+            "scoreConfidence" : [
+                27.95877423325669,
+                28.764400539225264
+            ],
+            "scorePercentiles" : {
+                "0.0" : 28.109409685791594,
+                "50.0" : 28.292401051380143,
+                "90.0" : 28.665362878406356,
+                "95.0" : 28.665362878406356,
+                "99.0" : 28.665362878406356,
+                "99.9" : 28.665362878406356,
+                "99.99" : 28.665362878406356,
+                "99.999" : 28.665362878406356,
+                "99.9999" : 28.665362878406356,
+                "100.0" : 28.665362878406356
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    28.174866516210713,
+                    28.297332665107472,
+                    28.464759507829978,
+                    28.665362878406356,
+                    28.653134962805527,
+                    28.24036343612335,
+                    28.109409685791594,
+                    28.287469437652813
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "lambda_closure"
+        },
+        "primaryMetric" : {
+            "score" : 17.978797416775244,
+            "scoreError" : 0.27168293247766523,
+            "scoreConfidence" : [
+                17.707114484297577,
+                18.25048034925291
+            ],
+            "scorePercentiles" : {
+                "0.0" : 17.81682879377432,
+                "50.0" : 17.942525140290833,
+                "90.0" : 18.19182584569416,
+                "95.0" : 18.19182584569416,
+                "99.0" : 18.19182584569416,
+                "99.9" : 18.19182584569416,
+                "99.99" : 18.19182584569416,
+                "99.999" : 18.19182584569416,
+                "99.9999" : 18.19182584569416,
+                "100.0" : 18.19182584569416
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    18.09681810146721,
+                    18.114602522318265,
+                    17.880038421236467,
+                    17.81682879377432,
+                    18.19182584569416,
+                    18.00219950107164,
+                    17.882850779510022,
+                    17.845215369129846
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "mixed_stress"
+        },
+        "primaryMetric" : {
+            "score" : 46.01413449869151,
+            "scoreError" : 0.5902556414127356,
+            "scoreConfidence" : [
+                45.42387885727877,
+                46.60439014010425
+            ],
+            "scorePercentiles" : {
+                "0.0" : 45.353027735663964,
+                "50.0" : 46.025384128899795,
+                "90.0" : 46.375809817620905,
+                "95.0" : 46.375809817620905,
+                "99.0" : 46.375809817620905,
+                "99.9" : 46.375809817620905,
+                "99.99" : 46.375809817620905,
+                "99.999" : 46.375809817620905,
+                "99.9999" : 46.375809817620905,
+                "100.0" : 46.375809817620905
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    46.17758433079434,
+                    45.97636445647271,
+                    45.95019518837948,
+                    45.94847290640394,
+                    46.25721775286993,
+                    46.375809817620905,
+                    45.353027735663964,
+                    46.07440380132688
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "string_concat"
+        },
+        "primaryMetric" : {
+            "score" : 16.3541312893908,
+            "scoreError" : 0.24126368783373756,
+            "scoreConfidence" : [
+                16.112867601557063,
+                16.595394977224537
+            ],
+            "scorePercentiles" : {
+                "0.0" : 16.16509392195307,
+                "50.0" : 16.364206487623925,
+                "90.0" : 16.57283089090486,
+                "95.0" : 16.57283089090486,
+                "99.0" : 16.57283089090486,
+                "99.9" : 16.57283089090486,
+                "99.99" : 16.57283089090486,
+                "99.999" : 16.57283089090486,
+                "99.9999" : 16.57283089090486,
+                "100.0" : 16.57283089090486
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    16.57283089090486,
+                    16.384906694169594,
+                    16.397440773569702,
+                    16.32194928181009,
+                    16.343506281078252,
+                    16.42870097483564,
+                    16.218621496805213,
+                    16.16509392195307
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "recursion_plain"
+        },
+        "primaryMetric" : {
+            "score" : 24.46454117565828,
+            "scoreError" : 0.470249337668833,
+            "scoreConfidence" : [
+                23.994291837989447,
+                24.934790513327112
+            ],
+            "scorePercentiles" : {
+                "0.0" : 24.102888103651356,
+                "50.0" : 24.497243748160074,
+                "90.0" : 24.839354586730458,
+                "95.0" : 24.839354586730458,
+                "99.0" : 24.839354586730458,
+                "99.9" : 24.839354586730458,
+                "99.99" : 24.839354586730458,
+                "99.999" : 24.839354586730458,
+                "99.9999" : 24.839354586730458,
+                "100.0" : 24.839354586730458
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    24.630148445433004,
+                    24.384583109723373,
+                    24.102888103651356,
+                    24.48945190318079,
+                    24.155941655941657,
+                    24.60892600746626,
+                    24.839354586730458,
+                    24.50503559313936
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "recursion_memoized"
+        },
+        "primaryMetric" : {
+            "score" : 25.49211227069258,
+            "scoreError" : 1.0911409468505529,
+            "scoreConfidence" : [
+                24.40097132384203,
+                26.58325321754313
+            ],
+            "scorePercentiles" : {
+                "0.0" : 24.94520736196319,
+                "50.0" : 25.307208426880294,
+                "90.0" : 26.724220785989782,
+                "95.0" : 26.724220785989782,
+                "99.0" : 26.724220785989782,
+                "99.9" : 26.724220785989782,
+                "99.99" : 26.724220785989782,
+                "99.999" : 26.724220785989782,
+                "99.9999" : 26.724220785989782,
+                "100.0" : 26.724220785989782
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    25.223941851265824,
+                    25.821744180174722,
+                    26.724220785989782,
+                    25.39047500249476,
+                    25.573815261044178,
+                    25.150527197477334,
+                    24.94520736196319,
+                    25.10696652513084
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "tail_recursion"
+        },
+        "primaryMetric" : {
+            "score" : 25.829832883678716,
+            "scoreError" : 0.4126858721897804,
+            "scoreConfidence" : [
+                25.417147011488936,
+                26.242518755868495
+            ],
+            "scorePercentiles" : {
+                "0.0" : 25.38500521687286,
+                "50.0" : 25.861727617249915,
+                "90.0" : 26.049796022437533,
+                "95.0" : 26.049796022437533,
+                "99.0" : 26.049796022437533,
+                "99.9" : 26.049796022437533,
+                "99.99" : 26.049796022437533,
+                "99.999" : 26.049796022437533,
+                "99.9999" : 26.049796022437533,
+                "100.0" : 26.049796022437533
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    26.0121540436457,
+                    25.793973406137823,
+                    25.781532057464847,
+                    25.71548283315739,
+                    25.971237661351555,
+                    25.38500521687286,
+                    26.049796022437533,
+                    25.929481828362007
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "tail_recursion3"
+        },
+        "primaryMetric" : {
+            "score" : 27.633164931324025,
+            "scoreError" : 0.9571277599065097,
+            "scoreConfidence" : [
+                26.676037171417516,
+                28.590292691230534
+            ],
+            "scorePercentiles" : {
+                "0.0" : 27.02803440069234,
+                "50.0" : 27.619143080316384,
+                "90.0" : 28.37591585257549,
+                "95.0" : 28.37591585257549,
+                "99.0" : 28.37591585257549,
+                "99.9" : 28.37591585257549,
+                "99.99" : 28.37591585257549,
+                "99.999" : 28.37591585257549,
+                "99.9999" : 28.37591585257549,
+                "100.0" : 28.37591585257549
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    27.02803440069234,
+                    27.270869449614466,
+                    27.073894881556683,
+                    27.481486508496662,
+                    27.928889131145755,
+                    27.756799652136102,
+                    28.149429574374725,
+                    28.37591585257549
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.compileToMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "operator_overload"
+        },
+        "primaryMetric" : {
+            "score" : 49.00454453729024,
+            "scoreError" : 1.4783822486629947,
+            "scoreConfidence" : [
+                47.52616228862725,
+                50.48292678595324
+            ],
+            "scorePercentiles" : {
+                "0.0" : 48.07462700572394,
+                "50.0" : 48.97022686889302,
+                "90.0" : 50.11272745059675,
+                "95.0" : 50.11272745059675,
+                "99.0" : 50.11272745059675,
+                "99.9" : 50.11272745059675,
+                "99.99" : 50.11272745059675,
+                "99.999" : 50.11272745059675,
+                "99.9999" : 50.11272745059675,
+                "100.0" : 50.11272745059675
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    49.70430890309887,
+                    49.4068989205103,
+                    48.07462700572394,
+                    50.11272745059675,
+                    48.53355481727575,
+                    49.54689708587472,
+                    48.25401003692832,
+                    48.403332078313255
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "arith_loop"
+        },
+        "primaryMetric" : {
+            "score" : 16895.146666666667,
+            "scoreError" : 263.535707680099,
+            "scoreConfidence" : [
+                16631.61095898657,
+                17158.682374346765
+            ],
+            "scorePercentiles" : {
+                "0.0" : 16781.087096774194,
+                "50.0" : 16875.654838709677,
+                "90.0" : 17205.97333333333,
+                "95.0" : 17205.97333333333,
+                "99.0" : 17205.97333333333,
+                "99.9" : 17205.97333333333,
+                "99.99" : 17205.97333333333,
+                "99.999" : 17205.97333333333,
+                "99.9999" : 17205.97333333333,
+                "100.0" : 17205.97333333333
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    16802.016129032258,
+                    16889.854838709678,
+                    16781.087096774194,
+                    16861.748387096774,
+                    16942.132258064517,
+                    17205.97333333333,
+                    16889.56129032258,
+                    16788.8
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "call_loop"
+        },
+        "primaryMetric" : {
+            "score" : 11853.957220250679,
+            "scoreError" : 207.68275781542508,
+            "scoreConfidence" : [
+                11646.274462435254,
+                12061.639978066103
+            ],
+            "scorePercentiles" : {
+                "0.0" : 11724.606818181817,
+                "50.0" : 11841.012790697674,
+                "90.0" : 12083.292857142857,
+                "95.0" : 12083.292857142857,
+                "99.0" : 12083.292857142857,
+                "99.9" : 12083.292857142857,
+                "99.99" : 12083.292857142857,
+                "99.999" : 12083.292857142857,
+                "99.9999" : 12083.292857142857,
+                "100.0" : 12083.292857142857
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    11919.279069767443,
+                    12083.292857142857,
+                    11780.802272727273,
+                    11844.43953488372,
+                    11724.606818181817,
+                    11841.562790697675,
+                    11840.462790697675,
+                    11797.211627906976
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "object_loop"
+        },
+        "primaryMetric" : {
+            "score" : 875.2444971349187,
+            "scoreError" : 12.569116990104366,
+            "scoreConfidence" : [
+                862.6753801448143,
+                887.813614125023
+            ],
+            "scorePercentiles" : {
+                "0.0" : 865.7590136054422,
+                "50.0" : 875.0138739891072,
+                "90.0" : 888.2309027777778,
+                "95.0" : 888.2309027777778,
+                "99.0" : 888.2309027777778,
+                "99.9" : 888.2309027777778,
+                "99.99" : 888.2309027777778,
+                "99.999" : 888.2309027777778,
+                "99.9999" : 888.2309027777778,
+                "100.0" : 888.2309027777778
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    888.2309027777778,
+                    877.4856896551725,
+                    877.2081034482759,
+                    873.7022184300341,
+                    875.0928082191781,
+                    869.5423011844332,
+                    874.9349397590362,
+                    865.7590136054422
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "collection_hof"
+        },
+        "primaryMetric" : {
+            "score" : 181.26138254077063,
+            "scoreError" : 3.3037796809140874,
+            "scoreConfidence" : [
+                177.95760285985654,
+                184.56516222168472
+            ],
+            "scorePercentiles" : {
+                "0.0" : 178.21153576437587,
+                "50.0" : 181.27420495604866,
+                "90.0" : 183.75638336347197,
+                "95.0" : 183.75638336347197,
+                "99.0" : 183.75638336347197,
+                "99.9" : 183.75638336347197,
+                "99.99" : 183.75638336347197,
+                "99.999" : 183.75638336347197,
+                "99.9999" : 183.75638336347197,
+                "100.0" : 183.75638336347197
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    181.46188786373315,
+                    181.08652204836415,
+                    183.0242816091954,
+                    181.90060801144492,
+                    183.75638336347197,
+                    180.1969835145563,
+                    180.4528581510233,
+                    178.21153576437587
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "lambda_closure"
+        },
+        "primaryMetric" : {
+            "score" : 1133.8863945226103,
+            "scoreError" : 22.092671532908824,
+            "scoreConfidence" : [
+                1111.7937229897016,
+                1155.979066055519
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1119.9104575163399,
+                "50.0" : 1133.0414657263054,
+                "90.0" : 1151.3715261958998,
+                "95.0" : 1151.3715261958998,
+                "99.0" : 1151.3715261958998,
+                "99.9" : 1151.3715261958998,
+                "99.99" : 1151.3715261958998,
+                "99.999" : 1151.3715261958998,
+                "99.9999" : 1151.3715261958998,
+                "100.0" : 1151.3715261958998
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1144.9227171492205,
+                    1127.519153674833,
+                    1140.8775055679287,
+                    1151.3715261958998,
+                    1119.9104575163399,
+                    1122.6383259911895,
+                    1125.2876923076924,
+                    1138.563777777778
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "mixed_stress"
+        },
+        "primaryMetric" : {
+            "score" : 972.2292732614167,
+            "scoreError" : 16.179924667324382,
+            "scoreConfidence" : [
+                956.0493485940923,
+                988.409197928741
+            ],
+            "scorePercentiles" : {
+                "0.0" : 957.2973880597015,
+                "50.0" : 974.5390677195692,
+                "90.0" : 983.1476833976834,
+                "95.0" : 983.1476833976834,
+                "99.0" : 983.1476833976834,
+                "99.9" : 983.1476833976834,
+                "99.99" : 983.1476833976834,
+                "99.999" : 983.1476833976834,
+                "99.9999" : 983.1476833976834,
+                "100.0" : 983.1476833976834
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    983.1476833976834,
+                    974.6773764258555,
+                    970.677840909091,
+                    962.8311444652908,
+                    978.8467557251909,
+                    975.9552380952381,
+                    974.4007590132827,
+                    957.2973880597015
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "string_concat"
+        },
+        "primaryMetric" : {
+            "score" : 47.413765305376835,
+            "scoreError" : 1.0245220859448352,
+            "scoreConfidence" : [
+                46.389243219432,
+                48.43828739132167
+            ],
+            "scorePercentiles" : {
+                "0.0" : 46.922814420695346,
+                "50.0" : 47.30992056040224,
+                "90.0" : 48.65800992121389,
+                "95.0" : 48.65800992121389,
+                "99.0" : 48.65800992121389,
+                "99.9" : 48.65800992121389,
+                "99.99" : 48.65800992121389,
+                "99.999" : 48.65800992121389,
+                "99.9999" : 48.65800992121389,
+                "100.0" : 48.65800992121389
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    48.65800992121389,
+                    47.158745177291934,
+                    47.42972191116088,
+                    47.33128129056184,
+                    47.053158188932365,
+                    46.922814420695346,
+                    47.46783170291576,
+                    47.28855983024264
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "recursion_plain"
+        },
+        "primaryMetric" : {
+            "score" : 126534.654375,
+            "scoreError" : 2752.4769109575236,
+            "scoreConfidence" : [
+                123782.17746404247,
+                129287.13128595753
+            ],
+            "scorePercentiles" : {
+                "0.0" : 125084.16,
+                "50.0" : 126208.25,
+                "90.0" : 129182.95,
+                "95.0" : 129182.95,
+                "99.0" : 129182.95,
+                "99.9" : 129182.95,
+                "99.99" : 129182.95,
+                "99.999" : 129182.95,
+                "99.9999" : 129182.95,
+                "100.0" : 129182.95
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    125379.775,
+                    128043.225,
+                    126755.825,
+                    125844.86,
+                    126571.64,
+                    129182.95,
+                    125084.16,
+                    125414.8
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "recursion_memoized"
+        },
+        "primaryMetric" : {
+            "score" : 39.536776032236325,
+            "scoreError" : 0.7197984733936305,
+            "scoreConfidence" : [
+                38.816977558842694,
+                40.256574505629956
+            ],
+            "scorePercentiles" : {
+                "0.0" : 38.903406704518936,
+                "50.0" : 39.53407806614241,
+                "90.0" : 40.20736725488644,
+                "95.0" : 40.20736725488644,
+                "99.0" : 40.20736725488644,
+                "99.9" : 40.20736725488644,
+                "99.99" : 40.20736725488644,
+                "99.999" : 40.20736725488644,
+                "99.9999" : 40.20736725488644,
+                "100.0" : 40.20736725488644
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    39.814795008912654,
+                    39.337506737506736,
+                    40.20736725488644,
+                    38.903406704518936,
+                    39.393145409735055,
+                    39.49864657028606,
+                    39.569831010045945,
+                    39.569509561998764
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "tail_recursion"
+        },
+        "primaryMetric" : {
+            "score" : 1307.4541465190014,
+            "scoreError" : 16.195111706740214,
+            "scoreConfidence" : [
+                1291.2590348122612,
+                1323.6492582257415
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1293.8291139240507,
+                "50.0" : 1308.2638782123497,
+                "90.0" : 1318.556330749354,
+                "95.0" : 1318.556330749354,
+                "99.0" : 1318.556330749354,
+                "99.9" : 1318.556330749354,
+                "99.99" : 1318.556330749354,
+                "99.999" : 1318.556330749354,
+                "99.9999" : 1318.556330749354,
+                "100.0" : 1318.556330749354
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1317.9630490956072,
+                    1307.7972081218275,
+                    1302.2972151898734,
+                    1308.730548302872,
+                    1309.955091383812,
+                    1300.5046153846154,
+                    1318.556330749354,
+                    1293.8291139240507
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "tail_recursion3"
+        },
+        "primaryMetric" : {
+            "score" : 2118.00341182605,
+            "scoreError" : 40.04224677658066,
+            "scoreConfidence" : [
+                2077.9611650494694,
+                2158.0456586026307
+            ],
+            "scorePercentiles" : {
+                "0.0" : 2095.2098360655737,
+                "50.0" : 2119.1135487875385,
+                "90.0" : 2147.9958158995814,
+                "95.0" : 2147.9958158995814,
+                "99.0" : 2147.9958158995814,
+                "99.9" : 2147.9958158995814,
+                "99.99" : 2147.9958158995814,
+                "99.999" : 2147.9958158995814,
+                "99.9999" : 2147.9958158995814,
+                "100.0" : 2147.9958158995814
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    2124.2847107438015,
+                    2141.525316455696,
+                    2147.9958158995814,
+                    2128.3121848739497,
+                    2113.9423868312756,
+                    2096.80622406639,
+                    2095.2098360655737,
+                    2095.9508196721313
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.evalFull",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "operator_overload"
+        },
+        "primaryMetric" : {
+            "score" : 1033.0735718021363,
+            "scoreError" : 12.556227239744551,
+            "scoreConfidence" : [
+                1020.5173445623917,
+                1045.629799041881
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1022.8336653386455,
+                "50.0" : 1032.3771717171717,
+                "90.0" : 1043.478861788618,
+                "95.0" : 1043.478861788618,
+                "99.0" : 1043.478861788618,
+                "99.9" : 1043.478861788618,
+                "99.99" : 1043.478861788618,
+                "99.999" : 1043.478861788618,
+                "99.9999" : 1043.478861788618,
+                "100.0" : 1043.478861788618
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1030.3993963782696,
+                    1040.2905737704918,
+                    1033.2856565656566,
+                    1034.687983706721,
+                    1031.468686868687,
+                    1028.14375,
+                    1043.478861788618,
+                    1022.8336653386455
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "arith_loop"
+        },
+        "primaryMetric" : {
+            "score" : 17752.560962643678,
+            "scoreError" : 904.5181874762368,
+            "scoreConfidence" : [
+                16848.04277516744,
+                18657.079150119916
+            ],
+            "scorePercentiles" : {
+                "0.0" : 17048.09,
+                "50.0" : 17671.306896551723,
+                "90.0" : 18754.166666666668,
+                "95.0" : 18754.166666666668,
+                "99.0" : 18754.166666666668,
+                "99.9" : 18754.166666666668,
+                "99.99" : 18754.166666666668,
+                "99.999" : 18754.166666666668,
+                "99.9999" : 18754.166666666668,
+                "100.0" : 18754.166666666668
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    17048.09,
+                    17661.696551724137,
+                    17680.91724137931,
+                    17631.568965517243,
+                    17601.189655172413,
+                    17763.48275862069,
+                    17879.375862068966,
+                    18754.166666666668
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "call_loop"
+        },
+        "primaryMetric" : {
+            "score" : 12436.929443271432,
+            "scoreError" : 2278.649010977399,
+            "scoreConfidence" : [
+                10158.280432294034,
+                14715.57845424883
+            ],
+            "scorePercentiles" : {
+                "0.0" : 11123.384782608695,
+                "50.0" : 12605.629603658537,
+                "90.0" : 14705.074285714285,
+                "95.0" : 14705.074285714285,
+                "99.0" : 14705.074285714285,
+                "99.9" : 14705.074285714285,
+                "99.99" : 14705.074285714285,
+                "99.999" : 14705.074285714285,
+                "99.9999" : 14705.074285714285,
+                "100.0" : 14705.074285714285
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    11123.384782608695,
+                    11209.647826086957,
+                    11413.284444444444,
+                    14705.074285714285,
+                    12904.095,
+                    12579.231707317073,
+                    12632.0275,
+                    12928.69
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "object_loop"
+        },
+        "primaryMetric" : {
+            "score" : 920.3498083998584,
+            "scoreError" : 62.58082760211753,
+            "scoreConfidence" : [
+                857.7689807977408,
+                982.9306360019759
+            ],
+            "scorePercentiles" : {
+                "0.0" : 840.063025210084,
+                "50.0" : 931.2517845788016,
+                "90.0" : 939.7249084249084,
+                "95.0" : 939.7249084249084,
+                "99.0" : 939.7249084249084,
+                "99.9" : 939.7249084249084,
+                "99.99" : 939.7249084249084,
+                "99.999" : 939.7249084249084,
+                "99.9999" : 939.7249084249084,
+                "100.0" : 939.7249084249084
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    840.063025210084,
+                    931.7354545454546,
+                    931.1888686131387,
+                    934.2865698729582,
+                    939.7249084249084,
+                    931.3147005444646,
+                    930.5028933092224,
+                    923.9820466786356
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "collection_hof"
+        },
+        "primaryMetric" : {
+            "score" : 160.79571858046526,
+            "scoreError" : 4.1660661774024605,
+            "scoreConfidence" : [
+                156.6296524030628,
+                164.96178475786772
+            ],
+            "scorePercentiles" : {
+                "0.0" : 155.50587876941822,
+                "50.0" : 161.49402285187307,
+                "90.0" : 162.310655216285,
+                "95.0" : 162.310655216285,
+                "99.0" : 162.310655216285,
+                "99.9" : 162.310655216285,
+                "99.99" : 162.310655216285,
+                "99.999" : 162.310655216285,
+                "99.9999" : 162.310655216285,
+                "100.0" : 162.310655216285
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    155.50587876941822,
+                    161.58873687559657,
+                    162.310655216285,
+                    161.72857595940374,
+                    161.18193568726355,
+                    160.88757841907153,
+                    161.39930882814954,
+                    161.763078888534
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "lambda_closure"
+        },
+        "primaryMetric" : {
+            "score" : 1149.3652392544218,
+            "scoreError" : 11.921811167515935,
+            "scoreConfidence" : [
+                1137.443428086906,
+                1161.2870504219377
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1143.1138392857142,
+                "50.0" : 1146.6027771368379,
+                "90.0" : 1159.8343115124153,
+                "95.0" : 1159.8343115124153,
+                "99.0" : 1159.8343115124153,
+                "99.9" : 1159.8343115124153,
+                "99.99" : 1159.8343115124153,
+                "99.999" : 1159.8343115124153,
+                "99.9999" : 1159.8343115124153,
+                "100.0" : 1159.8343115124153
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1153.480498866213,
+                    1146.9294382022472,
+                    1143.1138392857142,
+                    1144.875,
+                    1146.2761160714285,
+                    1159.8343115124153,
+                    1156.1006833712984,
+                    1144.3120267260579
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "mixed_stress"
+        },
+        "primaryMetric" : {
+            "score" : 917.7194138552377,
+            "scoreError" : 9.75373751664754,
+            "scoreConfidence" : [
+                907.9656763385901,
+                927.4731513718853
+            ],
+            "scorePercentiles" : {
+                "0.0" : 909.8026595744681,
+                "50.0" : 917.9703770197486,
+                "90.0" : 926.1240574506284,
+                "95.0" : 926.1240574506284,
+                "99.0" : 926.1240574506284,
+                "99.9" : 926.1240574506284,
+                "99.99" : 926.1240574506284,
+                "99.999" : 926.1240574506284,
+                "99.9999" : 926.1240574506284,
+                "100.0" : 926.1240574506284
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    917.2834829443447,
+                    909.8026595744681,
+                    913.2042933810376,
+                    918.6572710951526,
+                    919.1016100178891,
+                    915.385559566787,
+                    922.1963768115942,
+                    926.1240574506284
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "string_concat"
+        },
+        "primaryMetric" : {
+            "score" : 29.46185003701543,
+            "scoreError" : 0.3020772210184441,
+            "scoreConfidence" : [
+                29.159772815996988,
+                29.763927258033874
+            ],
+            "scorePercentiles" : {
+                "0.0" : 29.265026694988233,
+                "50.0" : 29.420429480434443,
+                "90.0" : 29.775625438391394,
+                "95.0" : 29.775625438391394,
+                "99.0" : 29.775625438391394,
+                "99.9" : 29.775625438391394,
+                "99.99" : 29.775625438391394,
+                "99.999" : 29.775625438391394,
+                "99.9999" : 29.775625438391394,
+                "100.0" : 29.775625438391394
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    29.265026694988233,
+                    29.393447359297355,
+                    29.548397270485694,
+                    29.36750303520842,
+                    29.359500661565896,
+                    29.447411601571527,
+                    29.775625438391394,
+                    29.53788823461494
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "recursion_plain"
+        },
+        "primaryMetric" : {
+            "score" : 133564.34083333332,
+            "scoreError" : 56916.76638991953,
+            "scoreConfidence" : [
+                76647.57444341379,
+                190481.10722325285
+            ],
+            "scorePercentiles" : {
+                "0.0" : 122307.92,
+                "50.0" : 123140.20999999999,
+                "90.0" : 207224.96666666667,
+                "95.0" : 207224.96666666667,
+                "99.0" : 207224.96666666667,
+                "99.9" : 207224.96666666667,
+                "99.99" : 207224.96666666667,
+                "99.999" : 207224.96666666667,
+                "99.9999" : 207224.96666666667,
+                "100.0" : 207224.96666666667
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    122307.92,
+                    122513.54,
+                    122731.38,
+                    123352.66,
+                    123167.56,
+                    123112.86,
+                    124103.84,
+                    207224.96666666667
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "recursion_memoized"
+        },
+        "primaryMetric" : {
+            "score" : 12.490307050089445,
+            "scoreError" : 0.12835347651074788,
+            "scoreConfidence" : [
+                12.361953573578697,
+                12.618660526600193
+            ],
+            "scorePercentiles" : {
+                "0.0" : 12.36778186037517,
+                "50.0" : 12.516964365427459,
+                "90.0" : 12.560702120782675,
+                "95.0" : 12.560702120782675,
+                "99.0" : 12.560702120782675,
+                "99.9" : 12.560702120782675,
+                "99.99" : 12.560702120782675,
+                "99.999" : 12.560702120782675,
+                "99.9999" : 12.560702120782675,
+                "100.0" : 12.560702120782675
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    12.526276726468419,
+                    12.532638888888888,
+                    12.47026740864769,
+                    12.539865613231928,
+                    12.560702120782675,
+                    12.507652004386498,
+                    12.36778186037517,
+                    12.417271777934284
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "tail_recursion"
+        },
+        "primaryMetric" : {
+            "score" : 4209.953118169398,
+            "scoreError" : 41.583833860015886,
+            "scoreConfidence" : [
+                4168.369284309382,
+                4251.536952029414
+            ],
+            "scorePercentiles" : {
+                "0.0" : 4179.347540983606,
+                "50.0" : 4205.3243374316935,
+                "90.0" : 4240.344166666667,
+                "95.0" : 4240.344166666667,
+                "99.0" : 4240.344166666667,
+                "99.9" : 4240.344166666667,
+                "99.99" : 4240.344166666667,
+                "99.999" : 4240.344166666667,
+                "99.9999" : 4240.344166666667,
+                "100.0" : 4240.344166666667
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    4207.369166666666,
+                    4188.245081967213,
+                    4179.347540983606,
+                    4203.2795081967215,
+                    4234.008333333333,
+                    4240.344166666667,
+                    4200.7803278688525,
+                    4226.250819672131
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "tail_recursion3"
+        },
+        "primaryMetric" : {
+            "score" : 7488.856071504689,
+            "scoreError" : 67.64895561657005,
+            "scoreConfidence" : [
+                7421.207115888119,
+                7556.5050271212585
+            ],
+            "scorePercentiles" : {
+                "0.0" : 7442.931884057971,
+                "50.0" : 7490.9281756180735,
+                "90.0" : 7561.295588235294,
+                "95.0" : 7561.295588235294,
+                "99.0" : 7561.295588235294,
+                "99.9" : 7561.295588235294,
+                "99.99" : 7561.295588235294,
+                "99.999" : 7561.295588235294,
+                "99.9999" : 7561.295588235294,
+                "100.0" : 7561.295588235294
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    7489.568115942029,
+                    7499.630882352942,
+                    7492.288235294118,
+                    7561.295588235294,
+                    7442.931884057971,
+                    7457.597101449275,
+                    7494.932352941177,
+                    7472.604411764706
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.novalang.runtime.interpreter.InterpreterJmhBenchmark.executeMirOnly",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Zulu\\zulu-21\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=E:\\novalang\\nova-runtime\\build\\tmp\\jmh",
+            "-Duser.country=CN",
+            "-Duser.language=zh",
+            "-Duser.variant",
+            "-Xms512m",
+            "-Xmx512m"
+        ],
+        "jdkVersion" : "21.0.8",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.8+9-LTS",
+        "warmupIterations" : 5,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 8,
+        "measurementTime" : "500 ms",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "scenario" : "operator_overload"
+        },
+        "primaryMetric" : {
+            "score" : 1068.2713960487588,
+            "scoreError" : 12.98558294559478,
+            "scoreConfidence" : [
+                1055.285813103164,
+                1081.2569789943536
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1059.1868312757201,
+                "50.0" : 1067.5127730263157,
+                "90.0" : 1077.2661087866109,
+                "95.0" : 1077.2661087866109,
+                "99.0" : 1077.2661087866109,
+                "99.9" : 1077.2661087866109,
+                "99.99" : 1077.2661087866109,
+                "99.999" : 1077.2661087866109,
+                "99.9999" : 1077.2661087866109,
+                "100.0" : 1077.2661087866109
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    1059.1868312757201,
+                    1062.551867219917,
+                    1072.2937369519832,
+                    1077.2661087866109,
+                    1076.2487447698745,
+                    1064.053125,
+                    1070.9724210526315,
+                    1063.5983333333334
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

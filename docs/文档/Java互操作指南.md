@@ -122,6 +122,8 @@ NovaLang 值传递给 Java 方法时自动转换：
 | `Map` | `Map` |
 | `null` | `null` |
 
+数值类型自动宽化/窄化：`Double` 可传递给 `float` 参数，`Int` 可传递给 `long` 参数等。
+
 ### Java → Nova
 
 Java 方法返回值自动转换为 Nova 类型：
@@ -336,6 +338,134 @@ println(jSet.size())  // 3
 // Nova List → Object[]（支持 .length）
 val jArr = toJavaArray(["a", "b", "c"])
 println(jArr.length)  // 3
+```
+
+## 动态属性对象
+
+Java 对象实现 `NovaDynamicObject` 接口后，Nova 的点号访问和赋值委托给接口方法，而非 Java 反射：
+
+```java
+public class PlayerData implements NovaDynamicObject {
+    private final Map<String, Object> data = new HashMap<>();
+    public Object getMember(String name) { return data.get(name); }
+    public void setMember(String name, Object value) { data.put(name, value); }
+    public boolean hasMember(String name) { return data.containsKey(name); }
+}
+```
+
+```nova
+// Nova 脚本
+playerData.hp = 100
+playerData.name = "Steve"
+println(playerData.hp)  // 100
+```
+
+## 自定义成员名称映射
+
+通过 `MemberNameResolver` 可在成员查找失败时自动映射名称（用于 MCP 混淆映射等）：
+
+```java
+Nova.setMemberResolver((targetClass, memberName, isMethod) -> {
+    if (isMethod) return McpMappingResolver.resolveMethod(memberName);
+    else return McpMappingResolver.resolveField(memberName);
+});
+```
+
+脚本中使用可读名称，自动映射为混淆后的实际名称：
+```nova
+val hp = entity.health  // 自动映射 health → field_a
+entity.setHealth(100)    // 自动映射 setHealth → method_b
+```
+
+## List → Java 数组自动转换
+
+当 Nova 的 List 传递给 Java 方法的数组参数时，运行时会自动完成类型转换，无需手动调用 `toJavaArray()`。
+
+### 支持的数组类型
+
+| 目标 Java 参数类型 | Nova 值示例 |
+|-------------------|-------------|
+| `int[]` | `[1, 2, 3]` |
+| `long[]` | `[1L, 2L, 3L]` |
+| `double[]` | `[1.0, 2.0, 3.0]` |
+| `float[]` | `[1.0, 2.0]` |
+| `boolean[]` | `[true, false]` |
+| `String[]` | `["a", "b", "c"]` |
+| `Object[]` | 任意列表 |
+
+### 使用示例
+
+```nova
+// 假设 Java 方法签名: void process(int[] data)
+val processor = Java.type("com.example.DataProcessor")()
+processor.process([1, 2, 3, 4, 5])  // List 自动转为 int[]
+
+// 假设 Java 方法签名: String join(String[] parts)
+val joiner = Java.type("com.example.StringJoiner")()
+val result = joiner.join(["hello", "world"])  // List 自动转为 String[]
+```
+
+转换规则：
+- 当方法参数类型为数组（`T[]`）而传入的是 Nova List 时，自动逐元素转换
+- 基本类型数组（`int[]`、`double[]` 等）有快速路径优化
+- NovaArray 类型如果底层数组已匹配目标类型，直接传递（零拷贝）
+- varargs 参数的最后一个数组参数由 JVM 自动处理，不做额外转换
+
+## 错误处理系统
+
+NovaLang 提供结构化的错误处理，包括错误分类、修复建议和源码位置追踪。
+
+### 错误分类（ErrorKind）
+
+所有运行时错误按以下类别分类：
+
+| ErrorKind | 说明 |
+|-----------|------|
+| `TYPE_MISMATCH` | 类型不匹配（如 `as`/`is` 转换失败） |
+| `NULL_REFERENCE` | 空指针访问 |
+| `UNDEFINED` | 未定义的变量/函数/成员 |
+| `ARGUMENT_MISMATCH` | 参数数量或类型不匹配 |
+| `ACCESS_DENIED` | 安全策略拒绝访问 |
+| `INDEX_OUT_OF_BOUNDS` | 索引越界 |
+| `JAVA_INTEROP` | Java 互操作错误 |
+| `IO_ERROR` | I/O 操作失败 |
+| `PARSE_ERROR` | 语法解析错误 |
+| `INTERNAL` | 内部错误 |
+
+### 修复建议提示
+
+错误信息自动附带修复建议（suggestion），帮助开发者快速定位问题：
+
+```
+类型不匹配: 无法将 String 转换为 Int
+  提示: 使用 toInt() 方法进行转换
+  --> script.nova:15
+```
+
+### 源码位置追踪
+
+错误信息自动包含源码位置（文件名和行号），解释器路径通过 AST 的 `SourceLocation` 追踪，编译路径从 Java 堆栈帧中提取行号映射。
+
+```
+索引越界: 索引 5 超出范围 [0, 3)
+  提示: 列表大小为 3，有效索引范围是 0..2
+  --> main.nova:42
+```
+
+### Java 嵌入中的异常处理
+
+在 Java 嵌入场景中，可以捕获 `NovaException` 获取结构化错误信息：
+
+```java
+try {
+    nova.eval(script);
+} catch (NovaException e) {
+    NovaException.ErrorKind kind = e.getKind();       // 错误分类
+    String suggestion = e.getSuggestion();             // 修复建议
+    String sourceFile = e.getSourceFile();             // 源文件名
+    int line = e.getSourceLineNumber();                // 源码行号
+    String rawMessage = e.getRawMessage();             // 纯错误消息（不含建议/位置）
+}
 ```
 
 ## 安全限制

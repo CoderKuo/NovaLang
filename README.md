@@ -116,7 +116,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14")
+    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.15")
 }
 ```
 
@@ -127,7 +127,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14'
+    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.15'
 }
 ```
 
@@ -143,7 +143,7 @@ dependencies {
 <dependency>
     <groupId>com.github.CoderKuo.NovaLang</groupId>
     <artifactId>nova-runtime-all</artifactId>
-    <version>v0.1.14</version>
+    <version>v0.1.15</version>
 </dependency>
 ```
 
@@ -365,7 +365,7 @@ STRICT        # Minimal permissions
 
 ## Project Status
 
-NovaLang is under active development. Current version: `0.1.11`
+NovaLang is under active development. Current version: `0.1.15`
 
 Visit the [official website](https://nova.geekyunfu.com) for interactive playground and documentation.
 
