@@ -13,6 +13,9 @@ out/
 *.swp
 *.swo
 
+# Claude Code 本地工作区与配置
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
