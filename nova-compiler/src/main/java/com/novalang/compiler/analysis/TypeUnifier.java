@@ -33,12 +33,15 @@ public final class TypeUnifier {
         if (b == null) return a;
         if (a.equals(b)) return a;
 
+        boolean nullable = a.isNullable() || b.isNullable();
+
         if (a instanceof ErrorType) return b;
         if (b instanceof ErrorType) return a;
         if (a instanceof NothingType) return b;
         if (b instanceof NothingType) return a;
-
-        boolean nullable = a.isNullable() || b.isNullable();
+        if (NovaTypes.isDynamicType(a) || NovaTypes.isDynamicType(b)) {
+            return nullable ? NovaTypes.DYNAMIC.withNullable(true) : NovaTypes.DYNAMIC;
+        }
 
         // 数值提升
         if (NovaTypes.isNumericType(a) && NovaTypes.isNumericType(b)) {
@@ -49,6 +52,19 @@ public final class TypeUnifier {
         // 同名类类型 → 合并泛型参数
         String nameA = a.getTypeName();
         String nameB = b.getTypeName();
+        if (a instanceof JavaClassNovaType && b instanceof JavaClassNovaType) {
+            JavaTypeDescriptor descA = ((JavaClassNovaType) a).getDescriptor();
+            JavaTypeDescriptor descB = ((JavaClassNovaType) b).getDescriptor();
+            if (descA != null && descB != null) {
+                if (descA.isAssignableFrom(descB)) {
+                    return nullable ? a.withNullable(true) : a;
+                }
+                if (descB.isAssignableFrom(descA)) {
+                    return nullable ? b.withNullable(true) : b;
+                }
+            }
+            return nullable ? NovaTypes.ANY.withNullable(true) : NovaTypes.ANY;
+        }
         if (nameA != null && nameB != null && nameA.equals(nameB)) {
             if (a instanceof ClassNovaType && b instanceof ClassNovaType) {
                 ClassNovaType ca = (ClassNovaType) a;

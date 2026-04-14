@@ -6,6 +6,9 @@ import com.novalang.runtime.types.Environment;
 
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.function.Consumer;
 
@@ -915,7 +918,7 @@ public final class Nova {
         // 编译缓存：相同源码不重复编译
         String cacheKey = null;
         if (compilationCache != null) {
-            cacheKey = Integer.toHexString(code.hashCode()) + ":" + code.length();
+            cacheKey = buildCompilationCacheKey(code, fileName);
             Map<String, Class<?>> cached = compilationCache.get(cacheKey);
             if (cached != null) {
                 return buildCompiledNova(cached);
@@ -925,6 +928,7 @@ public final class Nova {
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
+        compiler.setStrictSemanticMode(true);
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
 
@@ -974,6 +978,7 @@ public final class Nova {
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
+        compiler.setStrictSemanticMode(true);
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
         CompiledNova compiled = new CompiledNova(classes, null);
@@ -1003,6 +1008,25 @@ public final class Nova {
         if (idx <= 4) return;  // 4 = "com/".length()，正常情况无需重映射
         // 被 relocate: 将 "com/novalang/" 替换为实际前缀 + "novalang/"
         compiler.setRelocatePrefix(internalName.substring(0, idx) + "novalang/");
+    }
+
+    private static String buildCompilationCacheKey(String code, String fileName) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            if (fileName != null) {
+                digest.update(fileName.getBytes(StandardCharsets.UTF_8));
+            }
+            digest.update((byte) 0);
+            digest.update(code.getBytes(StandardCharsets.UTF_8));
+            byte[] bytes = digest.digest();
+            StringBuilder sb = new StringBuilder(bytes.length * 2 + 8);
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     // ── 调用函数 ──────────────────────────────────────────

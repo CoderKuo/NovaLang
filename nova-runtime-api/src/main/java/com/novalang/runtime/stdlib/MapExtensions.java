@@ -2,6 +2,7 @@ package com.novalang.runtime.stdlib;
 
 import com.novalang.runtime.Function1;
 import com.novalang.runtime.Function2;
+import com.novalang.runtime.stdlib.internal.MapEntryOps;
 
 import java.util.*;
 import java.util.function.BiFunction;
@@ -112,174 +113,59 @@ public final class MapExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object mapKeys(Object map, Object transform) {
-        Map<Object, Object> result = new LinkedHashMap<>();
-        if (isBiFunction(transform)) {
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-                result.put(invoke2(transform, e.getKey(), e.getValue()), e.getValue());
-            }
-        } else if (isImplicitIt(transform)) {
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-                result.put(invoke1(transform, e.getKey()), e.getValue());
-            }
-        } else {
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-                result.put(invoke1(transform, makeEntry(e.getKey(), e.getValue())), e.getValue());
-            }
-        }
-        return result;
+        return MapEntryOps.mapKeys((Map<?, ?>) map, transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object mapValues(Object map, Object transform) {
-        Map<Object, Object> result = new LinkedHashMap<>();
-        if (isBiFunction(transform)) {
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-                result.put(e.getKey(), invoke2(transform, e.getKey(), e.getValue()));
-            }
-        } else if (isImplicitIt(transform)) {
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-                result.put(e.getKey(), invoke1(transform, e.getValue()));
-            }
-        } else {
-            for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-                result.put(e.getKey(), invoke1(transform, makeEntry(e.getKey(), e.getValue())));
-            }
-        }
-        return result;
+        return MapEntryOps.mapValues((Map<?, ?>) map, transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object filterKeys(Object map, Object predicate) {
-        Map<Object, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-            if (isTruthy(invoke1(predicate, e.getKey()))) result.put(e.getKey(), e.getValue());
-        }
-        return result;
+        return MapEntryOps.filterKeys((Map<?, ?>) map, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object filterValues(Object map, Object predicate) {
-        Map<Object, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> e : ((Map<?, ?>) map).entrySet()) {
-            if (isTruthy(invoke1(predicate, e.getValue()))) result.put(e.getKey(), e.getValue());
-        }
-        return result;
+        return MapEntryOps.filterValues((Map<?, ?>) map, predicate);
     }
 
     // ========== Entry 操作（自动适配 Function2(k,v) / Function1(entry)） ==========
 
     @SuppressWarnings("unchecked")
     public static Object filter(Object map, Object predicate) {
-        Map<?, ?> m = (Map<?, ?>) map;
-        Map<Object, Object> result = new LinkedHashMap<>();
-        if (isBiFunction(predicate)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke2(predicate, e.getKey(), e.getValue()))) result.put(e.getKey(), e.getValue());
-            }
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke1(predicate, makeEntry(e.getKey(), e.getValue())))) result.put(e.getKey(), e.getValue());
-            }
-        }
-        return result;
+        return MapEntryOps.filterEntries((Map<?, ?>) map, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object forEach(Object map, Object action) {
-        Map<?, ?> m = (Map<?, ?>) map;
-        if (isBiFunction(action)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                try {
-                    invoke2(action, e.getKey(), e.getValue());
-                } catch (com.novalang.runtime.LoopSignal sig) {
-                    if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
-                }
-            }
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                try {
-                    invoke1(action, e.getKey());
-                } catch (com.novalang.runtime.LoopSignal sig) {
-                    if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
-                }
-            }
-        }
-        return null;
+        return MapEntryOps.forEachEntries((Map<?, ?>) map, action);
     }
 
     @SuppressWarnings("unchecked")
     public static Object map(Object mapObj, Object transform) {
-        Map<?, ?> m = (Map<?, ?>) mapObj;
-        List<Object> result = new ArrayList<>();
-        if (isBiFunction(transform)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) result.add(invoke2(transform, e.getKey(), e.getValue()));
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) result.add(invoke1(transform, makeEntry(e.getKey(), e.getValue())));
-        }
-        return result;
+        return MapEntryOps.mapEntries((Map<?, ?>) mapObj, transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object flatMap(Object mapObj, Object transform) {
-        Map<?, ?> m = (Map<?, ?>) mapObj;
-        List<Object> result = new ArrayList<>();
-        if (isBiFunction(transform)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                Object mapped = invoke2(transform, e.getKey(), e.getValue());
-                if (mapped instanceof Collection) result.addAll((Collection<?>) mapped);
-            }
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                Object mapped = invoke1(transform, makeEntry(e.getKey(), e.getValue()));
-                if (mapped instanceof Collection) result.addAll((Collection<?>) mapped);
-            }
-        }
-        return result;
+        return MapEntryOps.flatMapEntries((Map<?, ?>) mapObj, transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object any(Object map, Object predicate) {
-        Map<?, ?> m = (Map<?, ?>) map;
-        if (isBiFunction(predicate)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke2(predicate, e.getKey(), e.getValue()))) return true;
-            }
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke1(predicate, makeEntry(e.getKey(), e.getValue())))) return true;
-            }
-        }
-        return false;
+        return MapEntryOps.anyEntries((Map<?, ?>) map, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object all(Object map, Object predicate) {
-        Map<?, ?> m = (Map<?, ?>) map;
-        if (isBiFunction(predicate)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (!isTruthy(invoke2(predicate, e.getKey(), e.getValue()))) return false;
-            }
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (!isTruthy(invoke1(predicate, makeEntry(e.getKey(), e.getValue())))) return false;
-            }
-        }
-        return true;
+        return MapEntryOps.allEntries((Map<?, ?>) map, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object none(Object map, Object predicate) {
-        Map<?, ?> m = (Map<?, ?>) map;
-        if (isBiFunction(predicate)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke2(predicate, e.getKey(), e.getValue()))) return false;
-            }
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke1(predicate, makeEntry(e.getKey(), e.getValue())))) return false;
-            }
-        }
-        return true;
+        return MapEntryOps.noneEntries((Map<?, ?>) map, predicate);
     }
 
     public static Object count(Object map) {
@@ -288,37 +174,14 @@ public final class MapExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object count(Object map, Object predicate) {
-        Map<?, ?> m = (Map<?, ?>) map;
-        int count = 0;
-        if (isBiFunction(predicate)) {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke2(predicate, e.getKey(), e.getValue()))) count++;
-            }
-        } else {
-            for (Map.Entry<?, ?> e : m.entrySet()) {
-                if (isTruthy(invoke1(predicate, makeEntry(e.getKey(), e.getValue())))) count++;
-            }
-        }
-        return count;
+        return MapEntryOps.countEntries((Map<?, ?>) map, predicate);
     }
 
     // ========== 双参数 ==========
 
     @SuppressWarnings("unchecked")
     public static Object getOrPut(Object map, Object key, Object defaultLambda) {
-        Map<Object, Object> m = (Map<Object, Object>) map;
-        Object existing = m.get(key);
-        if (existing != null) return existing;
-        Object value;
-        if (defaultLambda instanceof java.util.function.Supplier) {
-            value = ((java.util.function.Supplier<?>) defaultLambda).get();
-        } else if (defaultLambda instanceof com.novalang.runtime.Function0) {
-            value = ((com.novalang.runtime.Function0<?>) defaultLambda).invoke();
-        } else {
-            value = invoke1(defaultLambda, key);
-        }
-        m.put(key, value);
-        return value;
+        return MapEntryOps.getOrPut((Map<Object, Object>) map, key, defaultLambda);
     }
 
     // ========== 辅助 ==========

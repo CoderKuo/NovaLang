@@ -3,6 +3,7 @@ package com.novalang.runtime.stdlib;
 import com.novalang.runtime.Function1;
 import com.novalang.runtime.NovaException;
 import com.novalang.runtime.NovaException.ErrorKind;
+import com.novalang.runtime.stdlib.internal.CollectionLambdaOps;
 
 import java.util.*;
 import java.util.function.Function;
@@ -60,32 +61,17 @@ public final class SetExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object forEach(Object set, Object action) {
-        for (Object item : (Set<?>) set) {
-            try {
-                invoke1(action, item);
-            } catch (com.novalang.runtime.LoopSignal sig) {
-                if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
-            }
-        }
-        return null;
+        return CollectionLambdaOps.forEach((Set<?>) set, action);
     }
 
     @SuppressWarnings("unchecked")
     public static Object map(Object set, Object transform) {
-        Set<Object> result = new LinkedHashSet<>();
-        for (Object item : (Set<?>) set) {
-            result.add(invoke1(transform, item));
-        }
-        return result;
+        return CollectionLambdaOps.mapToCollection((Set<?>) set, transform, LinkedHashSet::new);
     }
 
     @SuppressWarnings("unchecked")
     public static Object filter(Object set, Object predicate) {
-        Set<Object> result = new LinkedHashSet<>();
-        for (Object item : (Set<?>) set) {
-            if (isTruthy(invoke1(predicate, item))) result.add(item);
-        }
-        return result;
+        return CollectionLambdaOps.filterToCollection((Set<?>) set, predicate, LinkedHashSet::new);
     }
 
     // ========== 查询方法 ==========
@@ -123,68 +109,39 @@ public final class SetExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object count(Object set, Object predicate) {
-        int c = 0;
-        for (Object item : (Set<?>) set) {
-            if (isTruthy(invoke1(predicate, item))) c++;
-        }
-        return c;
+        return CollectionLambdaOps.countWhere((Set<?>) set, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object any(Object set, Object predicate) {
-        for (Object item : (Set<?>) set) {
-            if (isTruthy(invoke1(predicate, item))) return true;
-        }
-        return false;
+        return CollectionLambdaOps.any((Set<?>) set, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object all(Object set, Object predicate) {
-        for (Object item : (Set<?>) set) {
-            if (!isTruthy(invoke1(predicate, item))) return false;
-        }
-        return true;
+        return CollectionLambdaOps.all((Set<?>) set, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object none(Object set, Object predicate) {
-        for (Object item : (Set<?>) set) {
-            if (isTruthy(invoke1(predicate, item))) return false;
-        }
-        return true;
+        return CollectionLambdaOps.none((Set<?>) set, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object find(Object set, Object predicate) {
-        for (Object item : (Set<?>) set) {
-            if (isTruthy(invoke1(predicate, item))) return item;
-        }
-        return null;
+        return CollectionLambdaOps.find((Set<?>) set, predicate);
     }
 
     // ========== 变换方法 ==========
 
     @SuppressWarnings("unchecked")
     public static Object filterNot(Object set, Object predicate) {
-        Set<Object> result = new LinkedHashSet<>();
-        for (Object item : (Set<?>) set) {
-            if (!isTruthy(invoke1(predicate, item))) result.add(item);
-        }
-        return result;
+        return CollectionLambdaOps.filterNotToCollection((Set<?>) set, predicate, LinkedHashSet::new);
     }
 
     @SuppressWarnings("unchecked")
     public static Object flatMap(Object set, Object transform) {
-        List<Object> result = new ArrayList<>();
-        for (Object item : (Set<?>) set) {
-            Object mapped = invoke1(transform, item);
-            if (mapped instanceof Collection) {
-                result.addAll((Collection<?>) mapped);
-            } else {
-                result.add(mapped);
-            }
-        }
-        return result;
+        return CollectionLambdaOps.flatMapToList((Set<?>) set, transform, true);
     }
 
     @SuppressWarnings("unchecked")
@@ -207,12 +164,7 @@ public final class SetExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object groupBy(Object set, Object keySelector) {
-        Map<Object, List<Object>> groups = new LinkedHashMap<>();
-        for (Object item : (Set<?>) set) {
-            Object key = invoke1(keySelector, item);
-            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
-        }
-        return groups;
+        return CollectionLambdaOps.groupBy((Set<?>) set, keySelector);
     }
 
     @SuppressWarnings("unchecked")

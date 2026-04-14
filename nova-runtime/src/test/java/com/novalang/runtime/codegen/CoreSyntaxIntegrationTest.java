@@ -59,6 +59,11 @@ class CoreSyntaxIntegrationTest {
         }
     }
 
+    private void dualThrows(String interpCode, String compileBody) {
+        assertThrows(Exception.class, () -> interp(interpCode), "解释器");
+        assertThrows(Exception.class, () -> compile(compileBody), "编译器");
+    }
+
     // ============ 字面量 ============
 
     @Nested
@@ -110,6 +115,21 @@ class CoreSyntaxIntegrationTest {
 
         @Test void testCharLiteral() throws Exception {
             dual("'A'", wrap("return 'A'"), "A");
+        }
+    }
+
+    @Nested
+    @DisplayName("dynamic 类型")
+    class DynamicTypeTests {
+
+        @Test void dynamicMemberAccess() throws Exception {
+            dual("val value: dynamic = \"hello\"\nvalue.length",
+                 wrap("val value: dynamic = \"hello\"\n    return value.length"), 5);
+        }
+
+        @Test void dynamicMethodCall() throws Exception {
+            dual("val value: dynamic = \"hello\"\nvalue.substring(1)",
+                 wrap("val value: dynamic = \"hello\"\n    return value.substring(1)"), "ello");
         }
     }
 
@@ -1942,6 +1962,11 @@ class CoreSyntaxIntegrationTest {
             String fn = "fun join(sep: String, left: String, right: String) = left + sep + right\n";
             dual(fn + "join(right = \"b\", left = \"a\", sep = \"-\")",
                  fn + wrap("return join(right = \"b\", left = \"a\", sep = \"-\")"), "a-b");
+        }
+
+        @Test void namedArg_shouldNotSilentlyFallBackOnMethods() {
+            String code = "\"hello\".replace(newValue = \"r\", oldValue = \"l\")";
+            dualThrows(code, wrap("return " + code));
         }
     }
 

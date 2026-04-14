@@ -52,6 +52,108 @@ public final class NovaRuntime {
         return memberNameResolver;
     }
 
+    private synchronized void trackShortNameEntry(RegisteredEntry entry, RegisteredEntry replacedEntry) {
+        if (replacedEntry != null && replacedEntry != entry) {
+            removeFromShortNameHistory(replacedEntry);
+        }
+        shortNameHistory.computeIfAbsent(entry.getName(), key -> new ArrayDeque<>()).addLast(entry);
+        suppressedShortNames.remove(entry.getName());
+        globalFunctions.put(entry.getName(), entry);
+    }
+
+    private synchronized void discardShortNameEntry(RegisteredEntry entry) {
+        removeFromShortNameHistory(entry);
+        refreshShortNameBinding(entry.getName());
+    }
+
+    private synchronized void suppressShortNameBinding(String name) {
+        suppressedShortNames.add(name);
+        globalFunctions.remove(name);
+    }
+
+    private synchronized void removeFromShortNameHistory(RegisteredEntry entry) {
+        Deque<RegisteredEntry> history = shortNameHistory.get(entry.getName());
+        if (history == null) {
+            return;
+        }
+        for (Iterator<RegisteredEntry> it = history.iterator(); it.hasNext(); ) {
+            if (it.next() == entry) {
+                it.remove();
+                break;
+            }
+        }
+        if (history.isEmpty()) {
+            shortNameHistory.remove(entry.getName());
+        }
+    }
+
+    private synchronized void refreshShortNameBinding(String name) {
+        if (suppressedShortNames.contains(name)) {
+            globalFunctions.remove(name);
+            return;
+        }
+        Deque<RegisteredEntry> history = shortNameHistory.get(name);
+        RegisteredEntry replacement = history != null ? history.peekLast() : null;
+        if (replacement == null) {
+            globalFunctions.remove(name);
+            return;
+        }
+        globalFunctions.put(name, replacement);
+        Object[] bridgeEntry = replacement.getPublishedBridgeEntry();
+        if (bridgeEntry != null) {
+            getGlobalRegistry().put(name, bridgeEntry);
+        }
+    }
+
+    private static void unpublishShortNameBridge(RegisteredEntry entry) {
+        Object[] bridgeEntry = entry.getPublishedBridgeEntry();
+        if (bridgeEntry == null) {
+            return;
+        }
+        getGlobalRegistry().remove(entry.getName(), bridgeEntry);
+    }
+
+    private static void unpublishQualifiedBridge(RegisteredEntry entry) {
+        Object[] bridgeEntry = entry.getPublishedBridgeEntry();
+        if (bridgeEntry == null || entry.getNamespace() == null) {
+            return;
+        }
+        ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(entry.getNamespace());
+        if (globalNs == null) {
+            return;
+        }
+        globalNs.remove(entry.getName(), bridgeEntry);
+        if (globalNs.isEmpty()) {
+            getGlobalNamespaces().remove(entry.getNamespace(), globalNs);
+        }
+    }
+
+    private static void unpublishBridgeEntry(RegisteredEntry entry) {
+        unpublishShortNameBridge(entry);
+        unpublishQualifiedBridge(entry);
+        entry.setPublishedBridgeEntry(null);
+    }
+
+    private synchronized List<RegisteredEntry> snapshotActiveEntries() {
+        IdentityHashMap<RegisteredEntry, Boolean> seen = new IdentityHashMap<>();
+        List<RegisteredEntry> entries = new ArrayList<>();
+        for (RegisteredEntry entry : globalBindings.values()) {
+            if (!seen.containsKey(entry)) {
+                seen.put(entry, Boolean.TRUE);
+                entries.add(entry);
+            }
+        }
+        for (Map<String, RegisteredEntry> ns : namespacedFunctions.values()) {
+            for (RegisteredEntry entry : ns.values()) {
+                if (!seen.containsKey(entry)) {
+                    seen.put(entry, Boolean.TRUE);
+                    entries.add(entry);
+                }
+            }
+        }
+        return entries;
+    }
+
     /**
      * 通过解析器映射成员名称。无解析器或返回 null 时返回原名。
      */
@@ -70,6 +172,8 @@ public final class NovaRuntime {
     // 使用不含 "nova." 或 "com.novalang." 前缀的 key，避免被 shadow relocate 改写
     private static final String GLOBAL_REGISTRY_KEY = "__novalang_shared_registry__";
     private static final String GLOBAL_NS_KEY = "__novalang_shared_namespaces__";
+    private static final String HTTP_API_AUTOSTART_PROPERTY = "novalang.http.autostart";
+    private static final String HTTP_API_AUTOSTART_ENV = "NOVALANG_HTTP_AUTOSTART";
 
     /** 获取 JVM 全局函数注册表（跨 ClassLoader 共享） */
     @SuppressWarnings("unchecked")
@@ -104,8 +208,8 @@ public final class NovaRuntime {
      * entry 格式: Object[] { name, namespace, description, isFunction, invoker, value }
      * invoker: java.util.function.Function&lt;Object[], Object&gt;（bootstrap ClassLoader）
      */
-    private static void publishToGlobal(String name, String namespace, String description,
-                                         boolean isFunction, java.util.function.Function<Object[], Object> invoker, Object value) {
+    private static Object[] publishToGlobal(String name, String namespace, String description,
+                                            boolean isFunction, java.util.function.Function<Object[], Object> invoker, Object value) {
         Object[] entry = new Object[] { name, namespace, description, isFunction, invoker, value };
         getGlobalRegistry().put(name, entry);
         if (namespace != null) {
@@ -113,6 +217,7 @@ public final class NovaRuntime {
                     .computeIfAbsent(namespace, k -> new ConcurrentHashMap<>())
                     .put(name, entry);
         }
+        return entry;
     }
 
     /** 从 JVM 全局注册表查找函数并调用 */
@@ -173,11 +278,27 @@ public final class NovaRuntime {
             synchronized (NovaRuntime.class) {
                 if (SHARED == null) {
                     SHARED = new NovaRuntime();
-                    tryAutoStartHttpServer();
+                    if (shouldAutoStartHttpServer()) {
+                        tryAutoStartHttpServer();
+                    }
                 }
             }
         }
         return SHARED;
+    }
+
+    private static boolean shouldAutoStartHttpServer() {
+        String property = System.getProperty(HTTP_API_AUTOSTART_PROPERTY);
+        if (property != null) {
+            return isTruthyFlag(property);
+        }
+        String env = System.getenv(HTTP_API_AUTOSTART_ENV);
+        return env != null && isTruthyFlag(env);
+    }
+
+    private static boolean isTruthyFlag(String value) {
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return "true".equals(normalized) || "1".equals(normalized) || "yes".equals(normalized) || "on".equals(normalized);
     }
 
     /** 尝试自动启动 HTTP API 服务（通过反射，避免 nova-runtime-api 依赖 nova-runtime） */
@@ -213,6 +334,7 @@ public final class NovaRuntime {
         private final Object value;
         private final Class<?>[] paramTypes;
         private final Class<?> returnType;
+        private volatile Object[] publishedBridgeEntry;
 
         /** 函数条目 */
         RegisteredEntry(String name, String namespace, String source, String description,
@@ -250,6 +372,8 @@ public final class NovaRuntime {
         public Object getValue() { return isFunction ? function : value; }
         public Class<?>[] getParamTypes() { return paramTypes; }
         public Class<?> getReturnType() { return returnType; }
+        private Object[] getPublishedBridgeEntry() { return publishedBridgeEntry; }
+        private void setPublishedBridgeEntry(Object[] publishedBridgeEntry) { this.publishedBridgeEntry = publishedBridgeEntry; }
 
         /** 全限定名：有命名空间返回 "ns.name"，无则返回 "name" */
         public String getQualifiedName() {
@@ -302,12 +426,15 @@ public final class NovaRuntime {
 
     /** 短名 → 最后注册的条目（可覆盖） */
     private final Map<String, RegisteredEntry> globalFunctions = new ConcurrentHashMap<>();
+    private final Map<String, RegisteredEntry> globalBindings = new ConcurrentHashMap<>();
 
     /** namespace → (funcName → entry)（全限定名不冲突） */
     private final Map<String, Map<String, RegisteredEntry>> namespacedFunctions = new ConcurrentHashMap<>();
 
     /** 命名空间代理对象缓存：namespace → NovaNamespace */
     private final Map<String, NovaNamespace> namespaceProxies = new ConcurrentHashMap<>();
+    private final Map<String, Deque<RegisteredEntry>> shortNameHistory = new ConcurrentHashMap<>();
+    private final Set<String> suppressedShortNames = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
     // 保留原有字段（向后兼容 create() 实例）
     private final FunctionRegistry functionRegistry;
@@ -466,15 +593,18 @@ public final class NovaRuntime {
 
     private NovaRuntime setInternal(String name, String namespace, String source, String description, Object value) {
         RegisteredEntry entry = new RegisteredEntry(name, namespace, source, description, value);
-        globalFunctions.put(name, entry);
+        RegisteredEntry replacedEntry;
         if (namespace != null) {
-            namespacedFunctions
+            replacedEntry = namespacedFunctions
                     .computeIfAbsent(namespace, k -> new ConcurrentHashMap<>())
                     .put(name, entry);
+        } else {
+            replacedEntry = globalBindings.put(name, entry);
         }
+        trackShortNameEntry(entry, replacedEntry);
 
         // 同步写入 JVM 全局桥接
-        publishToGlobal(name, namespace, description, false, null, value);
+        entry.setPublishedBridgeEntry(publishToGlobal(name, namespace, description, false, null, value));
 
         return this;
     }
@@ -491,17 +621,20 @@ public final class NovaRuntime {
         RegisteredEntry entry = new RegisteredEntry(name, namespace, source, description, func, paramTypes, returnType);
 
         // 写入本实例
-        globalFunctions.put(name, entry);
+        RegisteredEntry replacedEntry;
         if (namespace != null) {
-            namespacedFunctions
+            replacedEntry = namespacedFunctions
                     .computeIfAbsent(namespace, k -> new ConcurrentHashMap<>())
                     .put(name, entry);
+        } else {
+            replacedEntry = globalBindings.put(name, entry);
         }
+        trackShortNameEntry(entry, replacedEntry);
 
         // 同步写入 JVM 全局桥接（跨 ClassLoader 共享）
         final RegisteredEntry e = entry;
-        publishToGlobal(name, namespace, description, true,
-                args -> e.invoke(args), null);
+        entry.setPublishedBridgeEntry(publishToGlobal(name, namespace, description, true,
+                args -> e.invoke(args), null));
 
         return this;
     }
@@ -687,7 +820,7 @@ public final class NovaRuntime {
 
     /** 调用已注册的函数（短名） */
     public Object callRegistered(String name, Object... args) {
-        RegisteredEntry entry = globalFunctions.get(name);
+        RegisteredEntry entry = lookup(name);
         if (entry != null) return entry.invoke(args);
         return NOT_FOUND;
     }
@@ -704,7 +837,7 @@ public final class NovaRuntime {
     /** 列出所有已注册函数（合并本实例 + JVM 全局桥接） */
     public List<RegisteredEntry> listFunctions() {
         Map<String, RegisteredEntry> all = new LinkedHashMap<>();
-        for (RegisteredEntry e : globalFunctions.values()) {
+        for (RegisteredEntry e : globalBindings.values()) {
             all.put(e.getQualifiedName(), e);
         }
         for (Map<String, RegisteredEntry> ns : namespacedFunctions.values()) {
@@ -750,7 +883,7 @@ public final class NovaRuntime {
 
     /** 描述函数 */
     public String describe(String name) {
-        RegisteredEntry entry = globalFunctions.get(name);
+        RegisteredEntry entry = lookup(name);
         if (entry == null) return null;
         StringBuilder sb = new StringBuilder();
         sb.append(entry.getQualifiedName()).append('(');
@@ -768,12 +901,12 @@ public final class NovaRuntime {
         Map<String, RegisteredEntry> removed = namespacedFunctions.remove(namespace);
         namespaceProxies.remove(namespace);
         if (removed != null) {
-            for (Map.Entry<String, RegisteredEntry> e : removed.entrySet()) {
-                globalFunctions.remove(e.getKey(), e.getValue());
+            for (RegisteredEntry entry : removed.values()) {
+                discardShortNameEntry(entry);
+                unpublishBridgeEntry(entry);
             }
         }
         // 同步清理 JVM 全局桥接
-        unpublishNamespace(namespace);
     }
 
     /**
@@ -802,7 +935,8 @@ public final class NovaRuntime {
         if (ns != null) {
             RegisteredEntry removed = ns.remove(name);
             if (removed != null) {
-                globalFunctions.remove(name, removed);
+                discardShortNameEntry(removed);
+                unpublishBridgeEntry(removed);
             }
             if (ns.isEmpty()) {
                 namespacedFunctions.remove(namespace);
@@ -810,46 +944,35 @@ public final class NovaRuntime {
             }
         }
         // JVM 全局桥接
-        ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(namespace);
-        if (globalNs != null) {
-            Object[] removed = globalNs.remove(name);
-            if (removed != null) {
-                getGlobalRegistry().remove(name, removed);
-            }
-            if (globalNs.isEmpty()) {
-                getGlobalNamespaces().remove(namespace);
-            }
-        }
     }
 
     /** 从全局注册表中移除（无命名空间） */
     public void remove(String name) {
-        globalFunctions.remove(name);
-        getGlobalRegistry().remove(name);
+        RegisteredEntry globalEntry = globalBindings.remove(name);
+        if (globalEntry != null) {
+            discardShortNameEntry(globalEntry);
+            unpublishBridgeEntry(globalEntry);
+        }
+        RegisteredEntry shortNameEntry = globalFunctions.get(name);
+        if (shortNameEntry != null) {
+            unpublishShortNameBridge(shortNameEntry);
+        }
+        suppressShortNameBinding(name);
     }
 
     /** 清空本实例所有注册（不影响其他插件的全局桥接） */
     public void clearAll() {
         // 只从全局桥接中移除本实例注册的条目（按引用匹配）
-        ConcurrentHashMap<String, Object[]> globalReg = getGlobalRegistry();
-        for (Map.Entry<String, RegisteredEntry> e : globalFunctions.entrySet()) {
-            globalReg.remove(e.getKey());
-        }
-        for (Map.Entry<String, Map<String, RegisteredEntry>> nsEntry : namespacedFunctions.entrySet()) {
-            ConcurrentHashMap<String, Object[]> globalNs = getGlobalNamespaces().get(nsEntry.getKey());
-            if (globalNs != null) {
-                for (String funcName : nsEntry.getValue().keySet()) {
-                    globalNs.remove(funcName);
-                }
-                if (globalNs.isEmpty()) {
-                    getGlobalNamespaces().remove(nsEntry.getKey());
-                }
-            }
+        for (RegisteredEntry entry : snapshotActiveEntries()) {
+            unpublishBridgeEntry(entry);
         }
         // 清空本实例
+        globalBindings.clear();
         globalFunctions.clear();
         namespacedFunctions.clear();
         namespaceProxies.clear();
+        shortNameHistory.clear();
+        suppressedShortNames.clear();
         functionRegistry.clear();
         globals.clear();
         registeredClasses.clear();
@@ -1030,7 +1153,7 @@ public final class NovaRuntime {
             return AbstractNovaValue.fromJava(result);
         }
         // 再查全局注册表
-        RegisteredEntry entry = globalFunctions.get(name);
+        RegisteredEntry entry = lookup(name);
         if (entry != null) {
             Object result = entry.invoke(args);
             if (result == null) return NovaNull.NULL;

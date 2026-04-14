@@ -22,6 +22,7 @@ public final class NovaTypes {
     public static final ClassNovaType STRING = new ClassNovaType("String", false);
     public static final ClassNovaType ANY = new ClassNovaType("Any", false);
     public static final ClassNovaType NUMBER = new ClassNovaType("Number", false);
+    public static final ClassNovaType DYNAMIC = new ClassNovaType("dynamic", false);
 
     // 特殊类型
     public static final NothingType NOTHING = NothingType.INSTANCE;
@@ -65,10 +66,18 @@ public final class NovaTypes {
             case "String": return STRING;
             case "Any": return ANY;
             case "Number": return NUMBER;
+            case "dynamic":
+            case "Dynamic": return DYNAMIC;
             case "Nothing": return NOTHING;
             case "Unit": return UNIT;
             default: return null;
         }
+    }
+
+    public static boolean isDynamicType(NovaType type) {
+        if (type == null) return false;
+        String name = type.getTypeName();
+        return "dynamic".equals(name) || "Dynamic".equals(name);
     }
 
     // ============ 数值类型工具 ============

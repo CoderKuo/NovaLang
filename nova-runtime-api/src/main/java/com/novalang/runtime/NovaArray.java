@@ -1,5 +1,7 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.stdlib.internal.ArrayOps;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -171,11 +173,15 @@ public final class NovaArray extends AbstractNovaValue implements NovaContainer 
 
     /** 转为 NovaList */
     public NovaList toNovaList() {
-        List<NovaValue> list = new ArrayList<NovaValue>(length);
-        for (int i = 0; i < length; i++) {
-            list.add(get(i));
-        }
-        return new NovaList(list);
+        return ArrayOps.toNovaList(this);
+    }
+
+    public boolean contains(Object value) {
+        return ArrayOps.contains(this, value);
+    }
+
+    public int indexOf(Object value) {
+        return ArrayOps.indexOf(this, value);
     }
 
     /** 从第一个 NovaValue 推断 ElementType */

@@ -3,8 +3,8 @@ import com.novalang.runtime.*;
 
 import com.novalang.runtime.stdlib.Ext;
 import com.novalang.runtime.stdlib.ExtProperty;
+import com.novalang.runtime.stdlib.internal.ArrayOps;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -18,62 +18,33 @@ public final class ArrayExtensions {
 
     @ExtProperty
     public static Object size(Object arr) {
-        return ((NovaArray) arr).length();
+        return ArrayOps.size((NovaArray) arr);
     }
 
     public static Object toList(Object arr) {
-        return ((NovaArray) arr).toNovaList();
+        return ArrayOps.toNovaList((NovaArray) arr);
     }
 
     @SuppressWarnings("unchecked")
     public static Object forEach(Object arr, Object action) {
-        NovaArray a = (NovaArray) arr;
-        Function<Object, Object> fn = (Function<Object, Object>) action;
-        for (NovaValue item : a) {
-            fn.apply(item);
-        }
-        return null;
+        return ArrayOps.forEach((NovaArray) arr, (Function<Object, Object>) action);
     }
 
     @SuppressWarnings("unchecked")
     public static Object map(Object arr, Object transform) {
-        NovaArray a = (NovaArray) arr;
-        Function<Object, Object> fn = (Function<Object, Object>) transform;
-        List<Object> result = new ArrayList<>(a.length());
-        for (NovaValue item : a) {
-            result.add(fn.apply(item));
-        }
-        return result;
+        return ArrayOps.map((NovaArray) arr, (Function<Object, Object>) transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object filter(Object arr, Object predicate) {
-        NovaArray a = (NovaArray) arr;
-        Function<Object, Object> fn = (Function<Object, Object>) predicate;
-        List<Object> result = new ArrayList<>();
-        for (NovaValue item : a) {
-            if (Boolean.TRUE.equals(fn.apply(item))) {
-                result.add(item.toJavaValue());
-            }
-        }
-        return result;
+        return ArrayOps.filter((NovaArray) arr, (Function<Object, Object>) predicate);
     }
 
     public static Object contains(Object arr, Object value) {
-        NovaArray a = (NovaArray) arr;
-        NovaValue target = AbstractNovaValue.fromJava(value);
-        for (NovaValue item : a) {
-            if (item.equals(target)) return true;
-        }
-        return false;
+        return ArrayOps.contains((NovaArray) arr, value);
     }
 
     public static Object indexOf(Object arr, Object value) {
-        NovaArray a = (NovaArray) arr;
-        NovaValue target = AbstractNovaValue.fromJava(value);
-        for (int i = 0; i < a.length(); i++) {
-            if (a.get(i).equals(target)) return i;
-        }
-        return -1;
+        return ArrayOps.indexOf((NovaArray) arr, value);
     }
 }

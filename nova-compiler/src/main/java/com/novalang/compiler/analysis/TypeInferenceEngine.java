@@ -4,6 +4,7 @@ import com.novalang.compiler.analysis.types.*;
 import com.novalang.compiler.ast.expr.*;
 import com.novalang.runtime.NovaTypeRegistry;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -24,12 +25,21 @@ public final class TypeInferenceEngine {
     /** 从字符串类型名回退解析为 NovaType */
     public NovaType resolveNovaTypeFromName(String typeName) {
         if (typeName == null) return null;
+        if (typeName.startsWith("nova.")) {
+            typeName = typeName.substring("nova.".length());
+        }
         boolean nullable = typeName.endsWith("?");
         String base = nullable ? typeName.substring(0, typeName.length() - 1) : typeName;
         int ltIdx = base.indexOf('<');
         String simpleName = ltIdx > 0 ? base.substring(0, ltIdx) : base;
 
         NovaType result = NovaTypes.fromName(simpleName);
+        if (result == null) {
+            JavaTypeDescriptor javaType = JavaTypeOracle.get().resolve(simpleName);
+            if (javaType != null) {
+                result = new JavaClassNovaType(javaType, false);
+            }
+        }
         if (result == null) {
             result = new ClassNovaType(simpleName, false);
         }
@@ -51,6 +61,7 @@ public final class TypeInferenceEngine {
     public NovaType inferElementNovaType(NovaType collType) {
         if (collType == null) return null;
         String baseName = getBaseTypeName(collType);
+        if (NovaTypes.isDynamicType(collType)) return NovaTypes.DYNAMIC;
         if ("Range".equals(baseName)) return NovaTypes.INT;
         if ("String".equals(baseName)) return NovaTypes.STRING;
         if (collType instanceof ClassNovaType) {
@@ -59,28 +70,74 @@ public final class TypeInferenceEngine {
                 if ("List".equals(baseName) || "Set".equals(baseName) || "Array".equals(baseName)) {
                     return ct.getTypeArgs().get(0).getType();
                 }
-                if ("Map".equals(baseName)) return new ClassNovaType("Pair", false);
+                if ("Map".equals(baseName) && ct.getTypeArgs().size() >= 2) {
+                    return new ClassNovaType("Pair",
+                            java.util.Arrays.asList(
+                                    NovaTypeArgument.invariant(ct.getTypeArgs().get(0).getType()),
+                                    NovaTypeArgument.invariant(ct.getTypeArgs().get(1).getType())),
+                            false);
+                }
             }
         }
         return null;
     }
 
     /** 从 NovaTypeRegistry 查成员返回类型 */
-    public String lookupMemberType(String baseTypeName, String memberName) {
-        if (baseTypeName == null) return null;
+    public List<NovaTypeRegistry.MethodInfo> lookupMemberMethods(String baseTypeName, String memberName) {
+        if (baseTypeName == null || memberName == null) {
+            return Collections.emptyList();
+        }
+
+        List<NovaTypeRegistry.MethodInfo> directMatches = collectMemberMethods(baseTypeName, memberName);
+        if (!directMatches.isEmpty()) {
+            return directMatches;
+        }
+        if (!"Any".equals(baseTypeName)) {
+            return collectMemberMethods("Any", memberName);
+        }
+        return Collections.emptyList();
+    }
+
+    public NovaType lookupMemberType(NovaType receiverType, String memberName) {
+        if (receiverType == null || memberName == null) return null;
+
+        NovaType nonNullReceiverType = receiverType.withNullable(false);
+        List<NovaTypeRegistry.MethodInfo> methods =
+                lookupMemberMethods(getBaseTypeName(nonNullReceiverType), memberName);
+        if (methods.isEmpty()) {
+            return null;
+        }
+
+        NovaType result = null;
+        for (NovaTypeRegistry.MethodInfo method : methods) {
+            NovaType methodReturnType = resolveMemberReturnType(nonNullReceiverType, method);
+            if (methodReturnType == null) continue;
+            result = result == null ? methodReturnType : typeUnifier.commonSuperType(result, methodReturnType);
+        }
+        return result;
+    }
+
+    public NovaType resolveMemberReturnType(NovaType receiverType, NovaTypeRegistry.MethodInfo method) {
+        if (receiverType == null || method == null) return null;
+        if (method.returnType == null || method.returnType.isEmpty()) {
+            return receiverType.withNullable(false);
+        }
+        return resolveNovaTypeFromName(method.returnType);
+    }
+
+    private List<NovaTypeRegistry.MethodInfo> collectMemberMethods(String baseTypeName, String memberName) {
         List<NovaTypeRegistry.MethodInfo> methods = NovaTypeRegistry.getMethodsForType(baseTypeName);
-        if (methods != null) {
-            for (NovaTypeRegistry.MethodInfo m : methods) {
-                if (m.name.equals(memberName) && m.returnType != null) return m.returnType;
+        if (methods == null || methods.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<NovaTypeRegistry.MethodInfo> matches = new ArrayList<NovaTypeRegistry.MethodInfo>();
+        for (NovaTypeRegistry.MethodInfo method : methods) {
+            if (memberName.equals(method.name)) {
+                matches.add(method);
             }
         }
-        List<NovaTypeRegistry.MethodInfo> anyMethods = NovaTypeRegistry.getMethodsForType("Any");
-        if (anyMethods != null) {
-            for (NovaTypeRegistry.MethodInfo m : anyMethods) {
-                if (m.name.equals(memberName) && m.returnType != null) return m.returnType;
-            }
-        }
-        return null;
+        return matches;
     }
 
     /**

@@ -244,7 +244,7 @@ class MemoryLeakTest {
         Nova nova = new Nova();
 
         // null 赋值
-        assertEquals(true, nova.compileToBytecode("var x = null\nx == null", "null1.nova").run());
+        assertEquals(true, nova.compileToBytecode("var x: Any? = null\nx == null", "null1.nova").run());
 
         // elvis with null
         assertEquals(42, nova.compileToBytecode("val x = null\nx ?: 42", "null2.nova").run());
@@ -253,7 +253,7 @@ class MemoryLeakTest {
         assertNull(nova.compileToBytecode("val x = null\nx?.toString()", "null3.nova").run());
 
         // null coalesce assign
-        Object result = nova.compileToBytecode("var x = null\nx ??= 10\nx", "null4.nova").run();
+        Object result = nova.compileToBytecode("var x: Int? = null\nx ??= 10\nx", "null4.nova").run();
         assertEquals(10, result);
     }
 

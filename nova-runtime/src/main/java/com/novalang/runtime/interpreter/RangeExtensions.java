@@ -3,8 +3,8 @@ import com.novalang.runtime.*;
 
 import com.novalang.runtime.stdlib.Ext;
 import com.novalang.runtime.stdlib.ExtProperty;
+import com.novalang.runtime.stdlib.internal.RangeOps;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -20,17 +20,17 @@ public final class RangeExtensions {
 
     @ExtProperty
     public static Object first(Object range) {
-        return ((NovaRange) range).getStart();
+        return RangeOps.first((NovaRange) range);
     }
 
     @ExtProperty
     public static Object last(Object range) {
-        return ((NovaRange) range).getEnd();
+        return RangeOps.last((NovaRange) range);
     }
 
     @ExtProperty
     public static Object step(Object range) {
-        return ((NovaRange) range).getStep();
+        return RangeOps.step((NovaRange) range);
     }
 
     // ========== 方法 ==========
@@ -41,53 +41,33 @@ public final class RangeExtensions {
     }
 
     public static Object reversed(Object range) {
-        NovaRange r = (NovaRange) range;
-        return new NovaRange(r.getEnd(), r.getStart(), r.isInclusive(), -r.getStep());
+        return RangeOps.reversed((NovaRange) range);
     }
 
     public static Object size(Object range) {
-        return ((NovaRange) range).size();
+        return RangeOps.size((NovaRange) range);
     }
 
     public static Object contains(Object range, Object value) {
-        return ((NovaRange) range).contains(((Number) value).intValue());
+        return RangeOps.contains((NovaRange) range, ((Number) value).intValue());
     }
 
     public static Object toList(Object range) {
-        return ((NovaRange) range).toList();
+        return RangeOps.toNovaList((NovaRange) range);
     }
 
     @SuppressWarnings("unchecked")
     public static Object forEach(Object range, Object action) {
-        NovaRange r = (NovaRange) range;
-        Function<Object, Object> fn = (Function<Object, Object>) action;
-        for (NovaValue item : r) {
-            fn.apply(item);
-        }
-        return null;
+        return RangeOps.forEach((NovaRange) range, (Function<Object, Object>) action);
     }
 
     @SuppressWarnings("unchecked")
     public static Object map(Object range, Object transform) {
-        NovaRange r = (NovaRange) range;
-        Function<Object, Object> fn = (Function<Object, Object>) transform;
-        List<Object> result = new ArrayList<>(r.size());
-        for (NovaValue item : r) {
-            result.add(fn.apply(item));
-        }
-        return result;
+        return RangeOps.map((NovaRange) range, (Function<Object, Object>) transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object filter(Object range, Object predicate) {
-        NovaRange r = (NovaRange) range;
-        Function<Object, Object> fn = (Function<Object, Object>) predicate;
-        List<Object> result = new ArrayList<>();
-        for (NovaValue item : r) {
-            if (Boolean.TRUE.equals(fn.apply(item))) {
-                result.add(item.toJavaValue());
-            }
-        }
-        return result;
+        return RangeOps.filter((NovaRange) range, (Function<Object, Object>) predicate);
     }
 }

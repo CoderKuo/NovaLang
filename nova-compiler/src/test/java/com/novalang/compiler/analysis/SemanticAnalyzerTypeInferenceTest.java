@@ -57,15 +57,15 @@ class SemanticAnalyzerTypeInferenceTest {
         }
     }
 
-    /** 断言存在包含指定消息的 WARNING 诊断 */
-    private void assertHasWarning(AnalysisResult result, String messageSubstring) {
+    /** 断言存在包含指定消息的 ERROR 诊断 */
+    private void assertHasError(AnalysisResult result, String messageSubstring) {
         for (SemanticDiagnostic d : result.getDiagnostics()) {
-            if (d.getSeverity() == SemanticDiagnostic.Severity.WARNING
+            if (d.getSeverity() == SemanticDiagnostic.Severity.ERROR
                     && d.getMessage().contains(messageSubstring)) {
                 return;
             }
         }
-        StringBuilder sb = new StringBuilder("未找到包含 '" + messageSubstring + "' 的 WARNING。实际诊断:\n");
+        StringBuilder sb = new StringBuilder("未找到包含 '" + messageSubstring + "' 的 ERROR。实际诊断:\n");
         for (SemanticDiagnostic d : result.getDiagnostics()) {
             sb.append("  ").append(d.getSeverity()).append(": ").append(d.getMessage()).append('\n');
         }
@@ -347,17 +347,17 @@ class SemanticAnalyzerTypeInferenceTest {
     class TypeCompatibilityDiagnostics {
 
         @Test
-        @DisplayName("val x: Int = \"hello\" → WARNING 类型不匹配")
+        @DisplayName("val x: Int = \"hello\" → ERROR 类型不匹配")
         void intAssignString() {
             AnalysisResult r = analyze("val x: Int = \"hello\"");
-            assertHasWarning(r, "类型不匹配");
+            assertHasError(r, "类型不匹配");
         }
 
         @Test
-        @DisplayName("val s: String = null → WARNING 非空类型赋 null")
+        @DisplayName("val s: String = null → ERROR 非空类型赋 null")
         void nonNullAssignNull() {
             AnalysisResult r = analyze("val s: String = null");
-            assertHasWarning(r, "类型不匹配");
+            assertHasError(r, "类型不匹配");
         }
 
         @Test
@@ -416,23 +416,45 @@ class SemanticAnalyzerTypeInferenceTest {
         }
 
         @Test
-        @DisplayName("class Bad<out T> { fun put(t: T) } → WARNING（out 出现在逆变位置）")
+        @DisplayName("class Bad<out T> { fun put(t: T) } → ERROR（out 出现在逆变位置）")
         void outInContravariantPosition() {
             AnalysisResult r = analyze(
                     "class Bad<out T> {\n" +
                     "    fun put(t: T) { }\n" +
                     "}");
-            assertHasWarning(r, "out");
+            assertHasError(r, "out");
         }
 
         @Test
-        @DisplayName("class Bad<in T> { fun get(): T } → WARNING（in 出现在协变位置）")
+        @DisplayName("class Bad<in T> { fun get(): T } → ERROR（in 出现在协变位置）")
         void inInCovariantPosition() {
             AnalysisResult r = analyze(
                     "class Bad<in T> {\n" +
                     "    fun get(): T = error(\"\")\n" +
                     "}");
-            assertHasWarning(r, "in");
+            assertHasError(r, "in");
+        }
+
+        @Test
+        @DisplayName("declaration-site out variance should allow widening assignments")
+        void declarationSiteOutVarianceShouldAffectSubtyping() {
+            AnalysisResult r = analyze(
+                    "class Producer<out T>(val value: T)\n" +
+                    "val stringProducer: Producer<String> = Producer(\"hello\")\n" +
+                    "val anyProducer: Producer<Any> = stringProducer");
+            assertNoDiagnostics(r);
+        }
+
+        @Test
+        @DisplayName("declaration-site in variance should allow narrowing assignments")
+        void declarationSiteInVarianceShouldAffectSubtyping() {
+            AnalysisResult r = analyze(
+                    "class Consumer<in T> {\n" +
+                    "    fun accept(value: T) { }\n" +
+                    "}\n" +
+                    "val anyConsumer: Consumer<Any> = Consumer()\n" +
+                    "val stringConsumer: Consumer<String> = anyConsumer");
+            assertNoDiagnostics(r);
         }
     }
 

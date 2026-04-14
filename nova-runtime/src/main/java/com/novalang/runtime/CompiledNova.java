@@ -74,7 +74,7 @@ public final class CompiledNova {
         this.program = null;
         this.compiledClasses = classes;
         this.mainHandle = findMain(classes);
-        this.extensionRegistry = extensionRegistry;
+        this.extensionRegistry = extensionRegistry != null ? extensionRegistry : new ExtensionRegistry();
         // 预构建函数名→编译类映射（消除首次 call() 的线性扫描）
         buildFuncClassCache(classes);
     }
@@ -83,6 +83,7 @@ public final class CompiledNova {
     private void buildFuncClassCache(Map<String, Class<?>> classes) {
         if (classes == null) return;
         for (Map.Entry<String, Class<?>> entry : classes.entrySet()) {
+            if (!entry.getKey().endsWith("$Module")) continue;
             Class<?> cls = entry.getValue();
             for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
                 if (java.lang.reflect.Modifier.isPublic(m.getModifiers())
@@ -152,11 +153,30 @@ public final class CompiledNova {
      */
     public Object call(String funcName, Object... args) {
         if (nova != null) return nova.call(funcName, args);
-        // 字节码模式：初始化脚本上下文（使编译函数能访问注入的全局函数），调用后清理
-        NovaScriptContext.init(bindings);
-        if (extensionRegistry != null) {
-            NovaScriptContext.setExtensionRegistry(extensionRegistry);
+        if (compiledClasses != null) {
+            try {
+                return withScriptExecutionContext(bindings, true, () -> {
+                    Class<?> cls = funcClassCache.get(funcName);
+                    if (cls == null) {
+                        cls = findFuncClass(funcName);
+                        funcClassCache.put(funcName, cls);
+                    }
+                    Object result = MethodHandleCache.getInstance().invokeStatic(cls, funcName, args);
+                    bindings.putAll(NovaScriptContext.getAll());
+                    if (result instanceof NovaValue) {
+                        if (((NovaValue) result).isNull()) return null;
+                        return ((NovaValue) result).toJavaValue();
+                    }
+                    return result;
+                });
+            } catch (NovaRuntimeException e) {
+                throw e;
+            } catch (Throwable e) {
+                String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                throw new NovaRuntimeException("璋冪敤鍑芥暟 '" + funcName + "' 鏃跺嚭閿? " + msg, e);
+            }
         }
+        // 字节码模式：初始化脚本上下文（使编译函数能访问注入的全局函数），调用后清理
         try {
             Class<?> cls = funcClassCache.get(funcName);
             if (cls == null) {
@@ -192,6 +212,27 @@ public final class CompiledNova {
      */
     public Object callDirect(String funcName, Map<String, Object> liveBindings, Object... args) {
         if (nova != null) return nova.call(funcName, args);
+        if (liveBindings != null) {
+            try {
+                return withScriptExecutionContext(liveBindings, false, () -> {
+                    Class<?> cls = funcClassCache.get(funcName);
+                    if (cls == null) {
+                        throw NovaErrors.undefinedFunction(funcName, funcClassCache.keySet());
+                    }
+                    Object result = MethodHandleCache.getInstance().invokeStatic(cls, funcName, args);
+                    if (result instanceof NovaValue) {
+                        if (((NovaValue) result).isNull()) return null;
+                        return ((NovaValue) result).toJavaValue();
+                    }
+                    return result;
+                });
+            } catch (NovaRuntimeException e) {
+                throw e;
+            } catch (Throwable e) {
+                String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                throw new NovaRuntimeException("璋冪敤鍑芥暟 '" + funcName + "' 鏃跺嚭閿? " + msg, e);
+            }
+        }
         NovaScriptContext prev = NovaScriptContext.current();
         NovaScriptContext.initDirect(liveBindings);
         if (extensionRegistry != null) {
@@ -219,6 +260,37 @@ public final class CompiledNova {
     }
 
     /** 扫描编译类，查找包含指定函数名的类 */
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+        T get() throws Throwable;
+    }
+
+    private <T> T withScriptExecutionContext(Map<String, Object> contextBindings,
+                                             boolean copyBackBindings,
+                                             ThrowingSupplier<T> action) throws Throwable {
+        NovaScriptContext previousContext = NovaScriptContext.current();
+        ClassLoader previousScriptClassLoader = com.novalang.runtime.interpreter.JavaInterop.getScriptClassLoader();
+        if (copyBackBindings) {
+            NovaScriptContext.init(contextBindings);
+        } else {
+            NovaScriptContext.initDirect(contextBindings);
+        }
+        if (extensionRegistry != null) {
+            NovaScriptContext.setExtensionRegistry(extensionRegistry);
+        }
+        com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(scriptClassLoader);
+        try {
+            return action.get();
+        } finally {
+            com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(previousScriptClassLoader);
+            if (previousContext != null) {
+                NovaScriptContext.setCurrent(previousContext);
+            } else {
+                NovaScriptContext.clear();
+            }
+        }
+    }
+
     private Class<?> findFuncClass(String funcName) {
         MethodHandleCache cache = MethodHandleCache.getInstance();
         for (Class<?> cls : compiledClasses.values()) {
@@ -318,6 +390,18 @@ public final class CompiledNova {
         return registerExtensionInternal(type, name, 3, func);
     }
 
+    public CompiledNova registerExtension(Class<?> type, String name, Function4<Object, Object, Object, Object, Object> func) {
+        return registerExtensionInternal(type, name, 4, func);
+    }
+
+    public CompiledNova registerExtension(Class<?> type, String name, Function5<Object, Object, Object, Object, Object, Object> func) {
+        return registerExtensionInternal(type, name, 5, func);
+    }
+
+    public CompiledNova registerExtension(Class<?> type, String name, Function6<Object, Object, Object, Object, Object, Object, Object> func) {
+        return registerExtensionInternal(type, name, 6, func);
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private CompiledNova registerExtensionInternal(Class<?> type, String name, int arity, Object func) {
         if (extensionRegistry == null) return this;
@@ -332,6 +416,9 @@ public final class CompiledNova {
                             case 1: return ((Function1) func).invoke(receiver);
                             case 2: return ((Function2) func).invoke(receiver, args[0]);
                             case 3: return ((Function3) func).invoke(receiver, args[0], args[1]);
+                            case 4: return ((Function4) func).invoke(receiver, args[0], args[1], args[2]);
+                            case 5: return ((Function5) func).invoke(receiver, args[0], args[1], args[2], args[3]);
+                            case 6: return ((Function6) func).invoke(receiver, args[0], args[1], args[2], args[3], args[4]);
                             default: return null;
                         }
                     }
@@ -345,6 +432,9 @@ public final class CompiledNova {
                     case 1: return AbstractNovaValue.fromJava(((Function1) func).invoke(javaArgs[0]));
                     case 2: return AbstractNovaValue.fromJava(((Function2) func).invoke(javaArgs[0], javaArgs[1]));
                     case 3: return AbstractNovaValue.fromJava(((Function3) func).invoke(javaArgs[0], javaArgs[1], javaArgs[2]));
+                    case 4: return AbstractNovaValue.fromJava(((Function4) func).invoke(javaArgs[0], javaArgs[1], javaArgs[2], javaArgs[3]));
+                    case 5: return AbstractNovaValue.fromJava(((Function5) func).invoke(javaArgs[0], javaArgs[1], javaArgs[2], javaArgs[3], javaArgs[4]));
+                    case 6: return AbstractNovaValue.fromJava(((Function6) func).invoke(javaArgs[0], javaArgs[1], javaArgs[2], javaArgs[3], javaArgs[4], javaArgs[5]));
                     default: return NovaNull.NULL;
                 }
             });
@@ -449,6 +539,23 @@ public final class CompiledNova {
     }
 
     private Object runBytecode() {
+        if (bindings != null) {
+            try {
+                return withScriptExecutionContext(bindings, true, () -> {
+                    Object result = mainHandle.invoke();
+                    bindings.putAll(NovaScriptContext.getAll());
+                    if (result instanceof NovaValue) {
+                        if (((NovaValue) result).isNull()) return null;
+                        return ((NovaValue) result).toJavaValue();
+                    }
+                    return result;
+                });
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Throwable e) {
+                throw NovaErrors.wrap("鑴氭湰鎵ц澶辫触", e);
+            }
+        }
         NovaScriptContext.init(bindings);
         if (extensionRegistry != null) {
             NovaScriptContext.setExtensionRegistry(extensionRegistry);

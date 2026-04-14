@@ -229,6 +229,17 @@ class NovaAnalyzerTest {
         }
 
         @Test
+        @DisplayName("悬停在用户定义类型引用上返回类型信息")
+        void testHoverOnUserDefinedTypeReference() {
+            String code = "class Foo {}\nval x: Foo? = null";
+            JsonObject hover = analyzer.hover(TEST_URI, code, 1, 7);
+            assertThat(hover).isNotNull();
+            String value = hover.getAsJsonObject("contents").get("value").getAsString();
+            assertThat(value).contains("Foo");
+            assertThat(value).contains("class");
+        }
+
+        @Test
         @DisplayName("悬停在空白处返回 null")
         void testHoverOnWhitespace() {
             String code = "val x = 1";
@@ -270,6 +281,17 @@ class NovaAnalyzerTest {
             JsonObject location = analyzer.goToDefinition(TEST_URI, code, 0, 6);
             assertThat(location).isNotNull();
             assertThat(location.get("uri").getAsString()).isEqualTo(TEST_URI);
+        }
+
+        @Test
+        @DisplayName("类型注解中的类名可以跳转到定义")
+        void testGoToTypeDefinitionFromTypeAnnotation() {
+            String code = "class Foo {}\nval x: Foo? = null\n";
+            JsonObject location = analyzer.goToDefinition(TEST_URI, code, 1, 7);
+            assertThat(location).isNotNull();
+            assertThat(location.get("uri").getAsString()).isEqualTo(TEST_URI);
+            JsonObject start = location.getAsJsonObject("range").getAsJsonObject("start");
+            assertThat(start.get("line").getAsInt()).isEqualTo(0);
         }
 
         @Test

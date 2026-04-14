@@ -358,7 +358,7 @@ public class NovaAnalyzer {
         // 策略1: 从符号表推断
         Symbol receiverSym = null;
         if (cached != null && receiverText != null) {
-            receiverSym = cached.analysisResult.getSymbolTable().resolve(receiverText, line + 1, character + 1);
+            receiverSym = cached.analysisResult.getSymbolTable().resolveAny(receiverText, line + 1, character + 1);
             if (receiverSym != null) {
                 receiverType = receiverSym.getTypeName();
             }
@@ -449,7 +449,7 @@ public class NovaAnalyzer {
             // 从符号表获取用户定义的类成员
             if (cached != null) {
                 SymbolTable st = cached.analysisResult.getSymbolTable();
-                Symbol classSym = st.resolve(base, line + 1, character + 1);
+                Symbol classSym = st.resolveType(base, line + 1, character + 1);
                 // fallback: 按名称搜索所有 CLASS 符号
                 if (classSym == null || (classSym.getKind() != SymbolKind.CLASS
                         && classSym.getKind() != SymbolKind.ENUM)) {
@@ -504,7 +504,7 @@ public class NovaAnalyzer {
 
         // 1. 从符号表查找（最精确）
         if (cached != null) {
-            Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
+            Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(word, line + 1, character + 1);
             if (sym != null && sym.getKind() != SymbolKind.BUILTIN_FUNCTION
                     && sym.getKind() != SymbolKind.BUILTIN_CONSTANT) {
                 if (sym.getKind() == SymbolKind.IMPORT) {
@@ -579,7 +579,7 @@ public class NovaAnalyzer {
                     // 优先从符号表推断 receiver 类型
                     String receiverType = null;
                     if (cached != null && LspTextUtils.isSimpleIdentifier(beforeDot)) {
-                        Symbol sym = cached.analysisResult.getSymbolTable().resolve(beforeDot, line + 1, character + 1);
+                        Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(beforeDot, line + 1, character + 1);
                         if (sym != null) receiverType = sym.getTypeName();
                     }
                     if (receiverType == null) {
@@ -601,7 +601,7 @@ public class NovaAnalyzer {
 
         // 7. 从符号表查内置符号（作为回退）
         if (cached != null) {
-            Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
+            Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(word, line + 1, character + 1);
             if (sym != null) {
                 return createHover(buildSymbolHover(sym));
             }
@@ -628,7 +628,7 @@ public class NovaAnalyzer {
 
         // 1. 从符号表查找
         if (cached != null) {
-            Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
+            Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(word, line + 1, character + 1);
             if (sym != null && sym.getLocation() != null) {
                 if (sym.getKind() == SymbolKind.IMPORT) {
                     ProjectIndex.SymbolEntry importedTarget = resolveWorkspaceTarget(uri, word, line, character, cached);
@@ -728,7 +728,7 @@ public class NovaAnalyzer {
         }
 
         if (cached != null && cached.analysisResult != null) {
-            Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
+            Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(word, line + 1, character + 1);
             if (sym != null) {
                 ProjectIndex.SymbolEntry exact = findProjectSymbolEntry(uri, word, sym);
                 if (exact != null) {
@@ -785,6 +785,16 @@ public class NovaAnalyzer {
         changes.add(targetUri, fileEdits);
     }
 
+    private List<Symbol> getTopLevelSymbolsInSourceOrder(DocumentManager.CachedAnalysis cached) {
+        List<Symbol> topLevel = new ArrayList<Symbol>(
+                cached.analysisResult.getSymbolTable().getGlobalScope().getDeclaredSymbols());
+        topLevel.sort(Comparator
+                .comparingInt((Symbol symbol) -> symbol.getLocation() != null ? symbol.getLocation().getLine() : Integer.MAX_VALUE)
+                .thenComparingInt(symbol -> symbol.getLocation() != null ? symbol.getLocation().getColumn() : Integer.MAX_VALUE)
+                .thenComparing(Symbol::getName, Comparator.nullsLast(Comparator.<String>naturalOrder())));
+        return topLevel;
+    }
+
     public JsonArray documentSymbols(String uri, String content) {
         JsonArray symbols = new JsonArray();
         if (content == null) return symbols;
@@ -792,7 +802,7 @@ public class NovaAnalyzer {
         DocumentManager.CachedAnalysis cached = ensureParsed(uri, content);
         if (cached != null) {
             // 从全局作用域获取顶层声明
-            for (Symbol sym : cached.analysisResult.getSymbolTable().getGlobalScope().getSymbols().values()) {
+            for (Symbol sym : getTopLevelSymbolsInSourceOrder(cached)) {
                 if (sym.getKind() == SymbolKind.BUILTIN_FUNCTION || sym.getKind() == SymbolKind.BUILTIN_CONSTANT) {
                     continue;
                 }
@@ -1653,7 +1663,7 @@ public class NovaAnalyzer {
                     if (content.charAt(i) == '\n') { line++; col = 0; }
                     else col++;
                 }
-                Symbol sym = cached.analysisResult.getSymbolTable().resolve(name, line + 1, col + 1);
+                Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(name, line + 1, col + 1);
                 if (sym != null && sym.getTypeName() != null) return sym.getTypeName();
             }
 
@@ -1783,7 +1793,7 @@ public class NovaAnalyzer {
             // 查符号表中用户定义函数的返回类型
             if (cached != null && LspTextUtils.isSimpleIdentifier(beforeParen)) {
                 Symbol funcSym = cached.analysisResult.getSymbolTable()
-                        .getGlobalScope().resolve(beforeParen);
+                        .getGlobalScope().resolveAny(beforeParen);
                 if (funcSym != null && funcSym.getKind() == SymbolKind.FUNCTION
                         && funcSym.getTypeName() != null) {
                     return funcSym.getTypeName();
@@ -2502,7 +2512,7 @@ public class NovaAnalyzer {
             if ("this".equals(name)) return inferThisType(content);
             // 符号表查找
             if (cached != null && cached.analysisResult != null && expr.getLocation() != null) {
-                Symbol sym = cached.analysisResult.getSymbolTable().resolve(
+                Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(
                         name, expr.getLocation().getLine(), expr.getLocation().getColumn());
                 if (sym != null && sym.getTypeName() != null) return sym.getTypeName();
             }
@@ -3150,7 +3160,7 @@ public class NovaAnalyzer {
         String signatureLabel = null;
 
         if (cached != null) {
-            Symbol sym = cached.analysisResult.getSymbolTable().resolve(funcName, line + 1, character + 1);
+            Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(funcName, line + 1, character + 1);
             if (sym != null && sym.getParameters() != null) {
                 StringBuilder sig = new StringBuilder(funcName + "(");
                 for (int i = 0; i < sym.getParameters().size(); i++) {
@@ -3251,7 +3261,7 @@ public class NovaAnalyzer {
 
         // 可选：包含声明位置
         if (!includeDeclaration && cached != null) {
-            Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
+            Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(word, line + 1, character + 1);
             if (sym != null && sym.getLocation() != null) {
                 SourceLocation defLoc = sym.getLocation();
                 refs.removeIf(loc -> loc.getLine() == defLoc.getLine()
@@ -3523,7 +3533,7 @@ public class NovaAnalyzer {
         // 确认可以在符号表中找到
         DocumentManager.CachedAnalysis cached = ensureParsed(uri, content);
         if (cached != null) {
-            Symbol sym = cached.analysisResult.getSymbolTable().resolve(word, line + 1, character + 1);
+            Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(word, line + 1, character + 1);
             if (sym != null && sym.getKind() != SymbolKind.BUILTIN_FUNCTION
                     && sym.getKind() != SymbolKind.BUILTIN_CONSTANT) {
                 // 在行中精确找到 word 位置
@@ -3964,7 +3974,7 @@ public class NovaAnalyzer {
                         inferredType = cached.analysisResult.getExprTypeName(prop.getInitializer());
                     }
                     if (inferredType == null && cached.analysisResult != null) {
-                        Symbol sym = cached.analysisResult.getSymbolTable().resolve(
+                        Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(
                                 prop.getName(), line + 1, propNameLoc.getColumn());
                         if (sym != null) inferredType = sym.getTypeName();
                     }
@@ -4081,7 +4091,7 @@ public class NovaAnalyzer {
         if (call.getCallee() instanceof Identifier) {
             String funcName = ((Identifier) call.getCallee()).getName();
             if (cached != null && cached.analysisResult != null) {
-                Symbol sym = cached.analysisResult.getSymbolTable().resolve(funcName, 1, 1);
+                Symbol sym = cached.analysisResult.getSymbolTable().resolveAny(funcName, 1, 1);
                 if (sym != null && sym.getParameters() != null) {
                     paramNames = new ArrayList<>();
                     for (Symbol p : sym.getParameters()) paramNames.add(p.getName());
@@ -4143,7 +4153,7 @@ public class NovaAnalyzer {
             for (String uri : documentManager.getOpenDocuments()) {
                 DocumentManager.CachedAnalysis cached = documentManager.getAnalysis(uri);
                 if (cached == null) continue;
-                for (Symbol sym : cached.analysisResult.getSymbolTable().getGlobalScope().getSymbols().values()) {
+                for (Symbol sym : getTopLevelSymbolsInSourceOrder(cached)) {
                     if (sym.getKind() == SymbolKind.BUILTIN_FUNCTION || sym.getKind() == SymbolKind.BUILTIN_CONSTANT) continue;
                     if (sym.getName() != null && sym.getName().toLowerCase().contains(lowerQuery)) {
                         JsonObject symObj = new JsonObject();
@@ -4190,8 +4200,7 @@ public class NovaAnalyzer {
     public void updateProjectIndex(String uri) {
         DocumentManager.CachedAnalysis cached = documentManager.getAnalysis(uri);
         if (cached != null && cached.analysisResult != null) {
-            List<Symbol> topLevel = new ArrayList<>(
-                    cached.analysisResult.getSymbolTable().getGlobalScope().getSymbols().values());
+            List<Symbol> topLevel = getTopLevelSymbolsInSourceOrder(cached);
             projectIndex.updateFile(uri, NovaAnalysisSupport.packageName(cached), topLevel);
             String content = documentManager.getContent(uri);
             if (content != null) {

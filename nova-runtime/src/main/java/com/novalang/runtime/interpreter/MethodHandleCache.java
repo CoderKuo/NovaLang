@@ -3,6 +3,7 @@ package com.novalang.runtime.interpreter;
 import com.novalang.runtime.NovaCallable;
 import com.novalang.runtime.interpreter.cache.BoundedCache;
 import com.novalang.runtime.interpreter.cache.CaffeineCache;
+import com.novalang.runtime.resolution.JavaOverloadResolver;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -269,6 +270,8 @@ public final class MethodHandleCache {
      * 查找兼容的方法（支持类型自动转换 + varargs）
      */
     private Method findCompatibleMethod(Class<?> clazz, String name, Class<?>[] argTypes, boolean isStatic) {
+        return JavaOverloadResolver.selectBestMethod(getMethodIndex(clazz).get(name), isStatic, argTypes);
+        /*
         List<Method> candidates = getMethodIndex(clazz).get(name);
         if (candidates == null) return null;
         List<Method> matches = new ArrayList<>();
@@ -300,6 +303,7 @@ public final class MethodHandleCache {
         if (matches.isEmpty()) return null;
         if (matches.size() == 1) return matches.get(0);
         return selectMostSpecific(matches);
+        */
     }
 
     /**
@@ -360,6 +364,8 @@ public final class MethodHandleCache {
      * 将调用参数打包为 varargs 方法所需的格式
      */
     static Object[] packVarArgs(Method method, Object[] args) {
+        return JavaOverloadResolver.packVarArgs(method.getParameterTypes(), args);
+        /*
         Class<?>[] paramTypes = method.getParameterTypes();
         int fixedCount = paramTypes.length - 1;
         // 如果实参数量恰好等于形参数量且最后一个已经是数组，不需打包
@@ -376,6 +382,7 @@ public final class MethodHandleCache {
         System.arraycopy(args, 0, packed, 0, fixedCount);
         packed[fixedCount] = varArray;
         return packed;
+        */
     }
 
     /**
@@ -597,6 +604,17 @@ public final class MethodHandleCache {
 
     private MethodHandle lookupConstructor(Class<?> clazz, Class<?>[] argTypes) {
         try {
+            java.lang.reflect.Constructor<?> ctor =
+                    JavaOverloadResolver.selectBestConstructor(Arrays.asList(clazz.getConstructors()), argTypes);
+            if (ctor == null) return NOT_FOUND;
+            trySetAccessible(ctor);
+            MethodHandle mh = lookup.unreflectConstructor(ctor);
+            if (ctor.isVarArgs()) {
+                Class<?>[] paramTypes = ctor.getParameterTypes();
+                mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
+            }
+            return mh;
+            /*
             // 1. 精确匹配（非 varargs）
             for (java.lang.reflect.Constructor<?> ctor : clazz.getConstructors()) {
                 if (!ctor.isVarArgs() && isCompatible(ctor.getParameterTypes(), argTypes)) {
@@ -614,6 +632,7 @@ public final class MethodHandleCache {
                 }
             }
             return NOT_FOUND;
+            */
         } catch (Exception e) {
             return NOT_FOUND;
         }

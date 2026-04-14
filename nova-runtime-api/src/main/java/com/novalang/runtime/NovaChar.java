@@ -1,5 +1,7 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.stdlib.internal.CharOps;
+
 /**
  * Nova Char 值
  */
@@ -100,22 +102,22 @@ public final class NovaChar extends AbstractNovaValue {
     }
 
     public boolean isDigit() {
-        return Character.isDigit(value);
+        return CharOps.isDigit(value);
     }
 
     public boolean isLetter() {
-        return Character.isLetter(value);
+        return CharOps.isLetter(value);
     }
 
     public boolean isWhitespace() {
-        return Character.isWhitespace(value);
+        return CharOps.isWhitespace(value);
     }
 
     public NovaChar toUpperCase() {
-        return new NovaChar(Character.toUpperCase(value));
+        return NovaChar.of(CharOps.toUpperCase(value));
     }
 
     public NovaChar toLowerCase() {
-        return new NovaChar(Character.toLowerCase(value));
+        return NovaChar.of(CharOps.toLowerCase(value));
     }
 }

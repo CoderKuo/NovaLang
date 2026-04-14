@@ -4,6 +4,7 @@ import com.novalang.runtime.Function1;
 import com.novalang.runtime.NovaDynamic;
 import com.novalang.runtime.NovaException;
 import com.novalang.runtime.NovaException.ErrorKind;
+import com.novalang.runtime.stdlib.internal.StringOps;
 
 import java.util.*;
 import java.util.function.Function;
@@ -20,128 +21,105 @@ public final class StringExtensions {
     // ========== 无参方法 ==========
 
     public static Object length(Object str) {
-        return ((String) str).length();
+        return StringOps.length((String) str);
     }
 
     public static Object isEmpty(Object str) {
-        return ((String) str).isEmpty();
+        return StringOps.isEmpty((String) str);
     }
 
     public static Object isNotEmpty(Object str) {
-        return !((String) str).isEmpty();
+        return StringOps.isNotEmpty((String) str);
     }
 
     public static Object isBlank(Object str) {
-        return ((String) str).trim().isEmpty();
+        return StringOps.isBlank((String) str);
     }
 
     public static Object toUpperCase(Object str) {
-        return ((String) str).toUpperCase();
+        return StringOps.toUpperCase((String) str);
     }
 
     public static Object toLowerCase(Object str) {
-        return ((String) str).toLowerCase();
+        return StringOps.toLowerCase((String) str);
     }
 
     public static Object trim(Object str) {
-        return ((String) str).trim();
+        return StringOps.trim((String) str);
     }
 
     public static Object uppercase(Object str) {
-        return ((String) str).toUpperCase();
+        return StringOps.toUpperCase((String) str);
     }
 
     public static Object lowercase(Object str) {
-        return ((String) str).toLowerCase();
+        return StringOps.toLowerCase((String) str);
     }
 
     public static Object trimStart(Object str) {
-        String s = (String) str;
-        int i = 0;
-        while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
-        return s.substring(i);
+        return StringOps.trimStart((String) str);
     }
 
     public static Object trimEnd(Object str) {
-        String s = (String) str;
-        int i = s.length() - 1;
-        while (i >= 0 && Character.isWhitespace(s.charAt(i))) i--;
-        return s.substring(0, i + 1);
+        return StringOps.trimEnd((String) str);
     }
 
     public static Object reverse(Object str) {
-        return new StringBuilder((String) str).reverse().toString();
+        return StringOps.reverse((String) str);
     }
 
     public static Object capitalize(Object str) {
-        String s = (String) str;
-        if (s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        return StringOps.capitalize((String) str);
     }
 
     public static Object decapitalize(Object str) {
-        String s = (String) str;
-        if (s.isEmpty()) return s;
-        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+        return StringOps.decapitalize((String) str);
     }
 
     public static Object toList(Object str) {
-        String s = (String) str;
-        List<Object> result = new ArrayList<>(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            result.add(s.charAt(i));
-        }
-        return result;
+        return new ArrayList<Object>(StringOps.toCharacterList((String) str));
     }
 
     public static Object reversed(Object str) {
-        return new StringBuilder((String) str).reverse().toString();
+        return StringOps.reverse((String) str);
     }
 
     public static Object lines(Object str) {
-        return new ArrayList<>(Arrays.asList(((String) str).split("\\r?\\n", -1)));
+        return new ArrayList<Object>(StringOps.lines((String) str));
     }
 
     public static Object chars(Object str) {
-        String s = (String) str;
-        List<Object> result = new ArrayList<>(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            result.add(s.charAt(i));
-        }
-        return result;
+        return new ArrayList<Object>(StringOps.toCharacterList((String) str));
     }
 
     // ── 类型转换 ──
 
     public static Object toInt(Object str) {
-        return Integer.parseInt((String) str);
+        return StringOps.toInt((String) str);
     }
 
     public static Object toLong(Object str) {
-        return Long.parseLong((String) str);
+        return StringOps.toLong((String) str);
     }
 
     public static Object toDouble(Object str) {
-        return Double.parseDouble((String) str);
+        return StringOps.toDouble((String) str);
     }
 
     public static Object toBoolean(Object str) {
-        return Boolean.parseBoolean((String) str);
+        return StringOps.toBoolean((String) str);
     }
 
     public static Object toIntOrNull(Object str) {
-        try { return Integer.parseInt((String) str); }
-        catch (NumberFormatException e) { return null; }
+        return StringOps.toIntOrNull((String) str);
     }
 
     public static Object toLongOrNull(Object str) {
-        try { return Long.parseLong((String) str); }
-        catch (NumberFormatException e) { return null; }
+        return StringOps.toLongOrNull((String) str);
     }
 
     public static Object toDoubleOrNull(Object str) {
-        try { return Double.parseDouble((String) str); }
-        catch (NumberFormatException e) { return null; }
+        return StringOps.toDoubleOrNull((String) str);
     }
 
     // ========== 单参数方法 ==========
@@ -150,85 +128,68 @@ public final class StringExtensions {
         if (!(str instanceof String)) {
             return NovaDynamic.invoke1(str, "split", separator);
         }
-        return new ArrayList<>(Arrays.asList(
-                ((String) str).split(Pattern.quote(separator.toString()), -1)));
+        return new ArrayList<Object>(StringOps.split((String) str, separator.toString()));
     }
 
     public static Object contains(Object str, Object sub) {
-        return ((String) str).contains(sub.toString());
+        return StringOps.contains((String) str, sub.toString());
     }
 
     public static Object startsWith(Object str, Object prefix) {
-        return ((String) str).startsWith(prefix.toString());
+        return StringOps.startsWith((String) str, prefix.toString());
     }
 
     public static Object endsWith(Object str, Object suffix) {
-        return ((String) str).endsWith(suffix.toString());
+        return StringOps.endsWith((String) str, suffix.toString());
     }
 
     public static Object indexOf(Object str, Object sub) {
-        return ((String) str).indexOf(sub.toString());
+        return StringOps.indexOf((String) str, sub.toString());
     }
 
     public static Object replace(Object str, Object target, Object replacement) {
         if (!(str instanceof String)) {
             return NovaDynamic.invoke2(str, "replace", target, replacement);
         }
-        return ((String) str).replace(target.toString(), replacement.toString());
+        return StringOps.replace((String) str, target.toString(), replacement.toString());
     }
 
     public static Object take(Object str, Object n) {
-        String s = (String) str;
-        int count = ((Number) n).intValue();
-        return s.substring(0, Math.min(count, s.length()));
+        return StringOps.take((String) str, ((Number) n).intValue());
     }
 
     public static Object drop(Object str, Object n) {
-        String s = (String) str;
-        int count = ((Number) n).intValue();
-        return s.substring(Math.min(count, s.length()));
+        return StringOps.drop((String) str, ((Number) n).intValue());
     }
 
     public static Object takeLast(Object str, Object n) {
-        String s = (String) str;
-        int count = ((Number) n).intValue();
-        return s.substring(Math.max(0, s.length() - count));
+        return StringOps.takeLast((String) str, ((Number) n).intValue());
     }
 
     public static Object dropLast(Object str, Object n) {
-        String s = (String) str;
-        int count = ((Number) n).intValue();
-        return s.substring(0, Math.max(0, s.length() - count));
+        return StringOps.dropLast((String) str, ((Number) n).intValue());
     }
 
     public static Object repeat(Object str, Object n) {
-        String s = (String) str;
-        int count = ((Number) n).intValue();
-        StringBuilder sb = new StringBuilder(s.length() * count);
-        for (int i = 0; i < count; i++) sb.append(s);
-        return sb.toString();
+        return StringOps.repeat((String) str, ((Number) n).intValue());
     }
 
     public static Object removePrefix(Object str, Object prefix) {
-        String s = (String) str;
-        String p = prefix.toString();
-        return s.startsWith(p) ? s.substring(p.length()) : s;
+        return StringOps.removePrefix((String) str, prefix.toString());
     }
 
     public static Object removeSuffix(Object str, Object suffix) {
-        String s = (String) str;
-        String sf = suffix.toString();
-        return s.endsWith(sf) ? s.substring(0, s.length() - sf.length()) : s;
+        return StringOps.removeSuffix((String) str, suffix.toString());
     }
 
     // ── 重载方法 ──
 
     public static Object substring(Object str, Object start) {
-        return ((String) str).substring(((Number) start).intValue());
+        return StringOps.substring((String) str, ((Number) start).intValue());
     }
 
     public static Object substring(Object str, Object start, Object end) {
-        return ((String) str).substring(((Number) start).intValue(), ((Number) end).intValue());
+        return StringOps.substring((String) str, ((Number) start).intValue(), ((Number) end).intValue());
     }
 
     public static Object padStart(Object str, Object length) {
@@ -236,14 +197,7 @@ public final class StringExtensions {
     }
 
     public static Object padStart(Object str, Object length, Object padChar) {
-        String s = (String) str;
-        int len = ((Number) length).intValue();
-        char pad = toPadChar(padChar);
-        if (s.length() >= len) return s;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < len - s.length(); i++) sb.append(pad);
-        sb.append(s);
-        return sb.toString();
+        return StringOps.padStart((String) str, ((Number) length).intValue(), toPadChar(padChar));
     }
 
     public static Object padEnd(Object str, Object length) {
@@ -251,17 +205,11 @@ public final class StringExtensions {
     }
 
     public static Object padEnd(Object str, Object length, Object padChar) {
-        String s = (String) str;
-        int len = ((Number) length).intValue();
-        char pad = toPadChar(padChar);
-        if (s.length() >= len) return s;
-        StringBuilder sb = new StringBuilder(s);
-        for (int i = 0; i < len - s.length(); i++) sb.append(pad);
-        return sb.toString();
+        return StringOps.padEnd((String) str, ((Number) length).intValue(), toPadChar(padChar));
     }
 
     public static Object format(Object str, Object... args) {
-        return String.format((String) str, args);
+        return StringOps.format((String) str, args);
     }
 
     // ── Lambda 方法 ──
@@ -308,14 +256,14 @@ public final class StringExtensions {
     }
 
     public static Object lastIndexOf(Object str, Object substr) {
-        return ((String) str).lastIndexOf(substr.toString());
+        return StringOps.lastIndexOf((String) str, substr.toString());
     }
 
     public static Object matches(Object str, Object regex) {
         if (!(str instanceof String)) {
             return NovaDynamic.invoke1(str, "matches", regex);
         }
-        return ((String) str).matches(regex.toString());
+        return StringOps.matches((String) str, regex.toString());
     }
 
     // ── 正则表达式扩展 ──
@@ -325,11 +273,7 @@ public final class StringExtensions {
         if (!(str instanceof String)) {
             return NovaDynamic.invoke2(str, "replaceFirst", target, replacement);
         }
-        String s = (String) str;
-        String t = target.toString();
-        int idx = s.indexOf(t);
-        if (idx < 0) return s;
-        return s.substring(0, idx) + replacement.toString() + s.substring(idx + t.length());
+        return StringOps.replaceFirstLiteral((String) str, target.toString(), replacement.toString());
     }
 
     /** 正则替换全部匹配 */

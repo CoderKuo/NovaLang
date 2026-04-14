@@ -237,6 +237,21 @@ public class Parser {
         throw new ParseException("Expected member name", current, "IDENTIFIER").withSource(lexer.getSource());
     }
 
+    String expectQualifiedNamePart(String message) {
+        if (check(TokenType.IDENTIFIER) || current.getType().isKeyword()) {
+            String lexeme = current.getLexeme();
+            if (!lexeme.isEmpty() && Character.isJavaIdentifierStart(lexeme.charAt(0))) {
+                for (int i = 1; i < lexeme.length(); i++) {
+                    if (!Character.isJavaIdentifierPart(lexeme.charAt(i))) {
+                        throw new ParseException(message, current, "IDENTIFIER").withSource(lexer.getSource());
+                    }
+                }
+                return advance().getLexeme();
+            }
+        }
+        throw new ParseException(message, current, "IDENTIFIER").withSource(lexer.getSource());
+    }
+
     /**
      * 创建源码位置
      */
@@ -654,11 +669,11 @@ public class Parser {
     QualifiedName parseQualifiedName() {
         SourceLocation loc = location();
         List<String> parts = new ArrayList<String>();
-        parts.add(expect(IDENTIFIER, "Expected identifier").getLexeme());
+        parts.add(expectQualifiedNamePart("Expected identifier"));
 
         while (check(DOT) && !checkAhead(MUL)) {
             advance();  // consume '.'
-            parts.add(expect(IDENTIFIER, "Expected identifier").getLexeme());
+            parts.add(expectQualifiedNamePart("Expected identifier"));
         }
 
         return new QualifiedName(loc, parts);

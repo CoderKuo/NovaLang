@@ -177,6 +177,16 @@ public class PassPipeline {
     private void runSemanticAnalysis(Program program) {
         try {
             SemanticAnalyzer analyzer = new SemanticAnalyzer();
+            if (externalClassNames != null) {
+                for (String className : externalClassNames) {
+                    analyzer.registerKnownType(className);
+                }
+            }
+            if (externalInterfaceNames != null) {
+                for (String interfaceName : externalInterfaceNames) {
+                    analyzer.registerKnownType(interfaceName);
+                }
+            }
             // 编译管线只需诊断输出，跳过 exprNovaTypeMap / 位置索引记录以节省内存
             analyzer.setDiagnosticsOnly(true);
             AnalysisResult result = analyzer.analyze(program);

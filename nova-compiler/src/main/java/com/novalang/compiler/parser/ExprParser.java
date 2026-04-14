@@ -1226,7 +1226,7 @@ class ExprParser {
             ExpressionStmt last = (ExpressionStmt) stmts.remove(stmts.size() - 1);
             result = last.getExpression();
         } else {
-            result = new Literal(block.getLocation(), null, Literal.LiteralKind.NULL);
+            result = new Literal(block.getLocation(), null, Literal.LiteralKind.UNIT);
         }
         if (stmts.isEmpty()) {
             return result;

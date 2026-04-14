@@ -27,6 +27,8 @@ public final class SuperTypeRegistry {
         superClasses.put("Range", "Any");
         superClasses.put("Pair", "Any");
         superClasses.put("Result", "Any");
+        superClasses.put("Ok", "Result");
+        superClasses.put("Err", "Result");
         superClasses.put("Exception", "Any");
 
         // Comparable 接口

@@ -7,7 +7,7 @@ import java.util.Objects;
 /**
  * 类/接口类型，可含泛型参数: String, List&lt;Int&gt;, Map&lt;K, V&gt;
  */
-public final class ClassNovaType extends NovaType {
+public class ClassNovaType extends NovaType {
 
     private final String name;
     private final List<NovaTypeArgument> typeArgs;
@@ -68,7 +68,7 @@ public final class ClassNovaType extends NovaType {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof ClassNovaType)) return false;
+        if (o == null || getClass() != o.getClass()) return false;
         ClassNovaType that = (ClassNovaType) o;
         return nullable == that.nullable && name.equals(that.name) && typeArgs.equals(that.typeArgs);
     }

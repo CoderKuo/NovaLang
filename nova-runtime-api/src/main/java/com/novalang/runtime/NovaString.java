@@ -1,5 +1,7 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.stdlib.internal.StringOps;
+
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -124,15 +126,15 @@ public final class NovaString extends AbstractNovaValue implements Iterable<Nova
     // ============ 字符串操作 ============
 
     public int length() {
-        return value.length();
+        return StringOps.length(value);
     }
 
     public boolean isEmpty() {
-        return value.isEmpty();
+        return StringOps.isEmpty(value);
     }
 
     public boolean isBlank() {
-        return value.trim().isEmpty();
+        return StringOps.isBlank(value);
     }
 
     public NovaString concat(NovaString other) {
@@ -151,58 +153,58 @@ public final class NovaString extends AbstractNovaValue implements Iterable<Nova
     }
 
     public NovaString substring(int start) {
-        return new NovaString(value.substring(start));
+        return NovaString.of(StringOps.substring(value, start));
     }
 
     public NovaString substring(int start, int end) {
-        return new NovaString(value.substring(start, end));
+        return NovaString.of(StringOps.substring(value, start, end));
     }
 
     public int indexOf(String str) {
-        return value.indexOf(str);
+        return StringOps.indexOf(value, str);
     }
 
     public int indexOf(String str, int fromIndex) {
-        return value.indexOf(str, fromIndex);
+        return StringOps.indexOf(value, str, fromIndex);
     }
 
     public int lastIndexOf(String str) {
-        return value.lastIndexOf(str);
+        return StringOps.lastIndexOf(value, str);
     }
 
     public boolean contains(String str) {
-        return value.contains(str);
+        return StringOps.contains(value, str);
     }
 
     public boolean startsWith(String prefix) {
-        return value.startsWith(prefix);
+        return StringOps.startsWith(value, prefix);
     }
 
     public boolean endsWith(String suffix) {
-        return value.endsWith(suffix);
+        return StringOps.endsWith(value, suffix);
     }
 
     public NovaString toUpperCase() {
-        return new NovaString(value.toUpperCase());
+        return NovaString.of(StringOps.toUpperCase(value));
     }
 
     public NovaString toLowerCase() {
-        return new NovaString(value.toLowerCase());
+        return NovaString.of(StringOps.toLowerCase(value));
     }
 
     public NovaString trim() {
-        return new NovaString(value.trim());
+        return NovaString.of(StringOps.trim(value));
     }
 
     public NovaString replace(String target, String replacement) {
-        return new NovaString(value.replace(target, replacement));
+        return NovaString.of(StringOps.replace(value, target, replacement));
     }
 
     public NovaList split(String regex) {
-        String[] parts = value.split(regex);
-        NovaValue[] values = new NovaValue[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            values[i] = new NovaString(parts[i]);
+        java.util.List<String> parts = StringOps.splitRegex(value, regex);
+        NovaValue[] values = new NovaValue[parts.size()];
+        for (int i = 0; i < parts.size(); i++) {
+            values[i] = NovaString.of(parts.get(i));
         }
         return new NovaList(values);
     }
@@ -211,15 +213,11 @@ public final class NovaString extends AbstractNovaValue implements Iterable<Nova
         if (count < 0) {
             throw new NovaException("Repeat count cannot be negative");
         }
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < count; i++) {
-            sb.append(value);
-        }
-        return new NovaString(sb.toString());
+        return NovaString.of(StringOps.repeat(value, count));
     }
 
     public NovaString reverse() {
-        return new NovaString(new StringBuilder(value).reverse().toString());
+        return NovaString.of(StringOps.reverse(value));
     }
 
     // ============ 比较 ============

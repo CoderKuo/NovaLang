@@ -16,10 +16,16 @@ class NovaApiServerTest {
     private static NovaApiServer server;
     private static int port;
 
+    private static int findFreePort() throws IOException {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            socket.setReuseAddress(true);
+            return socket.getLocalPort();
+        }
+    }
+
     @BeforeAll
     static void startServer() throws Exception {
-        // 使用非默认端口避免冲突
-        port = 19621;
+        port = findFreePort();
         server = new NovaApiServer(port);
         server.start();
         // 确保服务已就绪
@@ -340,8 +346,7 @@ class NovaApiServerTest {
 
     @Test
     void serverStopAndRestart() throws Exception {
-        // 在独立端口测试 stop/start 生命周期
-        int lifecyclePort = 19622;
+        int lifecyclePort = findFreePort();
         NovaApiServer tempServer = new NovaApiServer(lifecyclePort);
         tempServer.start();
         assertTrue(tempServer.isAlive(), "Temp server should be alive");

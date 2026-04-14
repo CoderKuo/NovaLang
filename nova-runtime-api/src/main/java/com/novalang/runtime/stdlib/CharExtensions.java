@@ -1,10 +1,9 @@
 package com.novalang.runtime.stdlib;
 
-import com.novalang.runtime.NovaException;
-import com.novalang.runtime.NovaException.ErrorKind;
+import com.novalang.runtime.stdlib.internal.CharOps;
 
 /**
- * Character 类型扩展方法。
+ * Character extensions.
  */
 @Ext("java/lang/Character")
 public final class CharExtensions {
@@ -12,52 +11,50 @@ public final class CharExtensions {
     private CharExtensions() {}
 
     public static Object isDigit(Object ch) {
-        return Character.isDigit((Character) ch);
+        return CharOps.isDigit((Character) ch);
     }
 
     public static Object isLetter(Object ch) {
-        return Character.isLetter((Character) ch);
+        return CharOps.isLetter((Character) ch);
     }
 
     public static Object isWhitespace(Object ch) {
-        return Character.isWhitespace((Character) ch);
+        return CharOps.isWhitespace((Character) ch);
     }
 
     public static Object isUpperCase(Object ch) {
-        return Character.isUpperCase((Character) ch);
+        return CharOps.isUpperCase((Character) ch);
     }
 
     public static Object isLowerCase(Object ch) {
-        return Character.isLowerCase((Character) ch);
+        return CharOps.isLowerCase((Character) ch);
     }
 
     public static Object uppercase(Object ch) {
-        return String.valueOf(Character.toUpperCase((Character) ch));
+        return String.valueOf(CharOps.toUpperCase((Character) ch));
     }
 
     public static Object lowercase(Object ch) {
-        return String.valueOf(Character.toLowerCase((Character) ch));
+        return String.valueOf(CharOps.toLowerCase((Character) ch));
     }
 
     public static Object code(Object ch) {
-        return (int) (char) (Character) ch;
+        return CharOps.code((Character) ch);
     }
 
     public static Object digitToInt(Object ch) {
-        char c = (Character) ch;
-        if (c >= '0' && c <= '9') return c - '0';
-        throw new NovaException(ErrorKind.TYPE_MISMATCH, "'" + c + "' 不是数字字符", "确保字符在 '0'..'9' 范围内");
+        return CharOps.digitToInt((Character) ch);
     }
 
     public static Object isLetterOrDigit(Object ch) {
-        return Character.isLetterOrDigit((Character) ch);
+        return CharOps.isLetterOrDigit((Character) ch);
     }
 
     public static Object toInt(Object ch) {
-        return (int) (char) (Character) ch;
+        return CharOps.code((Character) ch);
     }
 
     public static Object compareTo(Object ch, Object other) {
-        return Character.compare((Character) ch, (Character) other);
+        return CharOps.compareTo((Character) ch, (Character) other);
     }
 }

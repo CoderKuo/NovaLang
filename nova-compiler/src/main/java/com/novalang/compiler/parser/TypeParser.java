@@ -140,7 +140,7 @@ class TypeParser {
         }
 
         // 普通标识符
-        return parser.expect(IDENTIFIER, "Expected type name").getLexeme();
+        return parser.expectQualifiedNamePart("Expected type name");
     }
 
     /**

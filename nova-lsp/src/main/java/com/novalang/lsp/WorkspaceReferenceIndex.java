@@ -143,9 +143,9 @@ final class WorkspaceReferenceIndex {
             return null;
         }
 
-        Map<String, Symbol> globals = snapshot.cached.analysisResult.getSymbolTable().getGlobalScope().getSymbols();
+        List<Symbol> globals = snapshot.cached.analysisResult.getSymbolTable().getGlobalScope().getDeclaredSymbols();
         if (entry.containerQualifiedName == null) {
-            for (Symbol symbol : globals.values()) {
+            for (Symbol symbol : globals) {
                 String qualifiedName = qualify(snapshot.packageName, symbol.getName());
                 if (entry.qualifiedName.equals(qualifiedName)) {
                     return symbol;
@@ -154,7 +154,7 @@ final class WorkspaceReferenceIndex {
             return null;
         }
 
-        for (Symbol symbol : globals.values()) {
+        for (Symbol symbol : globals) {
             String qualifiedName = qualify(snapshot.packageName, symbol.getName());
             if (entry.containerQualifiedName.equals(qualifiedName)
                     && symbol.getMembers() != null
@@ -311,7 +311,7 @@ final class WorkspaceReferenceIndex {
         if (snapshot.cached == null || snapshot.cached.analysisResult == null) {
             return null;
         }
-        return snapshot.cached.analysisResult.getSymbolTable().resolve(
+        return snapshot.cached.analysisResult.getSymbolTable().resolveAny(
                 reference.name, reference.line + 1, reference.character + 1);
     }
 
@@ -559,7 +559,7 @@ final class WorkspaceReferenceIndex {
                 Identifier identifier = (Identifier) expression;
                 SourceLocation location = identifier.getLocation();
                 if (location != null) {
-                    Symbol symbol = cached.analysisResult.getSymbolTable().resolve(
+                    Symbol symbol = cached.analysisResult.getSymbolTable().resolveAny(
                             identifier.getName(),
                             location.getLine(),
                             location.getColumn());

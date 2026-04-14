@@ -165,8 +165,9 @@ final class WorkspaceFileIndex {
                 return;
             }
 
-            List<com.novalang.compiler.analysis.Symbol> topLevel = new ArrayList<com.novalang.compiler.analysis.Symbol>(
-                    cached.analysisResult.getSymbolTable().getGlobalScope().getSymbols().values());
+            List<com.novalang.compiler.analysis.Symbol> topLevel =
+                    new ArrayList<com.novalang.compiler.analysis.Symbol>(
+                            cached.analysisResult.getSymbolTable().getGlobalScope().getDeclaredSymbols());
             projectIndex.updateFile(uri, NovaAnalysisSupport.packageName(cached), topLevel);
             referenceIndex.updateFile(uri, content, cached);
             indexedUris.add(uri);

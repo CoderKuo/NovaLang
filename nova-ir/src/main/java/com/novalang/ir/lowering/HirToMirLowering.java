@@ -3124,6 +3124,13 @@ public class HirToMirLowering {
             case STRING: return builder.emitConstString((String) lit.getValue(), loc);
             case BOOLEAN: return builder.emitConstBool((Boolean) lit.getValue(), loc);
             case CHAR: return builder.emitConstChar((Character) lit.getValue(), loc);
+            case UNIT:
+                return builder.emitGetStatic(
+                        "com/novalang/lang/Unit",
+                        "INSTANCE",
+                        "Lcom/novalang/lang/Unit;",
+                        MirType.ofObject("com/novalang/lang/Unit"),
+                        loc);
             case NULL: return builder.emitConstNull(loc);
             default: return builder.emitConstNull(loc);
         }
@@ -5220,6 +5227,9 @@ public class HirToMirLowering {
         }
         if (type instanceof ClassType) {
             String name = ((ClassType) type).getName().replace('.', '/');
+            if ("dynamic".equals(name) || "Dynamic".equals(name)) {
+                return MirType.ofObject("java/lang/Object");
+            }
             // typealias 展开
             HirType aliasTarget = name.contains("/") ? null : typeAliasMap.get(name);
             if (aliasTarget != null) return hirTypeToMir(aliasTarget);
@@ -5245,6 +5255,10 @@ public class HirToMirLowering {
 
     private String typeToInternalName(HirType type) {
         if (type instanceof ClassType) {
+            // dynamic 鍦?IR/MIR 涓粺涓€鏄犲皠涓?Object锛岃繍琛屾椂鍐嶈蛋鍔ㄦ€佸垎娲?
+            if ("dynamic".equals(((ClassType) type).getName()) || "Dynamic".equals(((ClassType) type).getName())) {
+                return "java/lang/Object";
+            }
             String name = ((ClassType) type).getName().replace('.', '/');
             // nova.Xxx 限定名 → 内置类型（遮蔽时可用 nova.Result 等访问内置类型）
             if (name.startsWith("nova/") && !name.substring(5).contains("/")) {

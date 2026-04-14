@@ -2,6 +2,7 @@ package com.novalang.runtime.stdlib;
 
 import com.novalang.runtime.NovaDynamic;
 import com.novalang.runtime.NovaResult;
+import com.novalang.runtime.stdlib.internal.CollectionLambdaOps;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -36,11 +37,7 @@ public final class CollectionOps {
         if (listObj instanceof Map) {
             return MapExtensions.filter(listObj, lambda);
         }
-        List<Object> result = new ArrayList<>();
-        for (Object item : asIterable(listObj)) {
-            if (isTruthy(invokeLambda1(lambda, item))) result.add(item);
-        }
-        return result;
+        return CollectionLambdaOps.filterToList(asIterable(listObj), lambda);
     }
 
     public static Object map(Object listObj, Object lambda) {
@@ -52,44 +49,25 @@ public final class CollectionOps {
             if (r.isOk()) return NovaResult.ok(invokeLambda1(lambda, r.getValue()));
             return r;
         }
-        List<Object> result = new ArrayList<>();
-        for (Object item : asIterable(listObj)) {
-            result.add(invokeLambda1(lambda, item));
-        }
-        return result;
+        return CollectionLambdaOps.mapToList(asIterable(listObj), lambda);
     }
 
     public static Object forEach(Object listObj, Object lambda) {
         if (listObj instanceof Map) {
             return MapExtensions.forEach(listObj, lambda);
         }
-        for (Object item : asIterable(listObj)) {
-            try {
-                invokeLambda1(lambda, item);
-            } catch (com.novalang.runtime.LoopSignal sig) {
-                if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
-            }
-        }
-        return null;
+        return CollectionLambdaOps.forEach(asIterable(listObj), lambda);
     }
 
     public static Object find(Object listObj, Object lambda) {
         if (!(listObj instanceof List) && !(listObj instanceof Collection)) {
             return NovaDynamic.invoke1(listObj, "find", lambda);
         }
-        for (Object item : asIterable(listObj)) {
-            if (isTruthy(invokeLambda1(lambda, item))) return item;
-        }
-        return null;
+        return CollectionLambdaOps.find(asIterable(listObj), lambda);
     }
 
     public static Object mapNotNull(Object listObj, Object lambda) {
-        List<Object> result = new ArrayList<>();
-        for (Object item : asIterable(listObj)) {
-            Object mapped = invokeLambda1(lambda, item);
-            if (mapped != null) result.add(mapped);
-        }
-        return result;
+        return CollectionLambdaOps.mapNotNullToList(asIterable(listObj), lambda);
     }
 
     public static Object reduce(Object listObj, Object lambda) {

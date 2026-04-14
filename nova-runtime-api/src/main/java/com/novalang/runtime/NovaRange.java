@@ -1,5 +1,7 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.stdlib.internal.RangeOps;
+
 import java.util.Iterator;
 
 /**
@@ -34,6 +36,14 @@ public final class NovaRange extends AbstractNovaValue implements NovaContainer 
         return step;
     }
 
+    /**
+     * Raw end value before inclusive/exclusive normalization.
+     * Exposed so shared helpers can preserve the exact range semantics.
+     */
+    public int getRawEnd() {
+        return end;
+    }
+
     /** 创建带步长的新 Range */
     public NovaRange step(int newStep) {
         return new NovaRange(start, end, inclusive, newStep);
@@ -62,16 +72,7 @@ public final class NovaRange extends AbstractNovaValue implements NovaContainer 
     }
 
     public int size() {
-        if (step > 0) {
-            int actualEnd = inclusive ? end + 1 : end;
-            int span = actualEnd - start;
-            return span <= 0 ? 0 : (span + step - 1) / step;
-        } else {
-            int actualEnd = inclusive ? end - 1 : end;
-            int span = start - actualEnd;
-            int absStep = -step;
-            return span <= 0 ? 0 : (span + absStep - 1) / absStep;
-        }
+        return RangeOps.size(this);
     }
 
     @Override
@@ -80,14 +81,7 @@ public final class NovaRange extends AbstractNovaValue implements NovaContainer 
     }
 
     public boolean contains(int value) {
-        if (step > 0) {
-            int actualEnd = inclusive ? end : end - 1;
-            if (value < start || value > actualEnd) return false;
-        } else {
-            int actualEnd = inclusive ? end : end + 1;
-            if (value > start || value < actualEnd) return false;
-        }
-        return (value - start) % step == 0;
+        return RangeOps.contains(this, value);
     }
 
     public NovaValue get(int index) {
@@ -99,64 +93,32 @@ public final class NovaRange extends AbstractNovaValue implements NovaContainer 
 
     /** 转为 NovaList */
     public NovaList toList() {
-        NovaList list = new NovaList();
-        if (step > 0) {
-            int limit = inclusive ? end + 1 : end;
-            for (int i = start; i < limit; i += step) list.add(NovaInt.of(i));
-        } else {
-            int limit = inclusive ? end - 1 : end;
-            for (int i = start; i > limit; i += step) list.add(NovaInt.of(i));
-        }
-        return list;
+        return RangeOps.toNovaList(this);
     }
 
     /** 转为 Java Integer List */
     public java.util.List<Integer> toIntList() {
-        java.util.List<Integer> list = new java.util.ArrayList<>();
-        if (step > 0) {
-            int limit = inclusive ? end + 1 : end;
-            for (int i = start; i < limit; i += step) list.add(i);
-        } else {
-            int limit = inclusive ? end - 1 : end;
-            for (int i = start; i > limit; i += step) list.add(i);
-        }
-        return list;
+        return RangeOps.toIntList(this);
     }
 
     @Override
     public Iterator<NovaValue> iterator() {
-        final int s = step;
+        final Iterator<Integer> delegate = RangeOps.intIterator(this);
         return new Iterator<NovaValue>() {
-            private int current = start;
             @Override
             public boolean hasNext() {
-                return s > 0 ? current < (inclusive ? end + 1 : end) : current > (inclusive ? end - 1 : end);
+                return delegate.hasNext();
             }
             @Override
             public NovaValue next() {
-                int val = current;
-                current += s;
-                return NovaInt.of(val);
+                return NovaInt.of(delegate.next().intValue());
             }
         };
     }
 
     /** Integer 迭代器 */
     public Iterator<Integer> intIterator() {
-        final int s = step;
-        return new Iterator<Integer>() {
-            private int current = start;
-            @Override
-            public boolean hasNext() {
-                return s > 0 ? current < (inclusive ? end + 1 : end) : current > (inclusive ? end - 1 : end);
-            }
-            @Override
-            public Integer next() {
-                int val = current;
-                current += s;
-                return val;
-            }
-        };
+        return RangeOps.intIterator(this);
     }
 
     @Override

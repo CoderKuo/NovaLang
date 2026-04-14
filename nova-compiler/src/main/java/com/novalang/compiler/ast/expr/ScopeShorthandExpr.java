@@ -5,8 +5,9 @@ import com.novalang.compiler.ast.SourceLocation;
 import com.novalang.compiler.ast.stmt.Block;
 
 /**
- * 作用域简写表达式 obj?.{ ... }
- * 等价于 obj?.let { ... }，在 obj 非 null 时执行 block，this 绑定到 obj
+ * Scope shorthand expression: {@code obj?.{ ... }}.
+ * Equivalent to {@code obj?.apply { ... }}: when {@code obj} is non-null, the block runs with
+ * {@code this} bound to {@code obj}, and the whole expression evaluates to {@code obj?}.
  */
 public class ScopeShorthandExpr extends Expression {
 

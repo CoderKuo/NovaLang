@@ -1030,6 +1030,17 @@ class ParserTest {
         }
 
         @Test
+        @DisplayName("Java 导入允许关键字包名段: import java java.util.function.UnaryOperator")
+        void testJavaImportWithKeywordPackageSegment() {
+            Program program = parse("import java java.util.function.UnaryOperator");
+            ImportDecl imp = program.getImports().get(0);
+            assertTrue(imp.isJava());
+            assertFalse(imp.isWildcard());
+            assertEquals("java.util.function.UnaryOperator", imp.getName().getFullName());
+            assertEquals("UnaryOperator", imp.getName().getSimpleName());
+        }
+
+        @Test
         @DisplayName("Java javax 导入: import java javax.swing.JFrame")
         void testJavaXImport() {
             Program program = parse("import java javax.swing.JFrame");

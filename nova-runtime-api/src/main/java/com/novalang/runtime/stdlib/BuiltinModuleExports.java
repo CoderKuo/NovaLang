@@ -1,42 +1,45 @@
 package com.novalang.runtime.stdlib;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
- * 内置模块编译期元数据注册表。
- *
- * <p>供 HirToMirLowering（nova-ir 模块）在编译模式下识别内置模块导入，
- * 将命名空间符号映射为 Java 类（INVOKESTATIC），将顶层函数映射为静态方法。</p>
- *
- * <p>运行时实现在 nova-runtime 的 StdlibXxxCompiled 类中。
- * 顶层函数通过 {@link #getModuleClass(String)} 获取类名后，由 HirToMirLowering 反射自动发现，
- * 无需逐个注册。</p>
+ * Compile-time metadata for builtin import modules such as `nova.time`.
  */
 public final class BuiltinModuleExports {
 
-    // moduleName → (symbolName → JVM internal class name)  — 命名空间（内部类）
-    private static final Map<String, Map<String, String>> namespaceExports = new HashMap<>();
-    // moduleName → JVM internal class name  — 顶层函数所在的编译类（反射自动发现）
-    private static final Map<String, String> moduleClasses = new HashMap<>();
+    public static final class ExportedFunctionInfo {
+        public final String name;
+        public final int arity;
+        public final String returnType;
 
-    // Nova 语言级模块前缀（用户代码中 import nova.time 等）
-    private static final String LANG_NAME = "nova";
+        public ExportedFunctionInfo(String name, int arity, String returnType) {
+            this.name = name;
+            this.arity = arity;
+            this.returnType = returnType;
+        }
+    }
+
+    private static final Map<String, Map<String, String>> namespaceExports = new HashMap<String, Map<String, String>>();
+    private static final Map<String, String> moduleClasses = new HashMap<String, String>();
+    private static final Map<String, Map<String, ExportedFunctionInfo>> moduleFunctions =
+            new HashMap<String, Map<String, ExportedFunctionInfo>>();
+
     private static final String LANG_DOT = "nova.";
 
     static {
-        // 从自身类名推导 stdlib 包路径（兼容 shadow relocate）
         String className = BuiltinModuleExports.class.getName();
         String self = className.replace('.', '/');
         String stdlib = self.substring(0, self.lastIndexOf('/'))
                 .replace("/stdlib", "/interpreter/stdlib") + "/";
 
-        // nova.time — 命名空间
-        Map<String, String> timeNs = new HashMap<>();
-        timeNs.put("DateTime", stdlib + "StdlibTimeCompiled$DateTime");
-        timeNs.put("Duration", stdlib + "StdlibTimeCompiled$DurationNs");
-        namespaceExports.put(LANG_DOT + "time", timeNs);
+        Map<String, String> timeNamespaces = new HashMap<String, String>();
+        timeNamespaces.put("DateTime", stdlib + "StdlibTimeCompiled$DateTime");
+        timeNamespaces.put("Duration", stdlib + "StdlibTimeCompiled$DurationNs");
+        namespaceExports.put(LANG_DOT + "time", timeNamespaces);
 
-        // 模块 → 编译类映射（顶层函数由 HirToMirLowering 反射发现）
         moduleClasses.put(LANG_DOT + "time", stdlib + "StdlibTimeCompiled");
         moduleClasses.put(LANG_DOT + "io", stdlib + "StdlibIOCompiled");
         moduleClasses.put(LANG_DOT + "system", stdlib + "StdlibSystemCompiled");
@@ -47,56 +50,71 @@ public final class BuiltinModuleExports {
         moduleClasses.put(LANG_DOT + "yaml", stdlib + "StdlibYamlCompiled");
         moduleClasses.put(LANG_DOT + "encoding", stdlib + "StdlibEncodingCompiled");
         moduleClasses.put(LANG_DOT + "crypto", stdlib + "StdlibCryptoCompiled");
+
+        registerFunction(LANG_DOT + "system", "env", 1, "String?");
+        registerFunction(LANG_DOT + "system", "envOrDefault", 2, "String");
+        registerFunction(LANG_DOT + "system", "allEnv", 0, "Map");
+        registerFunction(LANG_DOT + "system", "sysProperty", 1, "String?");
+        registerFunction(LANG_DOT + "system", "exec", 1, "Int");
+        registerFunction(LANG_DOT + "system", "exit", 1, "Unit");
+        registerFunction(LANG_DOT + "system", "osName", 0, "String");
+        registerFunction(LANG_DOT + "system", "jvmVersion", 0, "String");
+        registerFunction(LANG_DOT + "system", "novaVersion", 0, "String");
+        registerFunction(LANG_DOT + "system", "availableProcessors", 0, "Int");
+        registerFunction(LANG_DOT + "system", "totalMemory", 0, "Long");
+        registerFunction(LANG_DOT + "system", "freeMemory", 0, "Long");
+
+        registerFunction(LANG_DOT + "test", "test", 2, "Unit");
+        registerFunction(LANG_DOT + "test", "testGroup", 2, "Unit");
+        registerFunction(LANG_DOT + "test", "runTests", 0, "Map");
+        registerFunction(LANG_DOT + "test", "assertEqual", 2, "Unit");
+        registerFunction(LANG_DOT + "test", "assertNotEqual", 2, "Unit");
+        registerFunction(LANG_DOT + "test", "assertTrue", 1, "Unit");
+        registerFunction(LANG_DOT + "test", "assertFalse", 1, "Unit");
+        registerFunction(LANG_DOT + "test", "assertNull", 1, "Unit");
+        registerFunction(LANG_DOT + "test", "assertNotNull", 1, "Unit");
+        registerFunction(LANG_DOT + "test", "assertThrows", 1, "String");
+        registerFunction(LANG_DOT + "test", "assertContains", 2, "Unit");
+        registerFunction(LANG_DOT + "test", "assertFails", 1, "Unit");
     }
 
     private BuiltinModuleExports() {}
 
-    /** 诊断方法：打印模块注册表状态（排查 shadow relocate 问题） */
     public static String debugDump() {
         StringBuilder sb = new StringBuilder();
         sb.append("=== BuiltinModuleExports Debug ===\n");
         sb.append("Class: ").append(BuiltinModuleExports.class.getName()).append('\n');
-        sb.append("LANG_DOT: ").append(LANG_DOT).append('\n');
         sb.append("moduleClasses keys: ").append(moduleClasses.keySet()).append('\n');
-        sb.append("moduleClasses values: ").append(moduleClasses.values()).append('\n');
+        sb.append("moduleFunctions keys: ").append(moduleFunctions.keySet()).append('\n');
         sb.append("namespaceExports keys: ").append(namespaceExports.keySet()).append('\n');
-        sb.append("has(\"").append(LANG_DOT).append("time\"): ").append(has(LANG_DOT + "time")).append('\n');
-        sb.append("getModuleClass(\"").append(LANG_DOT).append("time\"): ").append(getModuleClass(LANG_DOT + "time")).append('\n');
-        // 尝试加载类
-        String cls = getModuleClass(LANG_DOT + "time");
-        if (cls != null) {
-            try {
-                Class.forName(cls.replace('/', '.'));
-                sb.append("Class.forName OK\n");
-            } catch (ClassNotFoundException e) {
-                sb.append("Class.forName FAILED: ").append(e.getMessage()).append('\n');
-            }
-        }
         return sb.toString();
     }
 
-    /** 检查是否为已注册的内置模块 */
     public static boolean has(String moduleName) {
-        return namespaceExports.containsKey(moduleName) || moduleClasses.containsKey(moduleName);
+        return namespaceExports.containsKey(moduleName)
+                || moduleClasses.containsKey(moduleName)
+                || moduleFunctions.containsKey(moduleName);
     }
 
-    /** 获取模块的命名空间导出：symbolName → JVM internal class name */
     public static Map<String, String> getNamespaces(String moduleName) {
-        Map<String, String> ns = namespaceExports.get(moduleName);
-        return ns != null ? ns : Collections.emptyMap();
+        Map<String, String> namespaces = namespaceExports.get(moduleName);
+        return namespaces != null ? namespaces : Collections.<String, String>emptyMap();
     }
 
-    /** 获取模块顶层函数所在的 JVM 类（内部名格式），未注册返回 null */
     public static String getModuleClass(String moduleName) {
         return moduleClasses.get(moduleName);
     }
 
-    /**
-     * 从 import 的 qualifiedName 解析内置模块名。
-     * <p>例如 "nova.time" → "nova.time"，"nova.time.DateTime" → "nova.time"</p>
-     *
-     * @return 模块名，未匹配返回 null
-     */
+    public static Map<String, ExportedFunctionInfo> getFunctions(String moduleName) {
+        Map<String, ExportedFunctionInfo> functions = moduleFunctions.get(moduleName);
+        return functions != null ? functions : Collections.<String, ExportedFunctionInfo>emptyMap();
+    }
+
+    public static ExportedFunctionInfo getFunction(String moduleName, String functionName) {
+        Map<String, ExportedFunctionInfo> functions = moduleFunctions.get(moduleName);
+        return functions != null ? functions.get(functionName) : null;
+    }
+
     public static String resolveModuleName(String qualifiedName) {
         if (qualifiedName == null || !qualifiedName.startsWith(LANG_DOT)) return null;
         String candidate = qualifiedName;
@@ -106,5 +124,11 @@ public final class BuiltinModuleExports {
             candidate = candidate.substring(0, lastDot);
         }
         return null;
+    }
+
+    private static void registerFunction(String moduleName, String name, int arity, String returnType) {
+        moduleFunctions
+                .computeIfAbsent(moduleName, ignored -> new LinkedHashMap<String, ExportedFunctionInfo>())
+                .put(name, new ExportedFunctionInfo(name, arity, returnType));
     }
 }

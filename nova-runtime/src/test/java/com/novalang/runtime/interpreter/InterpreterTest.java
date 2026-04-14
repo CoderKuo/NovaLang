@@ -2734,6 +2734,7 @@ class InterpreterTest {
         @Test
         @DisplayName("作用域简写 null 情况")
         void testScopeShorthandNull() {
+            interpreter.evalRepl("class Person(var name: String, var age: Int)");
             interpreter.evalRepl("val p: Person? = null");
             interpreter.evalRepl("var result = \"default\"");
             interpreter.evalRepl("p?.{ result = \"changed\" }");

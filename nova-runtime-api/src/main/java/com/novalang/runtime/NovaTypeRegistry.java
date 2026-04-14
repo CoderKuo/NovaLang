@@ -1,5 +1,7 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.contract.NovaContract;
+import com.novalang.runtime.contract.StdlibContracts;
 import com.novalang.runtime.stdlib.StdlibRegistry;
 
 import java.lang.reflect.Field;

@@ -7,6 +7,7 @@ import com.novalang.runtime.NovaException;
 import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaPair;
 import com.novalang.runtime.NovaRange;
+import com.novalang.runtime.stdlib.internal.CollectionLambdaOps;
 
 import java.util.*;
 import java.util.function.BiFunction;
@@ -284,26 +285,17 @@ public final class ListExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object any(Object list, Object predicate) {
-        for (Object item : (List<?>) list) {
-            if (isTruthy(invoke1(predicate, item))) return true;
-        }
-        return false;
+        return CollectionLambdaOps.any((List<?>) list, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object all(Object list, Object predicate) {
-        for (Object item : (List<?>) list) {
-            if (!isTruthy(invoke1(predicate, item))) return false;
-        }
-        return true;
+        return CollectionLambdaOps.all((List<?>) list, predicate);
     }
 
     @SuppressWarnings("unchecked")
     public static Object none(Object list, Object predicate) {
-        for (Object item : (List<?>) list) {
-            if (isTruthy(invoke1(predicate, item))) return false;
-        }
-        return true;
+        return CollectionLambdaOps.none((List<?>) list, predicate);
     }
 
     public static Object count(Object list) {
@@ -312,12 +304,7 @@ public final class ListExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object count(Object list, Object predicate) {
-        List<?> l = (List<?>) list;
-        int count = 0;
-        for (Object item : l) {
-            if (isTruthy(invoke1(predicate, item))) count++;
-        }
-        return count;
+        return CollectionLambdaOps.countWhere((List<?>) list, predicate);
     }
 
     @SuppressWarnings("unchecked")
@@ -333,22 +320,12 @@ public final class ListExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object flatMap(Object list, Object transform) {
-        List<Object> result = new ArrayList<>();
-        for (Object item : (List<?>) list) {
-            Object mapped = invoke1(transform, item);
-            if (mapped instanceof Collection) result.addAll((Collection<?>) mapped);
-        }
-        return result;
+        return CollectionLambdaOps.flatMapToList((List<?>) list, transform, false);
     }
 
     @SuppressWarnings("unchecked")
     public static Object groupBy(Object list, Object keySelector) {
-        Map<Object, List<Object>> result = new LinkedHashMap<>();
-        for (Object item : (List<?>) list) {
-            Object key = invoke1(keySelector, item);
-            result.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
-        }
-        return result;
+        return CollectionLambdaOps.groupBy((List<?>) list, keySelector);
     }
 
     @SuppressWarnings("unchecked")
@@ -374,20 +351,12 @@ public final class ListExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object map(Object list, Object transform) {
-        List<Object> result = new ArrayList<>();
-        for (Object item : (List<?>) list) {
-            result.add(invoke1(transform, item));
-        }
-        return result;
+        return CollectionLambdaOps.mapToList((List<?>) list, transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object filter(Object list, Object predicate) {
-        List<Object> result = new ArrayList<>();
-        for (Object item : (List<?>) list) {
-            if (isTruthy(invoke1(predicate, item))) result.add(item);
-        }
-        return result;
+        return CollectionLambdaOps.filterToList((List<?>) list, predicate);
     }
 
     @SuppressWarnings("unchecked")
@@ -395,10 +364,7 @@ public final class ListExtensions {
         if (!(list instanceof List)) {
             return NovaDynamic.invoke1(list, "find", predicate);
         }
-        for (Object item : (List<?>) list) {
-            if (isTruthy(invoke1(predicate, item))) return item;
-        }
-        return null;
+        return CollectionLambdaOps.find((List<?>) list, predicate);
     }
 
     @SuppressWarnings("unchecked")
@@ -412,21 +378,12 @@ public final class ListExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object mapNotNull(Object list, Object transform) {
-        List<Object> result = new ArrayList<>();
-        for (Object item : (List<?>) list) {
-            Object mapped = invoke1(transform, item);
-            if (mapped != null) result.add(mapped);
-        }
-        return result;
+        return CollectionLambdaOps.mapNotNullToList((List<?>) list, transform);
     }
 
     @SuppressWarnings("unchecked")
     public static Object filterNot(Object list, Object predicate) {
-        List<Object> result = new ArrayList<>();
-        for (Object item : (List<?>) list) {
-            if (!isTruthy(invoke1(predicate, item))) result.add(item);
-        }
-        return result;
+        return CollectionLambdaOps.filterNotToList((List<?>) list, predicate);
     }
 
     @SuppressWarnings("unchecked")
@@ -605,15 +562,7 @@ public final class ListExtensions {
 
     @SuppressWarnings("unchecked")
     public static Object forEach(Object list, Object action) {
-        for (Object item : (List<?>) list) {
-            try {
-                invoke1(action, item);
-            } catch (com.novalang.runtime.LoopSignal sig) {
-                if (sig == com.novalang.runtime.LoopSignal.BREAK) break;
-                // CONTINUE: 跳过当前，继续下一次
-            }
-        }
-        return null;
+        return CollectionLambdaOps.forEach((List<?>) list, action);
     }
 
     public static Object withIndex(Object list) {

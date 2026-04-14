@@ -2,169 +2,210 @@ package com.novalang.compiler.analysis.types;
 
 import com.novalang.compiler.ast.type.TypeArgument;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 类型兼容性判断：判断 source 是否可以赋值给 target。
+ * Type-compatibility checks used by semantic analysis.
  */
 public final class TypeCompatibility {
 
+    private static final Map<String, List<NovaTypeParam>> DECLARATION_SITE_PARAMS =
+            new ConcurrentHashMap<String, List<NovaTypeParam>>();
+
     private TypeCompatibility() {}
 
-    /**
-     * 判断 source 类型是否可以赋值给 target 类型。
-     */
+    public static void registerDeclarationSiteTypeParams(String typeName, List<NovaTypeParam> params) {
+        if (typeName == null || typeName.isEmpty()) return;
+        List<NovaTypeParam> snapshot = params != null
+                ? Collections.unmodifiableList(new ArrayList<NovaTypeParam>(params))
+                : Collections.<NovaTypeParam>emptyList();
+        DECLARATION_SITE_PARAMS.put(typeName, snapshot);
+    }
+
     public static boolean isAssignable(NovaType target, NovaType source, SuperTypeRegistry registry) {
         if (target == null || source == null) return true;
 
-        // ErrorType 与任何类型兼容
         if (target instanceof ErrorType || source instanceof ErrorType) return true;
+        if (NovaTypes.isDynamicType(target) || NovaTypes.isDynamicType(source)) return true;
 
-        // Nothing 是所有类型的子类型
         if (source instanceof NothingType) {
-            // Nothing? (null) 只能赋给可空目标
             if (source.isNullable()) {
                 return target.isNullable();
             }
             return true;
         }
 
-        // Any 接受所有类型（但非空 Any 不接受可空源）
         if ("Any".equals(target.getTypeName())) {
             if (!target.isNullable() && source.isNullable()) return false;
             return true;
         }
+        if ("String".equals(target.getTypeName()) && "Exception".equals(source.getTypeName())) {
+            return true;
+        }
 
-        // 空安全检查：非空目标不接受可空源
         if (!target.isNullable() && source.isNullable()) return false;
 
-        // 同为原始类型
         if (target instanceof PrimitiveNovaType && source instanceof PrimitiveNovaType) {
             String targetName = target.getTypeName();
             String sourceName = source.getTypeName();
             if (targetName.equals(sourceName)) return true;
-            // 数值拓宽: Int → Long → Float → Double
             return NovaTypes.isNumericWidening(targetName, sourceName);
         }
 
-        // 原始类型与类类型之间：通过名称匹配（Int 既是 PrimitiveNovaType 也可以作为 ClassNovaType）
         if (target instanceof PrimitiveNovaType && source instanceof ClassNovaType) {
-            String targetName = target.getTypeName();
-            String sourceName = source.getTypeName();
-            return targetName.equals(sourceName);
+            return target.getTypeName().equals(source.getTypeName());
         }
         if (target instanceof ClassNovaType && source instanceof PrimitiveNovaType) {
             String targetName = target.getTypeName();
             String sourceName = source.getTypeName();
             if (targetName.equals(sourceName)) return true;
-            // Number 接受数值类型
             if ("Number".equals(targetName) && NovaTypes.isNumericName(sourceName)) return true;
             if ("Any".equals(targetName)) return true;
             return false;
         }
 
-        // 同为类类型
         if (target instanceof ClassNovaType && source instanceof ClassNovaType) {
+            if (target instanceof JavaClassNovaType || source instanceof JavaClassNovaType) {
+                return isJavaClassAssignable((ClassNovaType) target, (ClassNovaType) source, registry);
+            }
             return isClassAssignable((ClassNovaType) target, (ClassNovaType) source, registry);
         }
+        if (target instanceof ClassNovaType && source instanceof FunctionNovaType) {
+            if (target instanceof JavaClassNovaType) {
+                FunctionNovaType samType = ((JavaClassNovaType) target).getDescriptor().toSamFunctionType(target.isNullable());
+                return samType != null && isFunctionAssignable(samType, (FunctionNovaType) source, registry);
+            }
+            return isSamAssignable((ClassNovaType) target, (FunctionNovaType) source, registry);
+        }
 
-        // TypeParameterType：检查 upper bound
         if (source instanceof TypeParameterType) {
-            TypeParameterType tpSource = (TypeParameterType) source;
-            return isAssignable(target, tpSource.getUpperBound(), registry);
+            return isAssignable(target, ((TypeParameterType) source).getUpperBound(), registry);
         }
         if (target instanceof TypeParameterType) {
-            // 赋值给类型参数，检查源满足 upper bound
-            TypeParameterType tpTarget = (TypeParameterType) target;
-            return isAssignable(tpTarget.getUpperBound(), source, registry);
+            return isAssignable(((TypeParameterType) target).getUpperBound(), source, registry);
         }
 
-        // 函数类型
         if (target instanceof FunctionNovaType && source instanceof FunctionNovaType) {
             return isFunctionAssignable((FunctionNovaType) target, (FunctionNovaType) source, registry);
         }
 
-        // UnitType
-        if (target instanceof UnitType && source instanceof UnitType) return true;
-
-        return false;
+        return target instanceof UnitType && source instanceof UnitType;
     }
 
     private static boolean isClassAssignable(ClassNovaType target, ClassNovaType source,
-                                              SuperTypeRegistry registry) {
+                                             SuperTypeRegistry registry) {
         String targetName = target.getName();
         String sourceName = source.getName();
 
-        // 同名类型
         if (targetName.equals(sourceName)) {
-            // 检查泛型参数
             if (!target.hasTypeArgs() || !source.hasTypeArgs()) return true;
-            return areTypeArgsCompatible(target.getTypeArgs(), source.getTypeArgs(), registry);
+            return areTypeArgsCompatible(targetName, target.getTypeArgs(), source.getTypeArgs(), registry);
         }
 
-        // Number 接受所有数值类型
         if ("Number".equals(targetName) && NovaTypes.isNumericName(sourceName)) return true;
+        return registry != null && registry.isSubtype(sourceName, targetName);
+    }
 
-        // 查继承关系
-        if (registry != null && registry.isSubtype(sourceName, targetName)) return true;
-
+    private static boolean isJavaClassAssignable(ClassNovaType target, ClassNovaType source,
+                                                 SuperTypeRegistry registry) {
+        if (target instanceof JavaClassNovaType && source instanceof JavaClassNovaType) {
+            JavaTypeDescriptor targetDescriptor = ((JavaClassNovaType) target).getDescriptor();
+            JavaTypeDescriptor sourceDescriptor = ((JavaClassNovaType) source).getDescriptor();
+            if (targetDescriptor == null || sourceDescriptor == null) return false;
+            if (targetDescriptor.getQualifiedName().equals(sourceDescriptor.getQualifiedName())) {
+                if (!target.hasTypeArgs() || !source.hasTypeArgs()) return true;
+                return areTypeArgsCompatible(targetDescriptor.getQualifiedName(),
+                        target.getTypeArgs(), source.getTypeArgs(), registry);
+            }
+            return targetDescriptor.isAssignableFrom(sourceDescriptor);
+        }
+        if (target instanceof JavaClassNovaType) {
+            return target.getName().equals(source.getName());
+        }
+        if (source instanceof JavaClassNovaType) {
+            return target.getName().equals(source.getName())
+                    || (registry != null && registry.isSubtype(source.getName(), target.getName()));
+        }
         return false;
     }
 
-    private static boolean areTypeArgsCompatible(List<NovaTypeArgument> targetArgs,
-                                                  List<NovaTypeArgument> sourceArgs,
-                                                  SuperTypeRegistry registry) {
-        if (targetArgs.size() != sourceArgs.size()) return true; // 参数数量不同，跳过
+    private static boolean areTypeArgsCompatible(String typeName,
+                                                 List<NovaTypeArgument> targetArgs,
+                                                 List<NovaTypeArgument> sourceArgs,
+                                                 SuperTypeRegistry registry) {
+        if (targetArgs.size() != sourceArgs.size()) return true;
 
+        List<NovaTypeParam> declaredParams = DECLARATION_SITE_PARAMS.get(typeName);
         for (int i = 0; i < targetArgs.size(); i++) {
             NovaTypeArgument targetArg = targetArgs.get(i);
             NovaTypeArgument sourceArg = sourceArgs.get(i);
 
-            // 通配符总兼容
             if (targetArg.isWildcard() || sourceArg.isWildcard()) continue;
 
             NovaType targetType = targetArg.getType();
             NovaType sourceType = sourceArg.getType();
             if (targetType == null || sourceType == null) continue;
 
-            // 根据 variance 确定兼容性方向
             TypeArgument.Variance effectiveVariance = targetArg.getVariance();
             if (effectiveVariance == TypeArgument.Variance.INVARIANT) {
                 effectiveVariance = sourceArg.getVariance();
             }
+            if (effectiveVariance == TypeArgument.Variance.INVARIANT
+                    && declaredParams != null
+                    && i < declaredParams.size()
+                    && declaredParams.get(i) != null) {
+                effectiveVariance = declaredParams.get(i).getVariance();
+            }
 
             switch (effectiveVariance) {
                 case OUT:
-                    // 协变: source.type <: target.type
                     if (!isAssignable(targetType, sourceType, registry)) return false;
                     break;
                 case IN:
-                    // 逆变: target.type <: source.type
                     if (!isAssignable(sourceType, targetType, registry)) return false;
                     break;
                 case INVARIANT:
                 default:
-                    // 不变: 双向兼容
-                    if (!isAssignable(targetType, sourceType, registry) ||
-                        !isAssignable(sourceType, targetType, registry)) return false;
+                    if (!isAssignable(targetType, sourceType, registry)
+                            || !isAssignable(sourceType, targetType, registry)) return false;
                     break;
             }
         }
         return true;
     }
 
+    private static boolean isSamAssignable(ClassNovaType target, FunctionNovaType source,
+                                           SuperTypeRegistry registry) {
+        String targetName = target.getName();
+        FunctionNovaType samType = null;
+        if ("Runnable".equals(targetName)) {
+            samType = new FunctionNovaType(null, Collections.<NovaType>emptyList(), NovaTypes.UNIT, false);
+        } else if ("Supplier".equals(targetName) || "Callable".equals(targetName)) {
+            samType = new FunctionNovaType(null, Collections.<NovaType>emptyList(), NovaTypes.ANY, false);
+        } else if ("Consumer".equals(targetName)) {
+            samType = new FunctionNovaType(null, Collections.singletonList(NovaTypes.ANY), NovaTypes.UNIT, false);
+        } else if ("Function".equals(targetName)) {
+            samType = new FunctionNovaType(null, Collections.singletonList(NovaTypes.ANY), NovaTypes.ANY, false);
+        } else if ("Predicate".equals(targetName)) {
+            samType = new FunctionNovaType(null, Collections.singletonList(NovaTypes.ANY), NovaTypes.BOOLEAN, false);
+        } else if ("Comparator".equals(targetName)) {
+            samType = new FunctionNovaType(null, java.util.Arrays.asList(NovaTypes.ANY, NovaTypes.ANY), NovaTypes.INT, false);
+        }
+        return samType != null && isFunctionAssignable(samType, source, registry);
+    }
+
     private static boolean isFunctionAssignable(FunctionNovaType target, FunctionNovaType source,
-                                                 SuperTypeRegistry registry) {
-        // 参数逆变
+                                                SuperTypeRegistry registry) {
         if (target.getParamTypes().size() != source.getParamTypes().size()) return false;
         for (int i = 0; i < target.getParamTypes().size(); i++) {
-            // 参数类型逆变：target 的参数是 source 参数的子类型
             if (!isAssignable(source.getParamTypes().get(i), target.getParamTypes().get(i), registry)) {
                 return false;
             }
         }
-        // 返回值协变
         return isAssignable(target.getReturnType(), source.getReturnType(), registry);
     }
-
 }

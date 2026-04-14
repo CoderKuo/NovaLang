@@ -967,6 +967,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             case CHAR: return new PrimitiveType(PrimitiveType.Kind.CHAR);
             case STRING: return new ClassType("String");
             case BOOLEAN: return new PrimitiveType(PrimitiveType.Kind.BOOLEAN);
+            case UNIT: return new PrimitiveType(PrimitiveType.Kind.UNIT);
             case NULL: return null;
             default: return null;
         }
@@ -1308,7 +1309,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             }
         }
         // 回退：作为语句降级，返回 null
-        return new Literal(body.getLocation(), null, null, LiteralKind.NULL);
+        return new Literal(body.getLocation(), new PrimitiveType(PrimitiveType.Kind.UNIT), null, LiteralKind.UNIT);
     }
 
     @Override

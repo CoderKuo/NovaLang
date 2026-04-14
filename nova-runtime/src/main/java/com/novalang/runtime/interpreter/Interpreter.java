@@ -718,6 +718,8 @@ public class Interpreter implements ExecutionContext {
         p.addMirPass(new MirPeepholeOptimization());
         p.addMirPass(new BlockMerging());
         p.addMirPass(new DeadBlockElimination());
+        p.setEnableSemanticAnalysis(true);
+        p.setStrictSemanticMode(true);
         p.setInterpreterMode(true);
         return p;
     }

@@ -179,7 +179,7 @@ public final class VarianceChecker {
         }
 
         if (violation) {
-            diagnostics.add(new SemanticDiagnostic(SemanticDiagnostic.Severity.WARNING,
+            diagnostics.add(new SemanticDiagnostic(SemanticDiagnostic.Severity.ERROR,
                     msg, typeRef.getLocation(), Math.max(typeRef.getLocation().getLength(), 1)));
         }
     }

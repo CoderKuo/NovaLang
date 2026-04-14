@@ -47,6 +47,7 @@ public class Literal extends Expression {
         CHAR,
         STRING,
         BOOLEAN,
+        UNIT,
         NULL;
 
         /** 是否为数值字面量类型 */

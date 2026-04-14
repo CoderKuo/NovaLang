@@ -162,8 +162,8 @@ final class VirtualMethodDispatcher {
                 return func.callWithNamed(interp, positionalArgs, namedArgs);
             }
         }
-        // fallback: 忽略命名参数，使用全部参数作为位置参数
-        return invokeVirtualMethod(receiver, methodName, owner, allArgs);
+        throw new NovaRuntimeException("Method '" + methodName + "' on "
+                + receiver.getTypeName() + " does not support named arguments");
     }
 
     // ============ 按接收者类型分派 ============

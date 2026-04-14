@@ -9,13 +9,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 符号表：管理作用域树和位置索引
+ * Symbol table for scope lookup and source-position queries.
  */
 public final class SymbolTable {
     private final Scope globalScope;
     private final Map<AstNode, Scope> nodeToScope = new IdentityHashMap<AstNode, Scope>();
     private final List<ScopeRange> scopeRanges = new ArrayList<ScopeRange>();
-    /** 是否记录位置索引（nodeToScope/scopeRanges）。编译管线只需诊断，可关闭节省内存。 */
+    // The compiler pipeline can disable position tracking to save memory.
     private boolean recordPositionInfo = true;
 
     public SymbolTable() {
@@ -28,26 +28,36 @@ public final class SymbolTable {
 
     public Scope getGlobalScope() { return globalScope; }
 
-    /** 在指定位置查找符号 */
     public Symbol resolve(String name, int line, int column) {
         Scope scope = getScopeAtPosition(line, column);
         return scope != null ? scope.resolve(name) : globalScope.resolve(name);
     }
 
-    /** 获取指定位置所有可见符号 */
+    public Symbol resolveValue(String name, int line, int column) {
+        return resolve(name, line, column);
+    }
+
+    public Symbol resolveType(String name, int line, int column) {
+        Scope scope = getScopeAtPosition(line, column);
+        return scope != null ? scope.resolveType(name) : globalScope.resolveType(name);
+    }
+
+    public Symbol resolveAny(String name, int line, int column) {
+        Scope scope = getScopeAtPosition(line, column);
+        return scope != null ? scope.resolveAny(name) : globalScope.resolveAny(name);
+    }
+
     public List<Symbol> getVisibleSymbols(int line, int column) {
         Scope scope = getScopeAtPosition(line, column);
         return scope != null ? scope.getAllVisible() : globalScope.getAllVisible();
     }
 
-    /** 获取指定位置所在最内层作用域 */
     public Scope getScopeAtPosition(int line, int column) {
         Scope result = globalScope;
         int bestStartLine = -1;
         int bestStartCol = -1;
         for (ScopeRange range : scopeRanges) {
             if (range.contains(line, column)) {
-                // 选起始位置最晚的作用域（即最内层）
                 if (range.startLine > bestStartLine
                         || (range.startLine == bestStartLine && range.startCol > bestStartCol)) {
                     bestStartLine = range.startLine;
@@ -59,7 +69,6 @@ public final class SymbolTable {
         return result;
     }
 
-    /** 获取所有指定类型的符号 */
     public List<Symbol> getAllSymbolsOfKind(SymbolKind... kinds) {
         List<Symbol> result = new ArrayList<Symbol>();
         collectSymbolsOfKind(globalScope, kinds, result);
@@ -75,24 +84,29 @@ public final class SymbolTable {
                 }
             }
         }
+        for (Symbol sym : scope.getTypeSymbols().values()) {
+            for (SymbolKind kind : kinds) {
+                if (sym.getKind() == kind) {
+                    result.add(sym);
+                    break;
+                }
+            }
+        }
         for (Scope child : scope.getChildren()) {
             collectSymbolsOfKind(child, kinds, result);
         }
     }
 
-    /** 查找符号定义位置 */
     public Symbol findDefinition(String name, int line, int column) {
-        return resolve(name, line, column);
+        return resolveAny(name, line, column);
     }
 
-    /** 记录 AST 节点到作用域的映射 */
     public void mapNodeToScope(AstNode node, Scope scope) {
         if (recordPositionInfo) {
             nodeToScope.put(node, scope);
         }
     }
 
-    /** 记录作用域范围 */
     public void registerScopeRange(Scope scope, SourceLocation start, SourceLocation end) {
         if (recordPositionInfo && start != null && end != null) {
             scopeRanges.add(new ScopeRange(scope, start.getLine(), start.getColumn(),
@@ -100,7 +114,6 @@ public final class SymbolTable {
         }
     }
 
-    /** 作用域范围 */
     static final class ScopeRange {
         final Scope scope;
         final int startLine, startCol, endLine, endCol;

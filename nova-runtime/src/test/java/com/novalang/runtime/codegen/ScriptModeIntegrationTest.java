@@ -57,7 +57,7 @@ class ScriptModeIntegrationTest {
 
         @Test void varReassignDifferentType() {
             // var 可以重新赋值为不同类型
-            assertEquals("hello", run("var x = 42\nx = \"hello\"\nx"));
+            assertThrows(Exception.class, () -> run("var x = 42\nx = \"hello\"\nx"));
         }
     }
 
@@ -549,7 +549,7 @@ class ScriptModeIntegrationTest {
         @Test void elvisWithValue() { assertEquals(10, run("val x = 10\nx ?: 42")); }
         @Test void safeCallNull() { assertNull(run("val x = null\nx?.toString()")); }
         @Test void safeCallNonNull() { assertEquals("42", run("val x = 42\nx?.toString()")); }
-        @Test void nullAssignment() { assertEquals(true, run("var x = null\nx == null")); }
+        @Test void nullAssignment() { assertEquals(true, run("var x: Any? = null\nx == null")); }
     }
 
     // ============ 15. 类型检查与转换 ============
@@ -1540,7 +1540,7 @@ class ScriptModeIntegrationTest {
         @Test void modAssign() { assertEquals(1, run("var x = 10\nx %= 3\nx")); }
 
         @Test void nullCoalesceAssign() {
-            assertEquals(42, run("var x = null\nx ??= 42\nx"));
+            assertEquals(42, run("var x: Int? = null\nx ??= 42\nx"));
         }
 
         @Test void nullCoalesceAssignNoOverwrite() {
@@ -1963,7 +1963,7 @@ class ScriptModeIntegrationTest {
 
         @Test void guardSuccess() {
             assertEquals(10, run(
-                    "fun process(v): Int {\n" +
+                    "fun process(v: Int?): Int {\n" +
                     "    guard val x = v else { return -1 }\n" +
                     "    return x * 2\n" +
                     "}\n" +
@@ -1972,7 +1972,7 @@ class ScriptModeIntegrationTest {
 
         @Test void guardNull() {
             assertEquals(-1, run(
-                    "fun process(v): Int {\n" +
+                    "fun process(v: Int?): Int {\n" +
                     "    guard val x = v else { return -1 }\n" +
                     "    return x * 2\n" +
                     "}\n" +
@@ -2391,7 +2391,7 @@ class ScriptModeIntegrationTest {
         }
 
         @Test void nullCoalesceAssignChain() {
-            assertEquals(1, run("var a = null\nvar b = null\na ??= 1\nb ??= a\nb"));
+            assertEquals(1, run("var a: Int? = null\nvar b: Int? = null\na ??= 1\nb ??= a\nb"));
         }
     }
 
