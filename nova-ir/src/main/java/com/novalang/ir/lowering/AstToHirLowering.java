@@ -314,6 +314,10 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
 
     @Override
     public AstNode visitImportDecl(ImportDecl node, LoweringContext ctx) {
+        if (node.isStringModule()) {
+            return new HirImport(node.getLocation(), node.getModuleId(), null, true,
+                    false, false, true);
+        }
         String qn = node.getName().toString();
         return new HirImport(node.getLocation(), qn, node.getAlias(), node.isWildcard(),
                 node.isJava(), node.isStatic());

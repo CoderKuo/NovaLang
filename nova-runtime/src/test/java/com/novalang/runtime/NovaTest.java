@@ -281,6 +281,65 @@ class NovaTest {
         }
 
         @Test
+        void setVarargsViaCompiled() {
+            CompiledNova compiled = Nova.compile("a + b");
+
+            assertSame(compiled, compiled.set("a", 10, "b", 20));
+            assertEquals(30, compiled.run());
+            assertEquals(10, compiled.get("a"));
+            assertEquals(20, compiled.get("b"));
+        }
+
+        @Test
+        void setMapViaCompiledCopiesBindings() {
+            CompiledNova compiled = Nova.compile("a + b");
+            Map<String, Object> bindings = new java.util.HashMap<>();
+            bindings.put("a", 10);
+            bindings.put("b", 20);
+
+            assertSame(compiled, compiled.set(bindings));
+            bindings.put("a", 100);
+
+            assertEquals(30, compiled.run());
+            assertEquals(10, compiled.get("a"));
+        }
+
+        @Test
+        void setVarargsViaBytecodeCompiled() {
+            CompiledNova compiled = new Nova().compileToBytecode("a + b", "test.nova");
+
+            assertSame(compiled, compiled.set("a", 10, "b", 20));
+            assertEquals(30, compiled.run());
+        }
+
+        @Test
+        void setMapViaBytecodeCompiled() {
+            CompiledNova compiled = new Nova().compileToBytecode("a + b", "test.nova");
+
+            assertSame(compiled, compiled.set(Map.of("a", 10, "b", 20)));
+            assertEquals(30, compiled.run());
+        }
+
+        @Test
+        void setVarargsRejectsInvalidBindings() {
+            CompiledNova compiled = Nova.compile("x");
+
+            assertThrows(IllegalArgumentException.class, () -> compiled.set("x"));
+            assertThrows(IllegalArgumentException.class, () -> compiled.set(1, "x"));
+            assertThrows(IllegalArgumentException.class, () -> compiled.set((Object) null, "x"));
+        }
+
+        @Test
+        void setMapRejectsInvalidBindings() {
+            CompiledNova compiled = Nova.compile("x");
+            Map<String, Object> bindings = new java.util.HashMap<>();
+            bindings.put(null, 1);
+
+            assertThrows(IllegalArgumentException.class, () -> compiled.set((Map<String, Object>) null));
+            assertThrows(IllegalArgumentException.class, () -> compiled.set(bindings));
+        }
+
+        @Test
         @DisplayName("实例编译共享已有环境")
         void instanceCompileSharesEnv() {
             Nova nova = new Nova();
@@ -1768,6 +1827,27 @@ class NovaTest {
             CompiledNova regular = nova.compileToBytecode("price * rate", "regular.nova");
             regular.set("price", 100);
             assertEquals(10.0, ((Number) regular.run()).doubleValue(), 0.0001);
+        }
+
+        @Test
+        void importCanResolveSourceRegisteredByFileName() {
+            Nova nova = new Nova();
+            nova.compile("fun inc(x: Int) = x + 1", "std/math");
+
+            assertEquals(42, nova.eval("import \"std/math\"\ninc(41)"));
+            assertEquals(42, nova.eval("import \"std/math\"; inc(41)"));
+            assertEquals(42, nova.compileToBytecode("import \"std/math\"\ninc(41)", "user/main").run());
+            assertEquals(42, nova.compileToBytecode("import \"std/math\"; inc(41)", "user/main-inline").run());
+        }
+
+        @Test
+        void importCanResolveNestedVirtualModules() {
+            Nova nova = new Nova();
+            nova.compile("fun base() = 40", "pkg/base");
+            nova.compile("import \"pkg/base\"\nfun answer() = base() + 2", "pkg/answer");
+
+            assertEquals(42, nova.eval("import \"pkg/answer\"\nanswer()"));
+            assertEquals(42, nova.compileToBytecode("import \"pkg/answer\"\nanswer()", "user/main").run());
         }
 
         @Test

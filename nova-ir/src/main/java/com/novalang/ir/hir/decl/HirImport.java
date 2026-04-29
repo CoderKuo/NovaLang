@@ -15,6 +15,7 @@ public class HirImport extends HirDecl {
     private final boolean isWildcard;
     private final boolean isJava;
     private final boolean isStatic;
+    private final boolean isStringModule;
 
     public HirImport(SourceLocation location, String qualifiedName,
                      String alias, boolean isWildcard) {
@@ -24,6 +25,12 @@ public class HirImport extends HirDecl {
     public HirImport(SourceLocation location, String qualifiedName,
                      String alias, boolean isWildcard,
                      boolean isJava, boolean isStatic) {
+        this(location, qualifiedName, alias, isWildcard, isJava, isStatic, false);
+    }
+
+    public HirImport(SourceLocation location, String qualifiedName,
+                     String alias, boolean isWildcard,
+                     boolean isJava, boolean isStatic, boolean isStringModule) {
         super(location, alias != null ? alias : qualifiedName,
               Collections.emptySet(), Collections.emptyList());
         this.qualifiedName = qualifiedName;
@@ -31,6 +38,7 @@ public class HirImport extends HirDecl {
         this.isWildcard = isWildcard;
         this.isJava = isJava;
         this.isStatic = isStatic;
+        this.isStringModule = isStringModule;
     }
 
     public String getQualifiedName() {
@@ -55,6 +63,10 @@ public class HirImport extends HirDecl {
 
     public boolean isStatic() {
         return isStatic;
+    }
+
+    public boolean isStringModule() {
+        return isStringModule;
     }
 
     @Override

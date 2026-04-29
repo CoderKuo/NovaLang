@@ -76,6 +76,12 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
     @Override
     public Void visitImportDecl(ImportDecl node, FormatterContext ctx) {
         ctx.append("import ");
+        if (node.isStringModule()) {
+            ctx.append("\"");
+            ctx.append(node.getModuleId().replace("\\", "\\\\").replace("\"", "\\\""));
+            ctx.append("\"");
+            return null;
+        }
         if (node.isStatic()) {
             ctx.append("static ");
         }

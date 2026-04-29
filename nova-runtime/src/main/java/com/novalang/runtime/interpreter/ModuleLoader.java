@@ -10,8 +10,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Nova 模块加载器
@@ -26,6 +30,9 @@ public final class ModuleLoader {
     private final Path basePath;
     private final Map<Path, Environment> moduleCache = new HashMap<>();
     private final Map<Path, Long> moduleTimestamps = new HashMap<>();
+    private final Map<String, String> virtualModules = new HashMap<>();
+    private static final Pattern STRING_IMPORT = Pattern.compile(
+            "^\\s*import\\s+\"((?:\\\\.|[^\"\\\\])*)\"\\s*(?:(?:;\\s*(.*))|(?://.*)?)$");
 
     public ModuleLoader(Path basePath) {
         this.basePath = basePath;
@@ -35,6 +42,87 @@ public final class ModuleLoader {
     public void clear() {
         moduleCache.clear();
         moduleTimestamps.clear();
+    }
+
+    public void registerVirtualModule(String moduleId, String source) {
+        if (moduleId == null || source == null) {
+            return;
+        }
+        virtualModules.put(moduleId, source);
+    }
+
+    public void copyVirtualModulesFrom(ModuleLoader other) {
+        if (other != null) {
+            virtualModules.putAll(other.virtualModules);
+        }
+    }
+
+    public boolean hasVirtualModule(String moduleId) {
+        return virtualModules.containsKey(moduleId);
+    }
+
+    public Environment loadVirtualModule(String moduleId, Interpreter interpreter) {
+        String source = virtualModules.get(moduleId);
+        if (source == null) {
+            return null;
+        }
+        Environment moduleEnv = new Environment(interpreter.getGlobals());
+        interpreter.executeModule(source, moduleId, moduleEnv);
+        return moduleEnv;
+    }
+
+    public String expandVirtualImports(String source, String fileName) {
+        if (source == null || virtualModules.isEmpty()) {
+            return source;
+        }
+        return expandVirtualImports(source, fileName, new HashSet<String>(), new HashSet<String>());
+    }
+
+    private String expandVirtualImports(String source, String fileName,
+                                        Set<String> loading, Set<String> included) {
+        StringBuilder out = new StringBuilder(source.length());
+        String[] lines = source.split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            Matcher matcher = STRING_IMPORT.matcher(line);
+            if (matcher.matches()) {
+                String moduleId = unescapeModuleId(matcher.group(1));
+                String moduleSource = virtualModules.get(moduleId);
+                if (moduleSource == null) {
+                    throw new NovaRuntimeException("Cannot resolve module import '" + moduleId + "'");
+                }
+                if (loading.contains(moduleId)) {
+                    throw new NovaRuntimeException("Cyclic module import: " + moduleId);
+                }
+                if (included.add(moduleId)) {
+                    loading.add(moduleId);
+                    out.append("// import: ").append(moduleId).append('\n');
+                    out.append(expandVirtualImports(moduleSource, moduleId, loading, included));
+                    if (!moduleSource.endsWith("\n")) {
+                        out.append('\n');
+                    }
+                    loading.remove(moduleId);
+                }
+                String trailing = matcher.group(2);
+                if (trailing != null && !trailing.trim().isEmpty()
+                        && !trailing.trim().startsWith("//")) {
+                    out.append(trailing);
+                    if (i < lines.length - 1) {
+                        out.append('\n');
+                    }
+                }
+            } else {
+                out.append(line);
+                if (i < lines.length - 1) {
+                    out.append('\n');
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    private static String unescapeModuleId(String text) {
+        return text.replace("\\\"", "\"").replace("\\\\", "\\");
     }
 
     /** 使指定模块缓存失效 */

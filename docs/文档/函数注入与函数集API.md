@@ -734,6 +734,31 @@ nova.compileToBytecode("1 add 2 mul 3", "rule.nova").run(); // 7
 
 注意：`preload()` 本身不执行顶层代码，因此单纯注册 preload 不会触发副作用。解释器路径一旦按需装载过 preload，`clearPreloads()` 只会清空后续源码拼接列表，不会回滚已经进入解释器环境的函数或变量。`preload` 内容也会参与编译缓存 key，因此同一份用户代码在不同 preload 下不会错误复用旧字节码。
 
+### fileName — 虚拟模块导入
+
+`preload(source, fileName)`、`compile(source, fileName)`、`compileToBytecode(source, fileName)` 中的 `fileName` 同时会作为虚拟模块 ID 注册。它不要求是文件路径，可以是宿主定义的任意稳定字符串；后续脚本可以用完全相同的字符串导入这段源码：
+
+```java
+Nova nova = new Nova();
+
+nova.compile("""
+fun inc(x: Int) = x + 1
+""", "std/math");
+
+Object result = nova.eval("""
+import "std/math"
+inc(41)
+"""); // 42
+
+CompiledNova compiled = nova.compileToBytecode("""
+import "std/math"
+inc(41)
+""", "user/main");
+compiled.run(); // 42
+```
+
+`import "moduleId"` 会优先查宿主通过 `fileName` 注册的虚拟模块；找不到时会报模块无法解析。虚拟模块可以继续导入其他虚拟模块。
+
 ### compileToBytecode — 字节码编译
 
 `compileToBytecode()` 将 Nova 代码编译为真正的 JVM 字节码，生成并加载 Java 类。执行时走 JVM 原生调用路径，速度与手写 Java 相当。
@@ -744,6 +769,8 @@ nova.set("rate", 0.15);
 
 CompiledNova compiled = nova.compileToBytecode("price * quantity * (1 + rate)");
 compiled.set("price", 100).set("quantity", 5);
+compiled.set("price", 100, "quantity", 5);
+compiled.set(Map.of("price", 100, "quantity", 5));
 compiled.run();  // 575.0
 ```
 

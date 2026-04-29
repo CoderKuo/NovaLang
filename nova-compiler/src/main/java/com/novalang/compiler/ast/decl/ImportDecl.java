@@ -20,6 +20,7 @@ public class ImportDecl extends AstNode {
     private final boolean isJava;      // import java ... (Java 类导入)
     private final boolean isStatic;
     private final QualifiedName name;
+    private final String moduleId;
     private final boolean isWildcard;  // import java.util.*
     private final String alias;        // import Foo as Bar
 
@@ -29,8 +30,19 @@ public class ImportDecl extends AstNode {
         this.isJava = isJava;
         this.isStatic = isStatic;
         this.name = name;
+        this.moduleId = null;
         this.isWildcard = isWildcard;
         this.alias = alias;
+    }
+
+    public ImportDecl(SourceLocation location, String moduleId) {
+        super(location);
+        this.isJava = false;
+        this.isStatic = false;
+        this.name = null;
+        this.moduleId = moduleId;
+        this.isWildcard = true;
+        this.alias = null;
     }
 
     /** 兼容旧构造器（isJava = false） */
@@ -49,6 +61,14 @@ public class ImportDecl extends AstNode {
 
     public QualifiedName getName() {
         return name;
+    }
+
+    public String getModuleId() {
+        return moduleId;
+    }
+
+    public boolean isStringModule() {
+        return moduleId != null;
     }
 
     public boolean isWildcard() {

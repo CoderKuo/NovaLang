@@ -335,6 +335,21 @@ final class MirInterpreter {
 
         for (MirModule.NovaImportInfo imp : module.getNovaImports()) {
             String qn = imp.qualifiedName;
+            if (imp.stringModule) {
+                if (interp.moduleLoader == null) {
+                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                            "Cannot resolve module '" + qn + "'",
+                            "Register the source with the same fileName before importing it");
+                }
+                Environment moduleEnv = interp.moduleLoader.loadVirtualModule(qn, interp);
+                if (moduleEnv == null) {
+                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                            "Cannot resolve module '" + qn + "'",
+                            "Register the source with the same fileName before importing it");
+                }
+                moduleEnv.exportAll(interp.getEnvironment());
+                continue;
+            }
             String[] parts = qn.split("\\.");
             String builtinModule = BuiltinModuleRegistry.resolveModuleName(java.util.Arrays.asList(parts));
             if (builtinModule != null) {

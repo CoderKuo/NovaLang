@@ -828,6 +828,7 @@ public final class Nova {
             throw new IllegalArgumentException("preload source must not be null");
         }
         String actualFileName = fileName != null ? fileName : "<preload>";
+        interpreter.registerVirtualModule(actualFileName, source);
         preludeSources.add(new PreludeSource(source, actualFileName));
         return this;
     }
@@ -847,8 +848,12 @@ public final class Nova {
     }
 
     private String withPreloads(String code) {
+        return withPreloads(code, "<compiled>");
+    }
+
+    private String withPreloads(String code, String fileName) {
         if (preludeSources.isEmpty()) {
-            return code;
+            return interpreter.expandVirtualImports(code, fileName);
         }
         StringBuilder combined = new StringBuilder();
         for (PreludeSource prelude : preludeSources) {
@@ -859,7 +864,7 @@ public final class Nova {
             }
         }
         combined.append(code);
-        return combined.toString();
+        return interpreter.expandVirtualImports(combined.toString(), fileName);
     }
 
     private void markAllPreloadsEvaluated() {
@@ -869,15 +874,16 @@ public final class Nova {
     private void ensureInterpreterPreloadsEvaluated() {
         while (evaluatedPreludeCount < preludeSources.size()) {
             PreludeSource prelude = preludeSources.get(evaluatedPreludeCount);
-            interpreter.eval(prelude.source, prelude.fileName);
+            interpreter.eval(interpreter.expandVirtualImports(prelude.source, prelude.fileName), prelude.fileName);
             evaluatedPreludeCount++;
         }
     }
 
     public Object eval(String code) {
+        interpreter.registerVirtualModule("<repl>", code);
         NovaValue result = preludeSources.isEmpty()
                 ? interpreter.evalRepl(code)
-                : interpreter.eval(withPreloads(code), "<repl>");
+                : interpreter.eval(withPreloads(code, "<repl>"), "<repl>");
         markAllPreloadsEvaluated();
         return toJava(result);
     }
@@ -902,9 +908,12 @@ public final class Nova {
      */
     public Object evalFile(File file) {
         String source = readFile(file);
+        interpreter.registerVirtualModule(file.getName(), source);
+        interpreter.registerVirtualModule(file.getPath(), source);
+        interpreter.registerVirtualModule(file.toPath().toAbsolutePath().normalize().toString(), source);
         NovaValue result = preludeSources.isEmpty()
                 ? interpreter.eval(source, file.getName())
-                : interpreter.eval(withPreloads(source), file.getName());
+                : interpreter.eval(withPreloads(source, file.getName()), file.getName());
         markAllPreloadsEvaluated();
         return toJava(result);
     }
@@ -935,7 +944,9 @@ public final class Nova {
      * 在当前实例上预编译 Nova 代码，共享已有环境。
      */
     public CompiledNova compile(String code, String fileName) {
-        return new CompiledNova(withPreloads(code), fileName, this);
+        String actualFileName = fileName != null ? fileName : "<compiled>";
+        interpreter.registerVirtualModule(actualFileName, code);
+        return new CompiledNova(withPreloads(code, actualFileName), actualFileName, this);
     }
 
     /**
@@ -951,7 +962,10 @@ public final class Nova {
      */
     public CompiledNova compileFile(File file) {
         String source = readFile(file);
-        return new CompiledNova(source, file.getName(), this);
+        interpreter.registerVirtualModule(file.getName(), source);
+        interpreter.registerVirtualModule(file.getPath(), source);
+        interpreter.registerVirtualModule(file.toPath().toAbsolutePath().normalize().toString(), source);
+        return new CompiledNova(withPreloads(source, file.getName()), file.getName(), this);
     }
 
     // ── 字节码预编译 ────────────────────────────────────────
@@ -989,12 +1003,14 @@ public final class Nova {
      */
     public CompiledNova compileToBytecode(String code, String fileName) {
         Builtins.ensureJavaClassRegistered();
-        String actualCode = withPreloads(code);
+        String actualFileName = fileName != null ? fileName : "<compiled>";
+        interpreter.registerVirtualModule(actualFileName, code);
+        String actualCode = withPreloads(code, actualFileName);
 
         // 编译缓存：相同源码不重复编译
         String cacheKey = null;
         if (compilationCache != null) {
-            cacheKey = buildCompilationCacheKey(actualCode, fileName);
+            cacheKey = buildCompilationCacheKey(actualCode, actualFileName);
             Map<String, Class<?>> cached = compilationCache.get(cacheKey);
             if (cached != null) {
                 return buildCompiledNova(cached);
@@ -1006,7 +1022,7 @@ public final class Nova {
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
         configureRelocate(compiler);
-        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, fileName);
+        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName);
 
         if (cacheKey != null) {
             compilationCache.put(cacheKey, classes);
@@ -1044,11 +1060,13 @@ public final class Nova {
      */
     public CompiledNova compileToBytecode(String code, String fileName, String namespace) {
         Builtins.ensureJavaClassRegistered();
-        String actualCode = withPreloads(code);
+        String actualFileName = fileName != null ? fileName : "<compiled>";
+        interpreter.registerVirtualModule(actualFileName, code);
+        String actualCode = withPreloads(code, actualFileName);
 
         String cacheKey = null;
         if (compilationCache != null) {
-            cacheKey = buildCompilationCacheKey(actualCode, fileName + "\0" + namespace);
+            cacheKey = buildCompilationCacheKey(actualCode, actualFileName + "\0" + namespace);
             Map<String, Class<?>> cached = compilationCache.get(cacheKey);
             if (cached != null) {
                 return buildCompiledNova(cached, namespaceBindings.get(namespace));
@@ -1060,7 +1078,7 @@ public final class Nova {
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
         configureRelocate(compiler);
-        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, fileName);
+        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName);
 
         if (cacheKey != null) {
             compilationCache.put(cacheKey, classes);

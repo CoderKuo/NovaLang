@@ -272,7 +272,10 @@ public class HirToMirLowering {
         List<String> wildcardImportsMeta = new ArrayList<>();
         List<MirModule.NovaImportInfo> novaImportInfos = new ArrayList<>();
         for (HirImport imp : hirModule.getImports()) {
-            if (imp.isJava()) {
+            if (imp.isStringModule()) {
+                novaImportInfos.add(new MirModule.NovaImportInfo(
+                        imp.getQualifiedName(), null, true, true));
+            } else if (imp.isJava()) {
                 String qn = imp.getQualifiedName();
                 if (imp.isWildcard()) {
                     wildcardImportsMeta.add(qn);

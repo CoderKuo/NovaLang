@@ -81,11 +81,17 @@ public class MirModule {
         public final String qualifiedName;
         public final String alias;     // null if no alias
         public final boolean wildcard;
+        public final boolean stringModule;
 
         public NovaImportInfo(String qualifiedName, String alias, boolean wildcard) {
+            this(qualifiedName, alias, wildcard, false);
+        }
+
+        public NovaImportInfo(String qualifiedName, String alias, boolean wildcard, boolean stringModule) {
             this.qualifiedName = qualifiedName;
             this.alias = alias;
             this.wildcard = wildcard;
+            this.stringModule = stringModule;
         }
     }
 

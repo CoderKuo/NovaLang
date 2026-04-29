@@ -1794,6 +1794,9 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     @Override
     public Void visitImportDecl(ImportDecl node, Void ctx) {
+        if (node.isStringModule()) {
+            return null;
+        }
         String name = node.hasAlias() ? node.getAlias() : node.getName().getSimpleName();
         String qualifiedName = node.getName() != null ? node.getName().getFullName() : null;
         String builtinModule = !node.isJava() && !node.isStatic()

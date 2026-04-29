@@ -25,7 +25,7 @@ import java.util.Collections;
  * <pre>
  * Nova nova = new Nova();
  * CompiledNova rule = nova.compile("price * quantity * (1 - discount)", "rule");
- * nova.set("price", 100).set("quantity", 2).set("discount", 0.1);
+ * rule.set("price", 100, "quantity", 2, "discount", 0.1);
  * Object total = rule.run();  // 180.0
  * </pre>
  *
@@ -305,6 +305,31 @@ public final class CompiledNova {
     public CompiledNova set(String name, Object value) {
         if (nova != null) nova.set(name, value);
         else bindings.put(name, NativeFunctionAdapter.toBindingValue(value));
+        return this;
+    }
+
+    /**
+     * 批量设置变量。复制当前 Map 内容，不保留 live map 引用。
+     */
+    public CompiledNova set(Map<String, Object> values) {
+        if (values == null) {
+            throw new IllegalArgumentException("Bindings map must not be null");
+        }
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            if (entry.getKey() == null) {
+                throw new IllegalArgumentException("Binding key must not be null");
+            }
+            set(entry.getKey(), entry.getValue());
+        }
+        return this;
+    }
+
+    /**
+     * 批量设置 key-value 变量。
+     * <pre>compiled.set("price", 100, "quantity", 2)</pre>
+     */
+    public CompiledNova set(Object... kvBindings) {
+        applyBindings(kvBindings);
         return this;
     }
 
@@ -618,12 +643,16 @@ public final class CompiledNova {
     }
 
     private void applyBindings(Object[] kvBindings) {
+        if (kvBindings == null) {
+            throw new IllegalArgumentException("Bindings must not be null");
+        }
         if (kvBindings.length % 2 != 0) {
             throw new IllegalArgumentException("Bindings must be key-value pairs (even number of arguments)");
         }
         for (int i = 0; i < kvBindings.length; i += 2) {
             if (!(kvBindings[i] instanceof String)) {
-                throw new IllegalArgumentException("Binding key must be a String, got: " + kvBindings[i].getClass().getName());
+                String actualType = kvBindings[i] == null ? "null" : kvBindings[i].getClass().getName();
+                throw new IllegalArgumentException("Binding key must be a String, got: " + actualType);
             }
             set((String) kvBindings[i], kvBindings[i + 1]);
         }

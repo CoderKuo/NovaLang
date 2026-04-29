@@ -315,13 +315,27 @@ public class Interpreter implements ExecutionContext {
     // ============ 模块系统 ============
 
     public void setScriptBasePath(Path basePath) {
+        ModuleLoader old = this.moduleLoader;
         this.moduleLoader = new ModuleLoader(basePath);
+        this.moduleLoader.copyVirtualModulesFrom(old);
+    }
+
+    public void registerVirtualModule(String moduleId, String source) {
+        if (moduleLoader == null) {
+            moduleLoader = new ModuleLoader(java.nio.file.Paths.get("").toAbsolutePath());
+        }
+        moduleLoader.registerVirtualModule(moduleId, source);
+    }
+
+    public String expandVirtualImports(String source, String fileName) {
+        return moduleLoader != null ? moduleLoader.expandVirtualImports(source, fileName) : source;
     }
 
     /** 在指定环境中执行模块（供 ModuleLoader 调用）*/
     public void executeModule(String source, String fileName, Environment moduleEnv) {
         withEnvironment(moduleEnv, () -> {
-            Lexer lexer = new Lexer(source, fileName);
+            String actualSource = expandVirtualImports(source, fileName);
+            Lexer lexer = new Lexer(actualSource, fileName);
             Parser parser = new Parser(lexer, fileName);
             Program program = parser.parse();
             mirPipeline.setScriptMode(true);
@@ -521,12 +535,13 @@ public class Interpreter implements ExecutionContext {
      */
     public NovaValue eval(String source, String fileName) {
         resetExecutionState();
-        this.currentSource = source;
+        String actualSource = expandVirtualImports(source, fileName);
+        this.currentSource = actualSource;
         this.currentFileName = fileName;
         this.sourceLines = null;
 
         try {
-            Lexer lexer = new Lexer(source, fileName);
+            Lexer lexer = new Lexer(actualSource, fileName);
             Parser parser = new Parser(lexer, fileName);
             return executeMirPipeline(parser.parse());
         } catch (NovaRuntimeException | ParseException e) {
@@ -544,7 +559,8 @@ public class Interpreter implements ExecutionContext {
      */
     public NovaValue eval(String source, String fileName, Program program) {
         resetExecutionState();
-        this.currentSource = source;
+        String actualSource = expandVirtualImports(source, fileName);
+        this.currentSource = actualSource;
         this.currentFileName = fileName;
         this.sourceLines = null;
 
@@ -565,12 +581,13 @@ public class Interpreter implements ExecutionContext {
      */
     public NovaValue evalRepl(String source) {
         resetExecutionState();
-        this.currentSource = source;
+        String actualSource = expandVirtualImports(source, "<repl>");
+        this.currentSource = actualSource;
         this.currentFileName = "<repl>";
         this.sourceLines = null;
 
         try {
-            Lexer lexer = new Lexer(source, "<repl>");
+            Lexer lexer = new Lexer(actualSource, "<repl>");
             Parser parser = new Parser(lexer, "<repl>");
             return executeMirPipeline(parser.parse());
         } catch (NovaRuntimeException e) {

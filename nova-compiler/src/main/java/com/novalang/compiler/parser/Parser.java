@@ -675,6 +675,12 @@ public class Parser {
         expect(KW_IMPORT, "Expected 'import'");
 
         // 软关键词：import java → Java 类导入
+        if (check(STRING_LITERAL)) {
+            Token module = advance();
+            matchAny(NEWLINE, SEMICOLON);
+            return new ImportDecl(loc, String.valueOf(module.getLiteral()));
+        }
+
         boolean isJava = false;
         if (check(IDENTIFIER) && "java".equals(current.getLexeme()) && checkAhead(IDENTIFIER)) {
             isJava = true;
