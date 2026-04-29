@@ -340,6 +340,27 @@ class NovaScriptEngineTest {
     // ======== Compilable 预编译 — 复杂逻辑 ========
 
     @Test
+    void compiledScriptDoesNotLeakBindingsBetweenContexts() throws ScriptException {
+        NovaScriptEngine engine = (NovaScriptEngine) manager.getEngineByName("nova");
+        CompiledScript compiled = engine.compile("n * 2");
+
+        SimpleScriptContext ctx1 = new SimpleScriptContext();
+        Bindings b1 = new SimpleBindings();
+        b1.put("n", 5);
+        b1.put("onlyFirst", "marker");
+        ctx1.setBindings(b1, ScriptContext.ENGINE_SCOPE);
+
+        SimpleScriptContext ctx2 = new SimpleScriptContext();
+        Bindings b2 = new SimpleBindings();
+        b2.put("n", 100);
+        ctx2.setBindings(b2, ScriptContext.ENGINE_SCOPE);
+
+        assertThat(compiled.eval(ctx1)).isEqualTo(10);
+        assertThat(compiled.eval(ctx2)).isEqualTo(200);
+        assertThat(b2).doesNotContainKey("onlyFirst");
+    }
+
+    @Test
     void compileMultilineWithVarDecl() throws ScriptException {
         NovaScriptEngine engine = (NovaScriptEngine) manager.getEngineByName("nova");
         CompiledScript compiled = engine.compile("val a = 3\nval b = 4\na + b");

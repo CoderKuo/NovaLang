@@ -21,6 +21,17 @@ import static com.novalang.compiler.lexer.TokenType.*;
 class DeclParser {
 
     final Parser parser;
+    private InfixSpec lastInfixSpec;
+
+    static final class InfixSpec {
+        final int precedence;
+        final Parser.InfixAssociativity associativity;
+
+        InfixSpec(int precedence, Parser.InfixAssociativity associativity) {
+            this.precedence = precedence;
+            this.associativity = associativity;
+        }
+    }
 
     /** parseNameWithOptionalReceiver 的返回结果 */
     static final class ParsedName {
@@ -147,6 +158,7 @@ class DeclParser {
 
     List<Modifier> parseModifiers() {
         List<Modifier> modifiers = new ArrayList<Modifier>();
+        lastInfixSpec = null;
 
         while (true) {
             Modifier mod = null;
@@ -164,7 +176,9 @@ class DeclParser {
             else if (parser.match(KW_SUSPEND)) mod = Modifier.SUSPEND;
             else if (parser.match(KW_OPERATOR)) mod = Modifier.OPERATOR;
             else if (parser.check(IDENTIFIER) && "infix".equals(parser.current.getLexeme())) {
-                parser.advance(); mod = Modifier.INFIX;
+                parser.advance();
+                mod = Modifier.INFIX;
+                lastInfixSpec = parseInfixSpec();
             }
             else break;
 
@@ -191,6 +205,49 @@ class DeclParser {
         }
 
         return modifiers;
+    }
+
+    private InfixSpec parseInfixSpec() {
+        int precedence = 0;
+        Parser.InfixAssociativity associativity = Parser.InfixAssociativity.LEFT;
+        if (!parser.match(LPAREN)) {
+            return new InfixSpec(precedence, associativity);
+        }
+
+        precedence = parseInfixPrecedence();
+        if (parser.match(COMMA)) {
+            String assocName = parser.expect(IDENTIFIER,
+                    "Expected infix associativity: left, right, or none").getLexeme();
+            if ("left".equals(assocName)) {
+                associativity = Parser.InfixAssociativity.LEFT;
+            } else if ("right".equals(assocName)) {
+                associativity = Parser.InfixAssociativity.RIGHT;
+            } else if ("none".equals(assocName)) {
+                associativity = Parser.InfixAssociativity.NONE;
+            } else {
+                throw new ParseException(
+                        "Invalid infix associativity '" + assocName + "'. Expected left, right, or none",
+                        parser.previous);
+            }
+        }
+        parser.expect(RPAREN, "Expected ')' after infix modifier");
+        return new InfixSpec(precedence, associativity);
+    }
+
+    private int parseInfixPrecedence() {
+        boolean negated = parser.match(MINUS);
+        String text = parser.expect(INT_LITERAL, "Expected infix precedence number").getLexeme();
+        int value;
+        try {
+            value = Integer.parseInt(text.replace("_", ""));
+        } catch (NumberFormatException e) {
+            throw new ParseException("Invalid infix precedence '" + text + "'", parser.previous);
+        }
+        if (negated) value = -value;
+        if (value < -1000 || value > 1000) {
+            throw new ParseException("Infix precedence must be between -1000 and 1000", parser.previous);
+        }
+        return value;
     }
 
     // ============ 类声明 ============
@@ -492,6 +549,13 @@ class DeclParser {
         String name = parsed.name;
         TypeRef receiverType = parsed.receiverType;
         SourceLocation funNameLoc = parser.previousLocation();
+        InfixSpec infixSpec = modifiers.contains(Modifier.INFIX)
+                ? (lastInfixSpec != null ? lastInfixSpec
+                : new InfixSpec(0, Parser.InfixAssociativity.LEFT))
+                : null;
+        if (infixSpec != null) {
+            parser.registerInfixOperator(name, infixSpec.precedence, infixSpec.associativity);
+        }
 
         // 参数
         parser.expect(LPAREN, "Expected '('");
@@ -526,7 +590,9 @@ class DeclParser {
         boolean isSuspend = modifiers.contains(Modifier.SUSPEND);
 
         FunDecl decl = new FunDecl(loc, annotations, modifiers, name, typeParams, receiverType,
-                params, returnType, body, isInline, isOperator, isSuspend);
+                params, returnType, body, isInline, isOperator, isSuspend,
+                infixSpec != null ? Integer.valueOf(infixSpec.precedence) : null,
+                infixSpec != null ? infixSpec.associativity.name().toLowerCase() : null);
         decl.setNameLocation(funNameLoc);
         return decl;
     }

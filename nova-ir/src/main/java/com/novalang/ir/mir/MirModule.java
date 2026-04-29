@@ -46,6 +46,11 @@ public class MirModule {
     public Map<String, String> getStaticImports() { return staticImports; }
     public void setStaticImports(Map<String, String> imports) { this.staticImports = imports; }
 
+    /** Java static wildcard import class names. */
+    private List<String> staticWildcardImports = Collections.emptyList();
+    public List<String> getStaticWildcardImports() { return staticWildcardImports; }
+    public void setStaticWildcardImports(List<String> imports) { this.staticWildcardImports = imports; }
+
     /** Java wildcard import 包前缀列表（如 "java.util.*" → "java.util."） */
     private List<String> wildcardJavaImports = Collections.emptyList();
     public List<String> getWildcardJavaImports() { return wildcardJavaImports; }

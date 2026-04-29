@@ -21,12 +21,23 @@ public class FunDecl extends Declaration {
     private final boolean isInline;
     private final boolean isOperator;
     private final boolean isSuspend;
+    private final Integer infixPrecedence;
+    private final String infixAssociativity;
     private int simpleParams = -1; // -1=未计算, 0=有复杂参数, 1=全是简单位置参数
 
     public FunDecl(SourceLocation location, List<Annotation> annotations,
                    List<Modifier> modifiers, String name, List<TypeParameter> typeParams,
                    TypeRef receiverType, List<Parameter> params, TypeRef returnType,
                    AstNode body, boolean isInline, boolean isOperator, boolean isSuspend) {
+        this(location, annotations, modifiers, name, typeParams, receiverType, params, returnType,
+                body, isInline, isOperator, isSuspend, null, null);
+    }
+
+    public FunDecl(SourceLocation location, List<Annotation> annotations,
+                   List<Modifier> modifiers, String name, List<TypeParameter> typeParams,
+                   TypeRef receiverType, List<Parameter> params, TypeRef returnType,
+                   AstNode body, boolean isInline, boolean isOperator, boolean isSuspend,
+                   Integer infixPrecedence, String infixAssociativity) {
         super(location, annotations, modifiers, name);
         this.typeParams = typeParams;
         this.receiverType = receiverType;
@@ -36,6 +47,8 @@ public class FunDecl extends Declaration {
         this.isInline = isInline;
         this.isOperator = isOperator;
         this.isSuspend = isSuspend;
+        this.infixPrecedence = infixPrecedence;
+        this.infixAssociativity = infixAssociativity;
     }
 
     public List<TypeParameter> getTypeParams() {
@@ -72,6 +85,18 @@ public class FunDecl extends Declaration {
 
     public boolean isSuspend() {
         return isSuspend;
+    }
+
+    public boolean isInfix() {
+        return getModifiers().contains(Modifier.INFIX);
+    }
+
+    public Integer getInfixPrecedence() {
+        return infixPrecedence;
+    }
+
+    public String getInfixAssociativity() {
+        return infixAssociativity;
     }
 
     /** 是否所有参数都是简单位置参数（无 vararg、无默认值） */

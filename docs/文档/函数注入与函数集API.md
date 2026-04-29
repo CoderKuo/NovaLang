@@ -691,6 +691,49 @@ formulas:
 
 几百个简单表达式预编译后内存占用很小（只有 AST 节点），执行速度也足够快。
 
+### preload — 预加载 Nova 基础代码
+
+`preload()` 用于宿主程序先注册一段 Nova 代码，再在这段基础代码之上运行用户脚本。预加载代码不会在注册时立即执行；解释器路径会在首次 `eval()` / `call()` / `get()` 时按需装载，编译路径会在 `compile()` / `compileToBytecode()` 时自动拼接到用户代码前一起编译。
+
+```java
+Nova nova = new Nova();
+
+nova.preload("""
+fun bonus(x: Int) = x + 10
+val base = 100
+""", "base.nova");
+
+nova.eval("bonus(base)");  // 110
+
+CompiledNova compiled = nova.compileToBytecode("bonus(5)", "user.nova");
+compiled.run();            // 15
+compiled.call("bonus", 7); // 17
+```
+
+`preload()` 适合放公共函数、常量、类、扩展函数和自定义中缀函数。因为编译模式会把 preload 源码和用户源码放在同一个编译单元中，解析期特性也能生效，例如 `infix` 的数字优先级：
+
+```java
+Nova nova = new Nova();
+
+nova.preload("""
+infix(20, left) fun Int.add(n: Int) = this + n
+infix(30, left) fun Int.mul(n: Int) = this * n
+""", "operators.nova");
+
+nova.compileToBytecode("1 add 2 mul 3", "rule.nova").run(); // 7
+```
+
+相关 API：
+
+| API | 说明 |
+|-----|------|
+| `preload(source)` | 注册一段 Nova 预加载源码，文件名默认为 `<preload>` |
+| `preload(source, fileName)` | 注册预加载源码并指定来源名称 |
+| `getPreloads()` | 返回已注册的 preload 源码列表 |
+| `clearPreloads()` | 清空后续编译要使用的 preload 源码 |
+
+注意：`preload()` 本身不执行顶层代码，因此单纯注册 preload 不会触发副作用。解释器路径一旦按需装载过 preload，`clearPreloads()` 只会清空后续源码拼接列表，不会回滚已经进入解释器环境的函数或变量。`preload` 内容也会参与编译缓存 key，因此同一份用户代码在不同 preload 下不会错误复用旧字节码。
+
 ### compileToBytecode — 字节码编译
 
 `compileToBytecode()` 将 Nova 代码编译为真正的 JVM 字节码，生成并加载 Java 类。执行时走 JVM 原生调用路径，速度与手写 Java 相当。

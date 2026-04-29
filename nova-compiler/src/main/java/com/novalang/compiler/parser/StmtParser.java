@@ -125,6 +125,9 @@ class StmtParser {
                 }
                 statements.add(parseStatement());
             } catch (ParseException e) {
+                if (!parser.tolerantMode) {
+                    throw e;
+                }
                 // 块内容错恢复：跳到下一个语句边界，避免丢失整个外层声明
                 synchronizeInBlock();
             }

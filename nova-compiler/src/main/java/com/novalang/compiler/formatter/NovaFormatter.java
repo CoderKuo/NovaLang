@@ -262,6 +262,21 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
         formatAnnotations(node.getAnnotations(), ctx);
         formatModifiers(node.getModifiers(), ctx);
 
+        if (node.isInfix()) {
+            if (node.getInfixPrecedence() != null
+                    && !(node.getInfixPrecedence().intValue() == 0
+                    && "left".equals(node.getInfixAssociativity()))) {
+                ctx.append("infix(");
+                ctx.append(String.valueOf(node.getInfixPrecedence()));
+                if (node.getInfixAssociativity() != null) {
+                    ctx.append(", ");
+                    ctx.append(node.getInfixAssociativity());
+                }
+                ctx.append(") ");
+            } else {
+                ctx.append("infix ");
+            }
+        }
         if (node.isInline()) ctx.append("inline ");
         if (node.isOperator()) ctx.append("operator ");
         if (node.isSuspend()) ctx.append("suspend ");
@@ -1203,7 +1218,7 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
             // 跳过一些在特定上下文中已处理的修饰符
             if (mod == Modifier.ABSTRACT || mod == Modifier.SEALED || mod == Modifier.OPEN ||
                 mod == Modifier.FINAL || mod == Modifier.CONST || mod == Modifier.INLINE ||
-                mod == Modifier.OPERATOR || mod == Modifier.SUSPEND) {
+                mod == Modifier.OPERATOR || mod == Modifier.SUSPEND || mod == Modifier.INFIX) {
                 continue;
             }
             ctx.append(mod.toSourceString());

@@ -54,6 +54,18 @@ public final class Nova {
      * 命名空间中的定义优先于全局同名定义（覆盖语义）。
      */
     private final Map<String, Map<String, Object>> namespaceBindings = new HashMap<>();
+    private final List<PreludeSource> preludeSources = new ArrayList<>();
+    private int evaluatedPreludeCount = 0;
+
+    private static final class PreludeSource {
+        final String source;
+        final String fileName;
+
+        PreludeSource(String source, String fileName) {
+            this.source = source;
+            this.fileName = fileName;
+        }
+    }
 
     /**
      * 编译缓存：源码哈希 → 已编译的类集合。
@@ -766,6 +778,7 @@ public final class Nova {
      * 获取变量值，转换为 Java 类型。不存在时返回 null。
      */
     public Object get(String name) {
+        ensureInterpreterPreloadsEvaluated();
         NovaValue val = interpreter.getGlobals().tryGet(name);
         if (val == null) return null;
         return toJava(val);
@@ -775,6 +788,7 @@ public final class Nova {
      * 导出所有全局变量为 Java 类型。
      */
     public Map<String, Object> getAll() {
+        ensureInterpreterPreloadsEvaluated();
         Map<String, Object> result = new HashMap<>();
         for (String name : interpreter.getGlobals().getLocalNames()) {
             NovaValue val = interpreter.getGlobals().tryGet(name);
@@ -805,8 +819,66 @@ public final class Nova {
     /**
      * 执行 Nova 代码，返回最后一个表达式的值（Java 类型）。
      */
+    public Nova preload(String source) {
+        return preload(source, "<preload>");
+    }
+
+    public Nova preload(String source, String fileName) {
+        if (source == null) {
+            throw new IllegalArgumentException("preload source must not be null");
+        }
+        String actualFileName = fileName != null ? fileName : "<preload>";
+        preludeSources.add(new PreludeSource(source, actualFileName));
+        return this;
+    }
+
+    public Nova clearPreloads() {
+        preludeSources.clear();
+        evaluatedPreludeCount = 0;
+        return this;
+    }
+
+    public List<String> getPreloads() {
+        List<String> result = new ArrayList<>(preludeSources.size());
+        for (PreludeSource prelude : preludeSources) {
+            result.add(prelude.source);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    private String withPreloads(String code) {
+        if (preludeSources.isEmpty()) {
+            return code;
+        }
+        StringBuilder combined = new StringBuilder();
+        for (PreludeSource prelude : preludeSources) {
+            combined.append("// preload: ").append(prelude.fileName).append('\n');
+            combined.append(prelude.source);
+            if (!prelude.source.endsWith("\n")) {
+                combined.append('\n');
+            }
+        }
+        combined.append(code);
+        return combined.toString();
+    }
+
+    private void markAllPreloadsEvaluated() {
+        evaluatedPreludeCount = preludeSources.size();
+    }
+
+    private void ensureInterpreterPreloadsEvaluated() {
+        while (evaluatedPreludeCount < preludeSources.size()) {
+            PreludeSource prelude = preludeSources.get(evaluatedPreludeCount);
+            interpreter.eval(prelude.source, prelude.fileName);
+            evaluatedPreludeCount++;
+        }
+    }
+
     public Object eval(String code) {
-        NovaValue result = interpreter.evalRepl(code);
+        NovaValue result = preludeSources.isEmpty()
+                ? interpreter.evalRepl(code)
+                : interpreter.eval(withPreloads(code), "<repl>");
+        markAllPreloadsEvaluated();
         return toJava(result);
     }
 
@@ -830,7 +902,10 @@ public final class Nova {
      */
     public Object evalFile(File file) {
         String source = readFile(file);
-        NovaValue result = interpreter.eval(source, file.getName());
+        NovaValue result = preludeSources.isEmpty()
+                ? interpreter.eval(source, file.getName())
+                : interpreter.eval(withPreloads(source), file.getName());
+        markAllPreloadsEvaluated();
         return toJava(result);
     }
 
@@ -860,7 +935,7 @@ public final class Nova {
      * 在当前实例上预编译 Nova 代码，共享已有环境。
      */
     public CompiledNova compile(String code, String fileName) {
-        return new CompiledNova(code, fileName, this);
+        return new CompiledNova(withPreloads(code), fileName, this);
     }
 
     /**
@@ -914,11 +989,12 @@ public final class Nova {
      */
     public CompiledNova compileToBytecode(String code, String fileName) {
         Builtins.ensureJavaClassRegistered();
+        String actualCode = withPreloads(code);
 
         // 编译缓存：相同源码不重复编译
         String cacheKey = null;
         if (compilationCache != null) {
-            cacheKey = buildCompilationCacheKey(code, fileName);
+            cacheKey = buildCompilationCacheKey(actualCode, fileName);
             Map<String, Class<?>> cached = compilationCache.get(cacheKey);
             if (cached != null) {
                 return buildCompiledNova(cached);
@@ -930,7 +1006,7 @@ public final class Nova {
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
         configureRelocate(compiler);
-        Map<String, Class<?>> classes = compiler.compileAndLoad(code, fileName);
+        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, fileName);
 
         if (cacheKey != null) {
             compilationCache.put(cacheKey, classes);
@@ -940,12 +1016,21 @@ public final class Nova {
 
     /** 从已编译的类构建 CompiledNova，注入值注册表和 Java 命名空间 */
     private CompiledNova buildCompiledNova(Map<String, Class<?>> classes) {
+        return buildCompiledNova(classes, null);
+    }
+
+    private CompiledNova buildCompiledNova(Map<String, Class<?>> classes, Map<String, Object> bindingOverlay) {
         CompiledNova compiled = new CompiledNova(classes, extensionRegistry);
         if (scriptClassLoader != null) {
             compiled.setScriptClassLoader(scriptClassLoader);
         }
         for (Map.Entry<String, Object> entry : valRegistry.entrySet()) {
             compiled.set(entry.getKey(), entry.getValue());
+        }
+        if (bindingOverlay != null) {
+            for (Map.Entry<String, Object> entry : bindingOverlay.entrySet()) {
+                compiled.set(entry.getKey(), entry.getValue());
+            }
         }
         NovaValue javaNamespace = interpreter.getGlobals().tryGet("Java");
         if (javaNamespace != null) {
@@ -958,8 +1043,29 @@ public final class Nova {
      * 真字节码预编译，命名空间绑定优先覆盖全局同名定义。
      */
     public CompiledNova compileToBytecode(String code, String fileName, String namespace) {
-        applyNamespaceBindings(namespace);
-        return compileToBytecode(code, fileName);
+        Builtins.ensureJavaClassRegistered();
+        String actualCode = withPreloads(code);
+
+        String cacheKey = null;
+        if (compilationCache != null) {
+            cacheKey = buildCompilationCacheKey(actualCode, fileName + "\0" + namespace);
+            Map<String, Class<?>> cached = compilationCache.get(cacheKey);
+            if (cached != null) {
+                return buildCompiledNova(cached, namespaceBindings.get(namespace));
+            }
+        }
+
+        NovaIrCompiler compiler = new NovaIrCompiler();
+        compiler.setScriptMode(true);
+        compiler.setEnableSemanticAnalysis(true);
+        compiler.setStrictSemanticMode(true);
+        configureRelocate(compiler);
+        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, fileName);
+
+        if (cacheKey != null) {
+            compilationCache.put(cacheKey, classes);
+        }
+        return buildCompiledNova(classes, namespaceBindings.get(namespace));
     }
 
     /**
@@ -1035,6 +1141,7 @@ public final class Nova {
      * 检查是否存在指定名称的函数。
      */
     public boolean hasFunction(String funcName) {
+        ensureInterpreterPreloadsEvaluated();
         NovaValue val = interpreter.getGlobals().tryGet(funcName);
         return val instanceof NovaCallable;
     }
@@ -1043,6 +1150,7 @@ public final class Nova {
      * 调用已定义的 Nova 函数，参数自动从 Java 转换。
      */
     public Object call(String funcName, Object... args) {
+        ensureInterpreterPreloadsEvaluated();
         NovaValue val = interpreter.getGlobals().tryGet(funcName);
         if (val == null) {
             throw new NovaRuntimeException("Function '" + funcName + "' is not defined");

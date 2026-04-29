@@ -1697,6 +1697,91 @@ class NovaTest {
     // ── CompiledNova defineFunction/registerExtension ─
 
     @Nested
+    @DisplayName("preload Nova source")
+    class PreloadTests {
+
+        @Test
+        void preloadIsAvailableToEvalAndCall() {
+            Nova nova = new Nova();
+            nova.preload("fun bonus(x: Int) = x + 10\nval base = 100", "base.nova");
+
+            assertEquals(110, nova.eval("bonus(base)"));
+            assertEquals(15, nova.call("bonus", 5));
+        }
+
+        @Test
+        void compileToBytecodeUsesPreloadedNovaSource() {
+            Nova nova = new Nova();
+            nova.preload("fun scale(x: Int) = x * 3", "math-prelude.nova");
+
+            CompiledNova compiled = nova.compileToBytecode("scale(7)", "user.nova");
+            assertEquals(21, compiled.run());
+            assertEquals(12, compiled.call("scale", 4));
+        }
+
+        @Test
+        void preloadDoesNotExecuteDuringRegistration() {
+            AtomicInteger counter = new AtomicInteger();
+            Nova nova = new Nova();
+            nova.defineFunction("bump", () -> counter.incrementAndGet());
+            nova.preload("val loaded = bump()", "side-effect-prelude.nova");
+
+            assertEquals(0, counter.get());
+
+            CompiledNova compiled = nova.compileToBytecode("loaded", "user.nova");
+            assertEquals(1, compiled.run());
+            assertEquals(1, counter.get());
+        }
+
+        @Test
+        void compileToBytecodePreloadCarriesInfixPrecedence() {
+            Nova nova = new Nova();
+            nova.preload(
+                    "infix(20, left) fun Int.add(n: Int) = this + n\n" +
+                    "infix(30, left) fun Int.mul(n: Int) = this * n",
+                    "infix-prelude.nova");
+
+            assertEquals(7, nova.compileToBytecode("1 add 2 mul 3", "user.nova").run());
+        }
+
+        @Test
+        void compilationCacheIncludesPreloadedSource() {
+            Nova nova = new Nova().enableCompilationCache();
+            nova.preload("fun value() = 1", "one.nova");
+            assertEquals(1, nova.compileToBytecode("value()", "user.nova").run());
+
+            nova.clearPreloads();
+            nova.preload("fun value() = 2", "two.nova");
+            assertEquals(2, nova.compileToBytecode("value()", "user.nova").run());
+        }
+
+        @Test
+        void compileToBytecodeNamespaceBindingsDoNotPolluteGlobalBindings() {
+            Nova nova = new Nova();
+            nova.set("rate", 0.1);
+            nova.set("rate", 0.2, "promo");
+
+            CompiledNova promo = nova.compileToBytecode("price * rate", "promo.nova", "promo");
+            promo.set("price", 100);
+            assertEquals(20.0, ((Number) promo.run()).doubleValue(), 0.0001);
+
+            CompiledNova regular = nova.compileToBytecode("price * rate", "regular.nova");
+            regular.set("price", 100);
+            assertEquals(10.0, ((Number) regular.run()).doubleValue(), 0.0001);
+        }
+
+        @Test
+        void getPreloadsReturnsRegisteredSources() {
+            Nova nova = new Nova();
+            nova.preload("val x = 1", "x.nova");
+
+            assertEquals(Collections.singletonList("val x = 1"), nova.getPreloads());
+            assertThrows(UnsupportedOperationException.class,
+                    () -> nova.getPreloads().add("val y = 2"));
+        }
+    }
+
+    @Nested
     @DisplayName("CompiledNova defineFunction/registerExtension")
     class CompiledNovaApiTests {
 

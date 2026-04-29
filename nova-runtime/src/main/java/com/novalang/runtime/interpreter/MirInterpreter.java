@@ -303,24 +303,10 @@ final class MirInterpreter {
         for (Map.Entry<String, String> entry : module.getStaticImports().entrySet()) {
             String memberName = entry.getKey();
             String qualifiedName = entry.getValue();
-            int lastDot = qualifiedName.lastIndexOf('.');
-            if (lastDot > 0) {
-                String className = qualifiedName.substring(0, lastDot);
-                String fieldName = qualifiedName.substring(lastDot + 1);
-                Class<?> clazz = interp.resolveJavaClass(className);
-                if (clazz != null) {
-                    if (!interp.getSecurityPolicy().isClassAllowed(clazz.getName())) {
-                        throw NovaSecurityPolicy.denied("Cannot access class: " + clazz.getName());
-                    }
-                    try {
-                        java.lang.reflect.Field field = clazz.getField(fieldName);
-                        if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
-                            interp.getEnvironment().redefine(memberName,
-                                    AbstractNovaValue.fromJava(field.get(null)), false);
-                        }
-                    } catch (NoSuchFieldException | IllegalAccessException ignored) {}
-                }
-            }
+            bindStaticImport(memberName, qualifiedName);
+        }
+        for (String className : module.getStaticWildcardImports()) {
+            bindStaticWildcardImport(className);
         }
         for (String wildcardPkg : module.getWildcardJavaImports()) {
             interp.wildcardJavaImports.add(wildcardPkg);
@@ -453,6 +439,102 @@ final class MirInterpreter {
         }
 
         return new PreparedModule(mainFunc, buildExportSlots(mainFunc));
+    }
+
+    private void bindStaticImport(String localName, String qualifiedName) {
+        int lastDot = qualifiedName.lastIndexOf('.');
+        if (lastDot <= 0 || lastDot == qualifiedName.length() - 1) {
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.JAVA_INTEROP,
+                    "Invalid Java static import '" + qualifiedName + "'",
+                    "Use import static <class>.<member>");
+        }
+
+        String className = qualifiedName.substring(0, lastDot);
+        String memberName = qualifiedName.substring(lastDot + 1);
+        Class<?> clazz = resolveStaticImportClass(className);
+        JavaInterop.NovaJavaClass javaClass = new JavaInterop.NovaJavaClass(clazz);
+
+        if (bindStaticField(localName, clazz, memberName)) {
+            return;
+        }
+        if (hasPublicStaticMethod(clazz, memberName)) {
+            interp.getEnvironment().redefine(localName,
+                    javaClass.getBoundStaticMethod(memberName), false);
+            return;
+        }
+
+        throw new NovaRuntimeException(
+                NovaException.ErrorKind.JAVA_INTEROP,
+                "Cannot find Java static member '" + qualifiedName + "'",
+                "Check the class name, member name, and whether the member is public static");
+    }
+
+    private void bindStaticWildcardImport(String className) {
+        Class<?> clazz = resolveStaticImportClass(className);
+        JavaInterop.NovaJavaClass javaClass = new JavaInterop.NovaJavaClass(clazz);
+
+        for (java.lang.reflect.Field field : clazz.getFields()) {
+            if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+            try {
+                interp.getEnvironment().redefine(field.getName(),
+                        AbstractNovaValue.fromJava(field.get(null)), false);
+            } catch (IllegalAccessException ignored) {
+                // Public reflection can still fail under module access rules; skip that member.
+            }
+        }
+
+        Set<String> methodNames = new HashSet<>();
+        for (java.lang.reflect.Method method : clazz.getMethods()) {
+            if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())) continue;
+            if (methodNames.add(method.getName())) {
+                interp.getEnvironment().redefine(method.getName(),
+                        javaClass.getBoundStaticMethod(method.getName()), false);
+            }
+        }
+    }
+
+    private Class<?> resolveStaticImportClass(String className) {
+        Class<?> clazz = interp.resolveJavaClass(className);
+        if (clazz == null) {
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.JAVA_INTEROP,
+                    "Cannot find Java class '" + className + "'",
+                    "Check the class name and classpath");
+        }
+        if (!interp.getSecurityPolicy().isClassAllowed(clazz.getName())) {
+            throw NovaSecurityPolicy.denied("Cannot access class: " + clazz.getName());
+        }
+        return clazz;
+    }
+
+    private boolean bindStaticField(String localName, Class<?> clazz, String fieldName) {
+        try {
+            java.lang.reflect.Field field = clazz.getField(fieldName);
+            if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                return false;
+            }
+            interp.getEnvironment().redefine(localName,
+                    AbstractNovaValue.fromJava(field.get(null)), false);
+            return true;
+        } catch (NoSuchFieldException e) {
+            return false;
+        } catch (IllegalAccessException e) {
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.JAVA_INTEROP,
+                    "Cannot access Java static field '" + clazz.getName() + "." + fieldName + "'",
+                    null, e);
+        }
+    }
+
+    private boolean hasPublicStaticMethod(Class<?> clazz, String methodName) {
+        for (java.lang.reflect.Method method : clazz.getMethods()) {
+            if (method.getName().equals(methodName)
+                    && java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ExportSlot[] buildExportSlots(MirFunction mainFunc) {

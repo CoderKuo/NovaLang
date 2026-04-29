@@ -1130,6 +1130,36 @@ class CoreSyntaxIntegrationTest {
                  fn + wrap("return 3 times2 4"), 12);
         }
 
+        @Test void testChainedInfixCallIsLeftAssociative() throws Exception {
+            String fn = "infix fun Int.add(n: Int) = this + n\n"
+                    + "infix fun Int.sub(n: Int) = this - n\n";
+            dual(fn + "1 add 2 sub 1",
+                 fn + wrap("return 1 add 2 sub 1"), 2);
+        }
+
+        @Test void testInfixNumericPrecedence() throws Exception {
+            String fn = "infix(20, left) fun Int.add(n: Int) = this + n\n"
+                    + "infix(30, left) fun Int.mul(n: Int) = this * n\n";
+            dual(fn + "1 add 2 mul 3",
+                 fn + wrap("return 1 add 2 mul 3"), 7);
+        }
+
+        @Test void testInfixRightAssociativity() throws Exception {
+            String fn = "infix(40, right) fun Int.pow(exp: Int): Int {\n"
+                    + "  var result = 1\n"
+                    + "  for (i in 1..exp) { result = result * this }\n"
+                    + "  return result\n"
+                    + "}\n";
+            dual(fn + "2 pow 3 pow 2",
+                 fn + wrap("return 2 pow 3 pow 2"), 512);
+        }
+
+        @Test void testInfixNoneAssociativityRejectsChain() {
+            String fn = "infix(10, none) fun Int.same(n: Int) = this == n\n";
+            dualThrows(fn + "1 same 1 same 1",
+                       fn + wrap("return 1 same 1 same 1"));
+        }
+
         @Test void testInfixPower() throws Exception {
             String fn = "infix fun Int.power(exp: Int): Int {\n"
                 + "  var result = 1\n"

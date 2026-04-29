@@ -922,6 +922,36 @@ class ScriptModeIntegrationTest {
                     "infix fun Int.plus2(other: Int) = this + other\n2 plus2 6"));
         }
 
+        @Test void chainedInfixCallIsLeftAssociative() {
+            assertEquals(2, run(
+                    "infix fun Int.add(n: Int) = this + n\n" +
+                    "infix fun Int.sub(n: Int) = this - n\n" +
+                    "1 add 2 sub 1"));
+        }
+
+        @Test void infixNumericPrecedence() {
+            assertEquals(7, run(
+                    "infix(20, left) fun Int.add(n: Int) = this + n\n" +
+                    "infix(30, left) fun Int.mul(n: Int) = this * n\n" +
+                    "1 add 2 mul 3"));
+        }
+
+        @Test void infixRightAssociativity() {
+            assertEquals(512, run(
+                    "infix(40, right) fun Int.pow(exp: Int): Int {\n" +
+                    "  var result = 1\n" +
+                    "  for (i in 1..exp) { result = result * this }\n" +
+                    "  return result\n" +
+                    "}\n" +
+                    "2 pow 3 pow 2"));
+        }
+
+        @Test void infixNoneAssociativityRejectsChain() {
+            assertThrows(Exception.class, () -> run(
+                    "infix(10, none) fun Int.same(n: Int) = this == n\n" +
+                    "1 same 1 same 1"));
+        }
+
         @Test void infixDotCall() {
             assertEquals(8, run(
                     "infix fun Int.plus2(other: Int) = this + other\n2.plus2(6)"));

@@ -297,7 +297,7 @@ class ExprParser {
 
     // 中缀 to（Pair 创建）+ 通用 infix 函数调用
     private Expression parseInfixToExpr() {
-        Expression left = parseRangeExpr();
+        Expression left = parseInfixExpr(-1000);
 
         if (parser.check(IDENTIFIER) && "to".equals(parser.current.getLexeme())) {
             SourceLocation loc = parser.location();
@@ -306,37 +306,70 @@ class ExprParser {
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.TO, right);
         }
 
-        // 通用 infix 函数调用: expr name expr → expr.name(expr)
-        // 同一行的标识符（非关键词/声明开头）后跟表达式
-        while (parser.check(IDENTIFIER) && !parser.checkAny(NEWLINE, SEMICOLON, EOF)
-                && !isInfixBreak(parser.current.getLexeme())
-                && parser.previous != null && parser.current.getLine() == parser.previous.getLine()) {
-            SourceLocation loc = parser.location();
+        return left;
+    }
+
+    /** 不应被当作 infix 函数名的标识符 */
+    private Expression parseInfixExpr(int minPrecedence) {
+        Expression left = parseRangeExpr();
+
+        while (isInfixOperatorAhead()) {
             String name = parser.current.getLexeme();
-            // 回溯保护：确认后面确实是表达式
-            parser.mark();
-            parser.advance(); // consume identifier
-            if (parser.check(NEWLINE) || parser.check(SEMICOLON) || parser.check(EOF)
-                    || parser.check(RBRACE) || parser.check(RPAREN) || parser.check(RBRACKET)
-                    || parser.check(DOT) || parser.check(SAFE_DOT) || parser.check(COMMA)
-                    || parser.check(ASSIGN) || parser.check(LBRACE) || parser.check(COLON)
-                    || parser.check(ARROW)) {
-                parser.reset(); // 不是 infix 调用，回退
+            Parser.InfixOperatorInfo info = parser.getInfixOperatorInfo(name);
+            if (info.precedence < minPrecedence) {
                 break;
             }
-            parser.commitMark();
-            Expression right = parseRangeExpr();
+
+            SourceLocation loc = parser.location();
+            if (!consumeConfirmedInfixOperator()) {
+                break;
+            }
+
+            int nextMinPrecedence = info.associativity == Parser.InfixAssociativity.RIGHT
+                    ? info.precedence
+                    : info.precedence + 1;
+            Expression right = parseInfixExpr(nextMinPrecedence);
             left = new CallExpr(loc,
                     new MemberExpr(loc, left, name),
                     java.util.Collections.emptyList(),
                     java.util.Collections.singletonList(new CallExpr.Argument(loc, null, right, false)),
                     null);
+
+            if (info.associativity == Parser.InfixAssociativity.NONE
+                    && isInfixOperatorAhead()
+                    && parser.getInfixOperatorInfo(parser.current.getLexeme()).precedence == info.precedence) {
+                throw new ParseException(
+                        "Infix operator '" + name + "' is non-associative and cannot be chained at the same precedence",
+                        parser.current);
+            }
         }
 
         return left;
     }
 
-    /** 不应被当作 infix 函数名的标识符 */
+    private boolean isInfixOperatorAhead() {
+        return parser.check(IDENTIFIER)
+                && !parser.checkAny(NEWLINE, SEMICOLON, EOF)
+                && !isInfixBreak(parser.current.getLexeme())
+                && parser.previous != null
+                && parser.current.getLine() == parser.previous.getLine();
+    }
+
+    private boolean consumeConfirmedInfixOperator() {
+        parser.mark();
+        parser.advance();
+        if (parser.check(NEWLINE) || parser.check(SEMICOLON) || parser.check(EOF)
+                || parser.check(RBRACE) || parser.check(RPAREN) || parser.check(RBRACKET)
+                || parser.check(DOT) || parser.check(SAFE_DOT) || parser.check(COMMA)
+                || parser.check(ASSIGN) || parser.check(LBRACE) || parser.check(COLON)
+                || parser.check(ARROW)) {
+            parser.reset();
+            return false;
+        }
+        parser.commitMark();
+        return true;
+    }
+
     private static boolean isInfixBreak(String name) {
         switch (name) {
             case "to": case "step": case "as": case "is": case "in":

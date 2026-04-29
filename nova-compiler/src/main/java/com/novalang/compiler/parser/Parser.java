@@ -13,7 +13,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static com.novalang.compiler.lexer.TokenType.*;
 
@@ -27,6 +29,7 @@ public class Parser {
     final String fileName;
     Token current;
     Token previous;
+    boolean tolerantMode;
     private Token nextToken;  // 用于 lookahead 的缓冲
     private final Deque<Token> replayQueue = new ArrayDeque<Token>(); // 回放队列
 
@@ -37,6 +40,7 @@ public class Parser {
 
     // 块内 import 提升到模块级
     final List<ImportDecl> hoistedImports = new ArrayList<ImportDecl>();
+    final Map<String, InfixOperatorInfo> infixOperators = new HashMap<String, InfixOperatorInfo>();
     // 源码引用（用于 ParseException 显示出错行）
     String sourceForErrors;
 
@@ -46,6 +50,34 @@ public class Parser {
     final DeclParser declParser = new DeclParser(this);
     final StmtParser stmtParser = new StmtParser(this);
     final ExprParser exprParser = new ExprParser(this);
+
+    enum InfixAssociativity {
+        LEFT,
+        RIGHT,
+        NONE
+    }
+
+    static final class InfixOperatorInfo {
+        static final InfixOperatorInfo DEFAULT =
+                new InfixOperatorInfo(0, InfixAssociativity.LEFT);
+
+        final int precedence;
+        final InfixAssociativity associativity;
+
+        InfixOperatorInfo(int precedence, InfixAssociativity associativity) {
+            this.precedence = precedence;
+            this.associativity = associativity;
+        }
+    }
+
+    InfixOperatorInfo getInfixOperatorInfo(String name) {
+        InfixOperatorInfo info = infixOperators.get(name);
+        return info != null ? info : InfixOperatorInfo.DEFAULT;
+    }
+
+    void registerInfixOperator(String name, int precedence, InfixAssociativity associativity) {
+        infixOperators.put(name, new InfixOperatorInfo(precedence, associativity));
+    }
 
     public Parser(Lexer lexer, String fileName) {
         this.lexer = lexer;
@@ -469,6 +501,8 @@ public class Parser {
      * 返回的 ParseResult 包含已成功解析的声明和收集到的错误列表。
      */
     public ParseResult parseTolerant() {
+        boolean previousTolerantMode = tolerantMode;
+        tolerantMode = true;
         SourceLocation loc = location();
         skipSeparators();
         List<ParseError> errors = new ArrayList<ParseError>();
@@ -526,6 +560,7 @@ public class Parser {
 
         Program program = new Program(loc, fileAnnotations, packageDecl, imports, declarations);
         lexer.releaseSource(); // 容错解析完成，释放源码字符串
+        tolerantMode = previousTolerantMode;
         return new ParseResult(program, errors, topLevelStatements);
     }
 

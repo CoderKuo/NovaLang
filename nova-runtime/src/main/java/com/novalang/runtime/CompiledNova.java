@@ -538,12 +538,31 @@ public final class CompiledNova {
         }
     }
 
+    public Object runIsolated(Map<String, Object> executionBindings) {
+        if (compiledClasses == null || mainHandle == null) return null;
+        Map<String, Object> localBindings = new HashMap<>(bindings);
+        if (executionBindings != null) {
+            for (Map.Entry<String, Object> entry : executionBindings.entrySet()) {
+                localBindings.put(entry.getKey(), NativeFunctionAdapter.toBindingValue(entry.getValue()));
+            }
+        }
+        Object result = runBytecodeWithBindings(localBindings);
+        if (executionBindings != null) {
+            executionBindings.putAll(localBindings);
+        }
+        return result;
+    }
+
     private Object runBytecode() {
-        if (bindings != null) {
+        return runBytecodeWithBindings(bindings);
+    }
+
+    private Object runBytecodeWithBindings(Map<String, Object> executionBindings) {
+        if (executionBindings != null) {
             try {
-                return withScriptExecutionContext(bindings, true, () -> {
+                return withScriptExecutionContext(executionBindings, true, () -> {
                     Object result = mainHandle.invoke();
-                    bindings.putAll(NovaScriptContext.getAll());
+                    executionBindings.putAll(NovaScriptContext.getAll());
                     if (result instanceof NovaValue) {
                         if (((NovaValue) result).isNull()) return null;
                         return ((NovaValue) result).toJavaValue();

@@ -181,6 +181,61 @@ class ModuleSystemTest {
             );
             assertEquals("2147483647", getOutput());
         }
+
+        @Test
+        @DisplayName("import static java.lang.Integer.MAX_VALUE as IMAX - imports aliased static field")
+        void testStaticFieldImportAlias() {
+            interpreter.eval(
+                "import static java.lang.Integer.MAX_VALUE as IMAX\n" +
+                "println(IMAX)",
+                "<test>"
+            );
+            assertEquals("2147483647", getOutput());
+        }
+
+        @Test
+        @DisplayName("import static java.lang.Math.max - imports static method")
+        void testStaticMethodImport() {
+            interpreter.eval(
+                "import static java.lang.Math.max\n" +
+                "println(max(10, 20))",
+                "<test>"
+            );
+            assertEquals("20", getOutput());
+        }
+
+        @Test
+        @DisplayName("import static java.lang.Math.max as jmax - imports aliased static method")
+        void testStaticMethodImportAlias() {
+            interpreter.eval(
+                "import static java.lang.Math.max as jmax\n" +
+                "println(jmax(7, 3))",
+                "<test>"
+            );
+            assertEquals("7", getOutput());
+        }
+
+        @Test
+        @DisplayName("import static java.lang.Math.* - imports static methods")
+        void testStaticWildcardMethodImport() {
+            interpreter.eval(
+                "import static java.lang.Math.*\n" +
+                "println(max(4, 9))",
+                "<test>"
+            );
+            assertEquals("9", getOutput());
+        }
+
+        @Test
+        @DisplayName("import static java.lang.Math.* - imports static fields")
+        void testStaticWildcardFieldImport() {
+            interpreter.eval(
+                "import static java.lang.Math.*\n" +
+                "println(PI)",
+                "<test>"
+            );
+            assertEquals(String.valueOf(Math.PI), getOutput());
+        }
     }
 
     // ============ Nova 模块导入 ============
@@ -415,6 +470,15 @@ class ModuleSystemTest {
             interpreter.evalRepl("import static java.lang.Byte.MIN_VALUE");
             interpreter.evalRepl("println(MIN_VALUE)");
             assertEquals("-128", getOutput());
+        }
+
+        @Test
+        @DisplayName("REPL import static method")
+        void testReplStaticMethodImport() {
+            interpreter.setReplMode(true);
+            interpreter.evalRepl("import static java.lang.Math.max");
+            interpreter.evalRepl("println(max(2, 5))");
+            assertEquals("5", getOutput());
         }
     }
 

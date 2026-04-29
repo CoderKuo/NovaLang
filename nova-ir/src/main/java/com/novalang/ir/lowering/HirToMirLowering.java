@@ -268,6 +268,7 @@ public class HirToMirLowering {
         // 收集用于运行时注册的 import 元数据
         Map<String, String> javaImportsMeta = new HashMap<>();
         Map<String, String> staticImportsMeta = new HashMap<>();
+        List<String> staticWildcardImportsMeta = new ArrayList<>();
         List<String> wildcardImportsMeta = new ArrayList<>();
         List<MirModule.NovaImportInfo> novaImportInfos = new ArrayList<>();
         for (HirImport imp : hirModule.getImports()) {
@@ -284,8 +285,13 @@ public class HirToMirLowering {
                 }
             } else if (imp.isStatic()) {
                 String qn = imp.getQualifiedName();
-                String simpleName = qn.substring(qn.lastIndexOf('.') + 1);
-                staticImportsMeta.put(simpleName, qn);
+                if (imp.isWildcard()) {
+                    staticWildcardImportsMeta.add(qn);
+                } else {
+                    String simpleName = imp.hasAlias() ? imp.getAlias()
+                            : qn.substring(qn.lastIndexOf('.') + 1);
+                    staticImportsMeta.put(simpleName, qn);
+                }
             } else {
                 String qn = imp.getQualifiedName();
 
@@ -552,6 +558,9 @@ public class HirToMirLowering {
         }
         if (!staticImportsMeta.isEmpty()) {
             module.setStaticImports(staticImportsMeta);
+        }
+        if (!staticWildcardImportsMeta.isEmpty()) {
+            module.setStaticWildcardImports(staticWildcardImportsMeta);
         }
         if (!wildcardImportsMeta.isEmpty()) {
             module.setWildcardJavaImports(wildcardImportsMeta);
